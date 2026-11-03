@@ -1,9 +1,11 @@
 """Meaningful CPU, tool, and masking checks for the bounded conversion prototype."""
 
 import json
+import hashlib
 import re
 import sys
 import unittest
+import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -65,7 +67,7 @@ class ConverterTests(unittest.TestCase):
             candidate.convert_row(row, self.cpu, self.tool, {" ": 5})
 
     def test_actual_converted_sample_prompt_boundary_tool_mask_and_eos(self):
-        sample = HERE / "sample_128" / "converted_sample.jsonl"
+        sample = HERE / "representative_sample.jsonl"
         self.assertTrue(sample.exists(), "Run convert_sample.py first")
         with sample.open(encoding="utf-8") as source:
             items = [json.loads(line) for line in source]
@@ -75,6 +77,11 @@ class ConverterTests(unittest.TestCase):
         vocab = {char: index + 5 for index, char in enumerate(characters)}
         for item in items:
             self.assertEqual(item["full_text"], item["prompt"] + item["target"])
+            ref = item["source_ref"]
+            self.assertEqual(ref["kind"], "v43_zip_member")
+            self.assertEqual(ref["file"], candidate.TRAIN_MEMBER)
+            self.assertIsInstance(ref["line"], int)
+            self.assertGreaterEqual(ref["line"], 1)
             self.assertTrue(item["target"].startswith(" ") or item["original_source"] == "swe_alu_accumulate_sum")
             ids, tags = encode_supervision(item, vocab)
             self.assertEqual(ids[-1], 3)
@@ -91,6 +98,17 @@ class ConverterTests(unittest.TestCase):
                 result = self.tool.execute(block.group(1))
                 self.assertTrue(result["success"], result)
                 self.assertEqual(observation_text(result), item["target"][span["start"]:span["end"]])
+        with zipfile.ZipFile(r"G:\マイドライブ\GeoCPU_Frontier_CoTraining_v43\Grand_cotraining_v43.zip") as archive:
+            needed = {item["source_ref"]["line"]: item for item in items}
+            with archive.open(candidate.TRAIN_MEMBER) as source:
+                for number, raw in enumerate(source, 1):
+                    if number in needed:
+                        item = needed.pop(number)
+                        self.assertEqual(hashlib.sha256(raw).hexdigest(), item["source_ref"]["raw_sha256"])
+                        self.assertEqual(json.loads(raw)["prompt"], item["prompt"])
+                    if not needed:
+                        break
+            self.assertFalse(needed)
 
 
 if __name__ == "__main__":

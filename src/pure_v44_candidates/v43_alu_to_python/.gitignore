@@ -1,1 +1,11 @@
 __pycache__/
+sample_128/
+sample_1024/
+full_verified_work/
+provenance_snapshot/
+provenance_sample_128/
+provenance_snapshot_schema2/
+provenance_sample_schema2/
+provenance_snapshot_schema3/
+provenance_full_final/
+!representative_sample.jsonl

@@ -13,6 +13,7 @@ import hashlib
 import json
 import re
 import sys
+import time
 import unicodedata
 import zipfile
 from pathlib import Path
@@ -210,8 +211,9 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=128)
     parser.add_argument("--max-accepted", type=int, default=12)
     args = parser.parse_args()
-    if not 1 <= args.limit <= 1024 or not 1 <= args.max_accepted <= 64:
+    if not 1 <= args.limit <= 300000 or not 1 <= args.max_accepted <= 30000:
         raise ValueError("Prototype has strict sample caps")
+    started = time.perf_counter()
     sys.path.insert(0, str(SOURCE_DIR))
     sys.path.insert(0, str(V44_DIR))
     from qwenputer_controller_v30 import QwenputerExecutionController
@@ -225,6 +227,8 @@ def main() -> None:
     counters = collections.Counter()
     accepted_sources = collections.Counter()
     items: list[dict] = []
+    output = args.output_dir / "converted_sample.jsonl"
+    output_writer = output.open("w", encoding="utf-8", newline="\n")
     with zipfile.ZipFile(args.zip_path) as archive:
         # The imported circuit/controller must be byte-for-byte the source in
         # the actual archive whose training rows are being converted.
@@ -242,6 +246,15 @@ def main() -> None:
             for line_number, raw in enumerate(lines, 1):
                 if line_number > args.limit:
                     break
+                if line_number % 128 == 0:
+                    print(json.dumps({"rows_completed": line_number - 1, "accepted": len(items),
+                                      "elapsed_seconds": round(time.perf_counter() - started, 3)}, ensure_ascii=False), flush=True)
+                if line_number % 5000 == 0:
+                    output_writer.flush()
+                    partial = {"rows_completed": line_number - 1, "accepted": len(items), "counts": dict(counters),
+                               "elapsed_seconds": round(time.perf_counter()-started, 3),
+                               "status": "INCOMPLETE; only rows present in converted_sample.jsonl passed full CPU/Python verification"}
+                    (args.output_dir / "progress.json").write_text(json.dumps(partial, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
                 row = json.loads(raw)
                 prompt = row.get("prompt")
                 if not isinstance(prompt, str):
@@ -261,19 +274,21 @@ def main() -> None:
                 except Reject as exc:
                     counters[str(exc)] += 1
                     continue
+                item["source_ref"] = {"kind": "v43_zip_member", "file": TRAIN_MEMBER,
+                                      "line": line_number,
+                                      "raw_sha256": hashlib.sha256(raw).hexdigest()}
                 items.append(item)
                 counters["accepted"] += 1
                 accepted_sources[row["source"]] += 1
-    output = args.output_dir / "converted_sample.jsonl"
-    with output.open("w", encoding="utf-8", newline="\n") as target:
-        for item in items:
-            target.write(json.dumps(item, ensure_ascii=False, separators=(",", ":")) + "\n")
+                output_writer.write(json.dumps(item, ensure_ascii=False, separators=(",", ":")) + "\n")
+    output_writer.close()
     with args.zip_path.open("rb") as source_file:
         source_sha256 = hashlib.file_digest(source_file, "sha256").hexdigest()
     report = {"source_zip": str(args.zip_path), "source_zip_sha256": source_sha256,
               "verified_original_cpu_source_sha256": original_cpu_sources,
               "source_member": TRAIN_MEMBER, "bounded_rows_examined": args.limit,
               "max_accepted": args.max_accepted, "counts": dict(counters),
+              "elapsed_wall_seconds": round(time.perf_counter() - started, 3),
               "accepted_sources": dict(accepted_sources),
               "bundled_eval_prompt_counts": eval_counts, "bundled_eval_unique_exact": len(exact_eval),
               "converted_sample_sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
