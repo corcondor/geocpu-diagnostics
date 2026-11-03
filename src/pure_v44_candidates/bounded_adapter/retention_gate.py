@@ -35,6 +35,24 @@ def build_gate(*, data_dir, data_manifest_sha256, paired_dir, packet_dir,
                adapter_sha256, verification_proof_dir, verification_proof_sha256,
                meta_sha256, source_manifest_sha256, v43_native_proof_dir,
                v43_native_capture_sha256, v43_native_grade_sha256):
+    evidence_inputs = {
+        "data_dir": str(Path(data_dir).resolve()),
+        "data_manifest_sha256": data_manifest_sha256,
+        "paired_dir": str(Path(paired_dir).resolve()),
+        "packet_dir": str(Path(packet_dir).resolve()),
+        "grades_path": str(Path(grades_path).resolve()),
+        "grades_sha256": grades_sha256,
+        "grade_pin_path": str(Path(grade_pin_path).resolve()),
+        "grade_pin_sha256": grade_pin_sha256,
+        "adapter_sha256": adapter_sha256,
+        "verification_proof_dir": str(Path(verification_proof_dir).resolve()),
+        "verification_proof_sha256": verification_proof_sha256,
+        "meta_sha256": meta_sha256,
+        "source_manifest_sha256": source_manifest_sha256,
+        "v43_native_proof_dir": str(Path(v43_native_proof_dir).resolve()),
+        "v43_native_capture_sha256": v43_native_capture_sha256,
+        "v43_native_grade_sha256": v43_native_grade_sha256,
+    }
     admission = verify_dataset(data_dir, data_manifest_sha256)
     verification = require_independent_execution_verification(
         admission, data_dir=data_dir, proof_dir=verification_proof_dir,
@@ -137,6 +155,7 @@ def build_gate(*, data_dir, data_manifest_sha256, paired_dir, packet_dir,
     old_cpu_keys = [key for key in old_keys if old_rows[key[2]]["v43_cpu_task"] is True]
     unseen_keys = [key for key in expected_ids if key[0] == "adapter" and key[1] == "unseen_eval"]
     old_regressions = sum(not grades[key]["correct"] for key in old_keys)
+    old_native_eos_retained = all(raw[key].get("ended_with_eos") is True for key in old_keys)
     unseen_parent_correct = sum(grades[("parent", key[1], key[2])]["correct"] for key in unseen_keys)
     unseen_adapter_correct = sum(grades[key]["correct"] for key in unseen_keys)
     eos_parent = sum(raw[("parent", key[1], key[2])]["ended_with_eos"] is True for key in unseen_keys)
@@ -153,6 +172,7 @@ def build_gate(*, data_dir, data_manifest_sha256, paired_dir, packet_dir,
                           for arm in ("parent", "adapter")}
     checks = {
         "all_original_v43_solved_old_skill_items_preserved": old_regressions == 0,
+        "old_v43_natural_eos_retained_on_every_item": old_native_eos_retained,
         "old_v43_cpu_tasks_semantically_correct_with_actual_python": (
             len(old_cpu_keys) >= 12 and old_cpu_correct == len(old_cpu_keys)
             and all(int(raw[key].get("successful_tool_invocations") or 0) > 0
@@ -174,6 +194,7 @@ def build_gate(*, data_dir, data_manifest_sha256, paired_dir, packet_dir,
             "packet_manifest_sha256": file_sha256(packet_manifest_path),
             "grader_id": grade_file["grader_id"], "old_skill_evaluated": len(old_keys),
             "old_skill_regressions": old_regressions, "unseen_evaluated": len(unseen_keys),
+            "old_v43_natural_eos_retained": old_native_eos_retained,
             "old_v43_cpu_tasks_evaluated": len(old_cpu_keys),
             "old_v43_cpu_tasks_correct": old_cpu_correct,
             "old_v43_cpu_tasks_successful_python_calls": old_cpu_python_success,
@@ -184,7 +205,9 @@ def build_gate(*, data_dir, data_manifest_sha256, paired_dir, packet_dir,
             "japanese_prose_evaluated": len(japanese_keys), "japanese_grade_sums": japanese,
             "checks": checks, "dataset_admission": admission,
             "independent_execution_verification": verification,
-            "v43_native_baseline": v43_native}
+            "v43_native_baseline": v43_native,
+            "retention_gate_source_sha256": file_sha256(Path(__file__)),
+            "evidence_inputs": evidence_inputs}
 
 
 def main(argv=None):

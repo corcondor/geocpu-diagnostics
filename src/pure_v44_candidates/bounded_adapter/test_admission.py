@@ -43,6 +43,8 @@ class AdmissionTests(unittest.TestCase):
                      "v43_original_raw_sha256": hashlib.sha256("3".encode()).hexdigest()}]
         self.unseen = [{"id": "u1", "family_id": "fu", "bucket": "japanese_prose",
                         "prompt": "新しい問題", "expected_answer": "4"}]
+        for row in self.train + self.old + self.unseen:
+            row["family_id"] = admission.family_id_for_prompt(row["prompt"])
 
     def _materialize(self):
         files = {"train.jsonl": self.train, "old_skill_eval.jsonl": self.old,
@@ -61,6 +63,9 @@ class AdmissionTests(unittest.TestCase):
                         "all_legacy_cpu_python_traces_matched": True,
                         "source_family_separation_checked": True},
                     "source_files": {"v43_zip_sha256": admission.PINNED_V43_DATA_ZIP_SHA256},
+                    "evaluation_input_pins": [
+                        {"path": name, "sha256": sha}
+                        for name, sha in admission.REQUIRED_V43_EVAL_SHA256.items()],
                     "verification": {"converter_source_sha256": "e" * 64,
                                      "verifier_source_sha256": admission.VERIFIER_SOURCE_SHA256},
                     "counts": {"train_rows": 3, "train_converted_legacy_python": 1,
@@ -94,7 +99,7 @@ class AdmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Independent full-row"):
             admission.require_independent_execution_verification(
                 structural, data_dir=self.root, proof_dir=None,
-                expected_proof_sha256=None, expected_meta_sha256="c" * 64,
+                expected_proof_sha256=None, expected_meta_sha256=admission.PINNED_V43_META_SHA256,
                 expected_source_manifest_sha256="a" * 64)
         self.train[0].pop("source_ref")
         sha = self._materialize()
@@ -102,7 +107,8 @@ class AdmissionTests(unittest.TestCase):
             self._verify(sha)
 
     def test_prompt_overlap_rejected(self):
-        self.unseen[0]["prompt"] = "問題 1"
+        self.unseen[0]["prompt"] = "ユーザー: 問題 1\nアシスタント:"
+        self.unseen[0]["family_id"] = admission.family_id_for_prompt(self.unseen[0]["prompt"])
         sha = self._materialize()
         with self.assertRaisesRegex(ValueError, "Evaluation prompt overlap"):
             self._verify(sha)
@@ -126,13 +132,15 @@ class AdmissionTests(unittest.TestCase):
                  "converter_source_sha256": "e" * 64,
                  "v43_zip_sha256": admission.PINNED_V43_DATA_ZIP_SHA256,
                  "data_manifest_sha256": sha, "train_sha256": data["files_sha256"]["train.jsonl"],
-                 "meta_sha256": "c" * 64, "pure_source_manifest_sha256": "a" * 64,
+                 "meta_sha256": admission.PINNED_V43_META_SHA256,
+                 "pure_source_manifest_sha256": "a" * 64,
                  "train_rows": 3,
                  "receipts_sha256": file_sha256(proof_dir / "receipts.jsonl"), "replayed_tool_calls": 1}
         (proof_dir / "proof.json").write_text(json.dumps(proof), encoding="utf-8")
         proof_sha = file_sha256(proof_dir / "proof.json")
         kwargs = dict(data_dir=self.root, proof_dir=proof_dir,
-                      expected_proof_sha256=proof_sha, expected_meta_sha256="c" * 64,
+                      expected_proof_sha256=proof_sha,
+                      expected_meta_sha256=admission.PINNED_V43_META_SHA256,
                       expected_source_manifest_sha256="a" * 64)
         self.assertEqual(admission.require_independent_execution_verification(data, **kwargs)["verified_rows"], 3)
         receipts = (proof_dir / "receipts.jsonl").read_text(encoding="utf-8").replace('"id": "t1"', '"id": "wrong"')

@@ -16,12 +16,24 @@ from collections import Counter
 from pathlib import Path
 
 from adapter import file_sha256
-from admission import (SCHEMA, PINNED_V43_DATA_ZIP_SHA256, VERIFIER_SOURCE_SHA256, canonical_prompt,
+from admission import (SCHEMA, PINNED_V43_DATA_ZIP_SHA256, PINNED_V43_META_SHA256,
+                       REQUIRED_V43_EVAL_SHA256,
+                       VERIFIER_SOURCE_SHA256, canonical_prompt,
                        source_ref_fields, verify_source_manifest)
 from independent_verify import canonical_bytes
 
 
 V43_MEMBER = "data/train_v43_knowledge_unified.jsonl"
+REQUIRED_V43_EVAL_MEMBERS = (
+    "data/eval_v42_search_retrieval_aligned.jsonl",
+    "data/eval_v42_search_retrieval_heldout.jsonl",
+    "data/eval_swe_step_control_heldout.jsonl",
+    "data/eval_v38_decomposed_state_bench200.jsonl",
+    "data/eval_v33_state_tracking_heldout.jsonl",
+    "data/jamcqa_manifest_test.jsonl",
+    "data/benchmark_8100_manifest.jsonl",
+    "data/eval_v41_logical_instruction_operators_heldout.jsonl",
+)
 PARENT_SHA256 = "a4b95d7d0f486146196271b3b1fbc6a1b6b3342d8fadd590320fc3842c1e80e5"
 
 
@@ -54,6 +66,8 @@ def build(*, source_root, pure_source_dir, source_manifest_sha256, v43_zip,
     if not Path("/kaggle").exists() or Path("/content/drive/MyDrive").exists():
         raise RuntimeError("Public Python execution requires a disposable Kaggle runtime without mounted Drive")
     verify_source_manifest(pure_source_dir, source_manifest_sha256)
+    if meta_sha256 != PINNED_V43_META_SHA256:
+        raise ValueError("Tokenizer metadata differs from original v43 checkpoint")
     for path, expected in ((converted_path, converted_sha256), (converter_path, converter_sha256),
                            (meta_path, meta_sha256), (old_skill_eval, old_skill_eval_sha256),
                            (unseen_eval, unseen_eval_sha256),
@@ -85,7 +99,19 @@ def build(*, source_root, pure_source_dir, source_manifest_sha256, v43_zip,
                                     public_candidate, split_question)
     from tir_engine_v44r1 import PythonExecutor
     from training_data_v44 import encode_supervision
-    vocab = json.loads(Path(meta_path).read_text(encoding="utf-8"))["vocab"]
+    metadata = json.loads(Path(meta_path).read_text(encoding="utf-8"))
+    max_positions = metadata["config"]["max_positions"]
+    if max_positions != 2048:
+        raise ValueError("Pinned original v43 model context length differs from 2048")
+    vocab = metadata["vocab"]
+    with zipfile.ZipFile(v43_zip) as archive:
+        for member in REQUIRED_V43_EVAL_MEMBERS:
+            expected = hashlib.sha256(archive.read(member)).hexdigest()
+            if expected != REQUIRED_V43_EVAL_SHA256[Path(member).name]:
+                raise ValueError("Pinned original v43 evaluation source differs: " + member)
+            local = Path(evaluation_dir) / Path(member).name
+            if not local.is_file() or file_sha256(local) != expected:
+                raise ValueError("Required original v43 evaluation split missing or changed: " + member)
     eval_keys, eval_ids, eval_pins = evaluation_index(evaluation_dir, numina_test)
     old_eval, unseen_eval_rows = list(read_jsonl(old_skill_eval)), list(read_jsonl(unseen_eval))
     for row in old_eval + unseen_eval_rows:
@@ -113,7 +139,7 @@ def build(*, source_root, pure_source_dir, source_manifest_sha256, v43_zip,
                     "family_id": digest_text("family:"+key), "bucket": bucket,
                     "prompt": prompt, "target": target, "full_text": prompt+target,
                     "target_segments": spans, "source_ref": ref}
-            ids, tags = encode_supervision(item, vocab, max_positions=8192)
+            ids, tags = encode_supervision(item, vocab, max_positions=max_positions)
             if tags[-1] != 1 or len(ids) <= len(prompt):
                 raise RowRejected("whole_answer_or_eos_not_supervised")
             rows.append(item)
@@ -180,7 +206,11 @@ def build(*, source_root, pure_source_dir, source_manifest_sha256, v43_zip,
                 "full_text": converted["full_text"],
                 "target_segments": converted["target_segments"],
                 "source_ref": {"kind": kind, "file": name, "line": line, "raw_sha256": source_sha}}
-        encode_supervision(item, vocab, max_positions=8192)
+        try:
+            encode_supervision(item, vocab, max_positions=max_positions)
+        except ValueError as exc:
+            stats["rejected_converted_legacy_python:"+str(exc).split(":", 1)[0]] += 1
+            continue
         rows.append(item)
         prompt_keys.add(canonical_prompt(prompt))
         family_keys.add(key)

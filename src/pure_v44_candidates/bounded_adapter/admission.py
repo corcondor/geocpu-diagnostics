@@ -23,7 +23,7 @@ PINNED_V43_CAPTURE_SOURCE_SHA256 = "6bcf453c32cacff89d3e6b3062162c3ae43f6027fe8f
 MIN_UNIQUE_TRAIN = 50_000
 MIN_PYTHON_CANDIDATES = 10_000
 MIN_PUBLIC_TIR = 5_000
-MIN_CONVERTED_CPU = 5_000
+MIN_CONVERTED_CPU = 10_000
 MIN_PUBLIC_MULTILINGUAL_CODE = 10_000
 MIN_JAPANESE = 10_000
 MIN_V43_TOOL_FREE_ANCHORS = 10_000
@@ -31,11 +31,36 @@ MIN_EVAL_PER_SPLIT = 64
 MIN_UNSEEN_JAPANESE = 16
 MIN_OLD_CPU_CASES = 12
 VERIFIER_SCHEMA = "geocpu_independent_full_row_replay_v1"
-VERIFIER_SOURCE_SHA256 = "4d7e04c2b22615388920257c9af2fff97704bca5cca88aa5d4872483ea2ce1d6"
+VERIFIER_SOURCE_SHA256 = "1c3106f32b557674d2a035f6093870260a2f98197866fa655ba3e85ca8c627a3"
+REQUIRED_V43_EVAL_SHA256 = {
+    "eval_v42_search_retrieval_aligned.jsonl": "c07d962d4fa59196d74b8223353a5f52d60cabe3d58bfe604c9d83b708e45ab6",
+    "eval_v42_search_retrieval_heldout.jsonl": "805d4b91ef9128095191cdeb1180e95b0759196f3d471204d2e47c6f77e6ef53",
+    "eval_swe_step_control_heldout.jsonl": "0bf62099ea2a41c8eb35c1ebdc2584f2c164ae3c82f741ab3eca44113f70f8cd",
+    "eval_v38_decomposed_state_bench200.jsonl": "e96db14ba2b6ec620d42bcaf598199da814d93cef971c334889bd88147567cd1",
+    "eval_v33_state_tracking_heldout.jsonl": "6406c92c106512d2046368d6acba2dfb2ff24181301a14e975d76700ab7ab7b5",
+    "jamcqa_manifest_test.jsonl": "f7590adbce3d8f444b089d102a7f79be091c942c7c132d7090fd4e3d0710543e",
+    "benchmark_8100_manifest.jsonl": "33723d78aaa1595b1ed7dbc3382ecb165ce788246f6f70a63470f5fa107de78e",
+    "eval_v41_logical_instruction_operators_heldout.jsonl": "b887aade00323a7241088a4e84dfcb166430f554209a09668ad204ea564e9989",
+}
 
 
 def canonical_prompt(value: str) -> str:
     return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", value)).strip()
+
+
+def canonical_question(value: str) -> str:
+    """Mirror the pinned public builder's family key for every split."""
+    text = unicodedata.normalize("NFKC", value).strip()
+    text = re.sub(r"^(?:ユーザー|user)\s*[:：]\s*", "", text, flags=re.I)
+    text = re.sub(r"\n\s*(?:アシスタント|assistant)\s*[:：]\s*$", "", text, flags=re.I)
+    text = re.sub(r"^\s*【分野:[^\n]*】\s*", "", text)
+    text = re.sub(r"(?m)^\s*分野\s*[:：][^\n]*\n?", "", text)
+    text = re.sub(r"\s*(?:正解|回答|答え)\s*[:：]\s*$", "", text)
+    return re.sub(r"\s+", "", text)
+
+
+def family_id_for_prompt(value: str) -> str:
+    return hashlib.sha256(("family:" + canonical_question(value)).encode("utf-8")).hexdigest()
 
 
 def source_ref_fields(ref: dict) -> tuple[str, str, int, str]:
@@ -96,6 +121,14 @@ def verify_dataset(data_dir: str | Path, expected_manifest_sha256: str) -> dict:
         raise ValueError("Uncertified dataset schema")
     if manifest.get("source_files", {}).get("v43_zip_sha256") != PINNED_V43_DATA_ZIP_SHA256:
         raise ValueError("Original v43 training ZIP is not the pinned archive")
+    evaluation_pins = manifest.get("evaluation_input_pins")
+    if not isinstance(evaluation_pins, list):
+        raise ValueError("Fixed v43 evaluation manifests have not been pinned")
+    pinned_eval = {Path(item["path"]).name: item["sha256"] for item in evaluation_pins
+                   if isinstance(item, dict) and isinstance(item.get("path"), str)
+                   and isinstance(item.get("sha256"), str)}
+    if any(pinned_eval.get(name) != expected for name, expected in REQUIRED_V43_EVAL_SHA256.items()):
+        raise ValueError("A required original v43 evaluation manifest is missing or changed")
     files = manifest.get("files", {})
     required = ("train.jsonl", "old_skill_eval.jsonl", "unseen_eval.jsonl",
                 "v43_original_answers.jsonl")
@@ -109,6 +142,7 @@ def verify_dataset(data_dir: str | Path, expected_manifest_sha256: str) -> dict:
         raise ValueError("Train and evaluation family separation was not certified")
 
     train_prompts: set[str] = set()
+    train_questions: set[str] = set()
     train_families: set[str] = set()
     eval_prompts: set[str] = set()
     eval_families: set[str] = set()
@@ -130,6 +164,8 @@ def verify_dataset(data_dir: str | Path, expected_manifest_sha256: str) -> dict:
         family, row_id, bucket = row.get("family_id"), row.get("id"), row.get("bucket")
         if not all(isinstance(x, str) and x for x in (prompt, target, family, row_id, bucket)):
             raise ValueError(f"Incomplete training lineage at train.jsonl:{number}")
+        if family != family_id_for_prompt(prompt):
+            raise ValueError(f"Training family ID differs from canonical question at train.jsonl:{number}")
         if bucket not in ("public_python_tir", "converted_legacy_python", "japanese_prose",
                           "v43_tool_free_anchor", "public_multilingual_code"):
             raise ValueError(f"Unknown training bucket at train.jsonl:{number}")
@@ -141,6 +177,9 @@ def verify_dataset(data_dir: str | Path, expected_manifest_sha256: str) -> dict:
             raise ValueError(f"Duplicate training instance ID at train.jsonl:{number}")
         train_ids.add(row_id)
         train_prompts.add(canonical_prompt(prompt))
+        if canonical_question(prompt) in train_questions:
+            raise ValueError(f"Duplicate canonical training question at train.jsonl:{number}")
+        train_questions.add(canonical_question(prompt))
         train_families.add(family)
         counts["train_rows"] += 1
         counts["train_" + bucket] += 1
@@ -167,6 +206,8 @@ def verify_dataset(data_dir: str | Path, expected_manifest_sha256: str) -> dict:
                                                        row.get("bucket"))
             if not all(isinstance(x, str) and x for x in (prompt, family, row_id, expected, bucket)):
                 raise ValueError(f"Incomplete evaluation row at {split}.jsonl:{number}")
+            if family != family_id_for_prompt(prompt):
+                raise ValueError(f"Evaluation family ID differs from canonical question at {split}.jsonl:{number}")
             if split == "old_skill_eval":
                 if type(row.get("v43_cpu_task")) is not bool:
                     raise ValueError(f"Old-skill row lacks CPU-task classification at {split}.jsonl:{number}")
@@ -182,7 +223,8 @@ def verify_dataset(data_dir: str | Path, expected_manifest_sha256: str) -> dict:
                         or original.get("expected_answer") != expected):
                     raise ValueError(f"Old-skill row differs from pinned original v43 raw answer at {split}.jsonl:{number}")
             normalized = canonical_prompt(prompt)
-            if normalized in train_prompts or normalized in eval_prompts:
+            question = canonical_question(prompt)
+            if normalized in train_prompts or normalized in eval_prompts or question in train_questions:
                 raise ValueError(f"Evaluation prompt overlap at {split}.jsonl:{number}")
             if family in train_families or family in eval_families or row_id in train_ids or row_id in eval_ids:
                 raise ValueError(f"Evaluation lineage overlap at {split}.jsonl:{number}")
@@ -223,6 +265,8 @@ def require_independent_execution_verification(data: dict, *, data_dir: str | Pa
     checks its source version, result closure and exact row coverage. Neither
     author-supplied booleans nor 64-hex receipt-looking strings suffice.
     """
+    if expected_meta_sha256 != PINNED_V43_META_SHA256:
+        raise ValueError("Tokenizer metadata must be the fixed original v43 metadata")
     if proof_dir is None or not expected_proof_sha256:
         raise RuntimeError("Independent full-row replay proof is missing; GPU work is blocked")
     if file_sha256(Path(__file__).with_name("independent_verify.py")) != VERIFIER_SOURCE_SHA256:

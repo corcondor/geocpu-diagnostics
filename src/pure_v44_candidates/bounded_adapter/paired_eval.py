@@ -15,7 +15,8 @@ from pathlib import Path
 
 from adapter import (AdapterSpec, adapter_parameters, file_sha256,
                      install_adapters, resume_adapter_checkpoint)
-from admission import (require_independent_execution_verification, require_v43_native_baseline, verify_dataset,
+from admission import (PINNED_V43_META_SHA256, require_independent_execution_verification,
+                       require_v43_native_baseline, verify_dataset,
                        verify_source_manifest)
 from train_stage import (PARENT_BYTES, PARENT_SHA256, PARENT_STORAGE_COUNT,
                          _source_imports)
@@ -73,7 +74,9 @@ def main(argv=None):
         args.data_dir, proof_dir=args.v43_native_proof_dir,
         expected_capture_sha256=args.v43_native_capture_sha256,
         expected_grade_sha256=args.v43_native_grade_sha256)
-    if file_sha256(args.parent) != PARENT_SHA256 or file_sha256(args.meta) != args.meta_sha256:
+    if (file_sha256(args.parent) != PARENT_SHA256
+            or args.meta_sha256 != PINNED_V43_META_SHA256
+            or file_sha256(args.meta) != args.meta_sha256):
         raise ValueError("Parent checkpoint or metadata differs")
     if file_sha256(args.adapter) != args.adapter_sha256:
         raise ValueError("Adapter checkpoint differs")

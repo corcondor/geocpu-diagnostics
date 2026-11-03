@@ -18,7 +18,8 @@ from pathlib import Path
 
 from adapter import (AdapterSpec, adapter_parameters, file_sha256, install_adapters,
                      resume_adapter_checkpoint, save_adapter_checkpoint)
-from admission import (require_independent_execution_verification, require_v43_native_baseline, verify_dataset,
+from admission import (PINNED_V43_META_SHA256, require_independent_execution_verification,
+                       require_v43_native_baseline, verify_dataset,
                        verify_source_manifest)
 
 
@@ -64,6 +65,8 @@ def parse_args(argv=None):
     parser.add_argument("--resume-sha256")
     parser.add_argument("--previous-gate")
     parser.add_argument("--previous-gate-sha256")
+    parser.add_argument("--previous-evidence-map")
+    parser.add_argument("--previous-evidence-map-sha256")
     parser.add_argument("--verification-proof-dir")
     parser.add_argument("--verification-proof-sha256")
     parser.add_argument("--v43-native-proof-dir")
@@ -87,7 +90,8 @@ def _source_imports(source_dir):
     return CEDConfig, GeoCPU_CED_v2, IntegratedModelV44Python, load_v43_neural_weights, recover_checkpoint, StrictDataset, batches_for_lengths, collate
 
 
-def _verify_previous_gate(path, expected_gate_sha256, checkpoint_sha256, data_manifest_sha256):
+def _verify_previous_gate(path, expected_gate_sha256, checkpoint_sha256, data_manifest_sha256,
+                          evidence_map_path, evidence_map_sha256):
     if path is None or not expected_gate_sha256 or file_sha256(path) != expected_gate_sha256:
         raise ValueError("A completed retention gate is required before resuming another stage")
     proof = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -99,11 +103,34 @@ def _verify_previous_gate(path, expected_gate_sha256, checkpoint_sha256, data_ma
             or proof.get("checkpoint_sha256") != checkpoint_sha256
             or proof.get("data_manifest_sha256") != data_manifest_sha256
             or proof.get("old_skill_regressions") != 0
+            or proof.get("checks", {}).get("old_v43_natural_eos_retained_on_every_item") is not True
             or proof.get("checks", {}).get("old_v43_cpu_tasks_semantically_correct_with_actual_python") is not True
             or type(proof.get("unseen_evaluated")) is not int
             or proof["unseen_evaluated"] < 64
             or proof.get("raw_answer_sha256") is None):
         raise ValueError("Previous adapter stage has no complete passing retention gate")
+    from retention_gate import build_gate
+    gate_source = Path(__file__).with_name("retention_gate.py")
+    if proof.get("retention_gate_source_sha256") != file_sha256(gate_source):
+        raise ValueError("Previous retention gate code differs from the recorded evaluator")
+    inputs = proof.get("evidence_inputs")
+    if not isinstance(inputs, dict):
+        raise ValueError("Previous retention gate lacks pinned underlying evidence")
+    if (not evidence_map_path or not evidence_map_sha256
+            or file_sha256(evidence_map_path) != evidence_map_sha256):
+        raise ValueError("A pinned relocation map for the previous raw evidence is required")
+    moved = json.loads(Path(evidence_map_path).read_text(encoding="utf-8"))
+    path_keys = {"data_dir", "paired_dir", "packet_dir", "grades_path", "grade_pin_path",
+                 "verification_proof_dir", "v43_native_proof_dir"}
+    if (not isinstance(moved, dict) or set(moved) != path_keys
+            or any(not isinstance(moved[key], str) or not Path(moved[key]).exists()
+                   for key in path_keys)):
+        raise ValueError("Previous evidence relocation map is incomplete")
+    rebuilt = build_gate(**{**inputs, **moved})
+    # Only the verified transport paths may differ between Kaggle runtimes.
+    rebuilt["evidence_inputs"] = inputs
+    if rebuilt != proof:
+        raise ValueError("Previous retention gate cannot be reproduced from its raw evidence")
 
 
 def _write_new_json(path: Path, value):
@@ -190,14 +217,16 @@ def main(argv=None):
     data = verify_dataset(args.data_dir, args.data_manifest_sha256)
     if file_sha256(args.parent) != PARENT_SHA256:
         raise ValueError("Original v43 checkpoint SHA differs")
-    if file_sha256(args.meta) != args.meta_sha256:
+    if args.meta_sha256 != PINNED_V43_META_SHA256 or file_sha256(args.meta) != args.meta_sha256:
         raise ValueError("Metadata SHA differs")
     if args.resume_checkpoint is not None:
         if not args.resume_sha256 or file_sha256(args.resume_checkpoint) != args.resume_sha256:
             raise ValueError("Resume adapter SHA differs")
         _verify_previous_gate(args.previous_gate, args.previous_gate_sha256,
-                              args.resume_sha256, args.data_manifest_sha256)
-    elif args.resume_sha256 or args.previous_gate or args.previous_gate_sha256:
+                              args.resume_sha256, args.data_manifest_sha256,
+                              args.previous_evidence_map, args.previous_evidence_map_sha256)
+    elif any((args.resume_sha256, args.previous_gate, args.previous_gate_sha256,
+              args.previous_evidence_map, args.previous_evidence_map_sha256)):
         raise ValueError("Resume arguments must be supplied together")
     admission = {"status": "PASS", "source": source, "data": data,
                  "parent_sha256": PARENT_SHA256, "meta_sha256": args.meta_sha256,

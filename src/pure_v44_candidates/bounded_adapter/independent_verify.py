@@ -19,7 +19,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from adapter import file_sha256
-from admission import (PINNED_V43_DATA_ZIP_SHA256, source_ref_fields,
+from admission import (PINNED_V43_DATA_ZIP_SHA256, PINNED_V43_META_SHA256, source_ref_fields,
                        verify_dataset, verify_source_manifest)
 
 
@@ -190,9 +190,13 @@ def verify(*, data_dir: Path, data_manifest_sha256: str, source_root: Path,
         raise ValueError("Converter cannot be loaded")
     converter = importlib.util.module_from_spec(module_spec)
     module_spec.loader.exec_module(converter)
-    if file_sha256(meta_path) != meta_sha256:
+    if meta_sha256 != PINNED_V43_META_SHA256 or file_sha256(meta_path) != meta_sha256:
         raise ValueError("Tokenizer metadata SHA differs")
-    vocab = json.loads(meta_path.read_text(encoding="utf-8"))["vocab"]
+    metadata = json.loads(meta_path.read_text(encoding="utf-8"))
+    max_positions = metadata["config"]["max_positions"]
+    if max_positions != 2048:
+        raise ValueError("Pinned original v43 model context length differs from 2048")
+    vocab = metadata["vocab"]
     cpu = QwenputerExecutionController(ExactRAM8x32(), CompiledOperators32())
     receipts = []
     with PythonExecutor() as executor:
@@ -221,7 +225,7 @@ def verify(*, data_dir: Path, data_manifest_sha256: str, source_root: Path,
                 calls, observation_sha = replay_anchor(row, source, public_prepare)
             else:
                 raise ValueError("Unrecognized training bucket: " + str(bucket))
-            ids, tags = encode_supervision(row, vocab, max_positions=8192)
+            ids, tags = encode_supervision(row, vocab, max_positions=max_positions)
             if len(ids) < 2 or tags[-1] != 1:
                 raise ValueError("Full supervision or true EOS is missing")
             receipt = {"id": row["id"], "train_row_sha256": digest(line),
