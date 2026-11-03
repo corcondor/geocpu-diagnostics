@@ -19,7 +19,8 @@ from collections import defaultdict
 from pathlib import Path
 
 from adapter import file_sha256
-from admission import source_ref_fields, verify_dataset, verify_source_manifest
+from admission import (PINNED_V43_DATA_ZIP_SHA256, source_ref_fields,
+                       verify_dataset, verify_source_manifest)
 
 
 SCHEMA = "geocpu_independent_full_row_replay_v1"
@@ -66,7 +67,8 @@ def source_rows(train_rows: list[dict], source_root: Path, legacy_zip: Path,
                "code/" + public_lock["repos"]["code"]["files"]["train"]["path"]:
                ("public_jsonl", public_lock["repos"]["code"]["files"]["train"]["sha256"])}
     with zipfile.ZipFile(legacy_zip) as archive:
-        if file_sha256(legacy_zip) != manifest["source_files"]["v43_zip_sha256"]:
+        if (manifest["source_files"]["v43_zip_sha256"] != PINNED_V43_DATA_ZIP_SHA256
+                or file_sha256(legacy_zip) != PINNED_V43_DATA_ZIP_SHA256):
             raise ValueError("Pinned v43 archive SHA differs")
         for (kind, name), lines in requests.items():
             if kind != "v43_zip_member":

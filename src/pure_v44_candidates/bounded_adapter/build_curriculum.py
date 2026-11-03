@@ -16,7 +16,7 @@ from collections import Counter
 from pathlib import Path
 
 from adapter import file_sha256
-from admission import (SCHEMA, VERIFIER_SOURCE_SHA256, canonical_prompt,
+from admission import (SCHEMA, PINNED_V43_DATA_ZIP_SHA256, VERIFIER_SOURCE_SHA256, canonical_prompt,
                        source_ref_fields, verify_source_manifest)
 from independent_verify import canonical_bytes
 
@@ -76,7 +76,9 @@ def build(*, source_root, pure_source_dir, source_manifest_sha256, v43_zip,
     if numina_test.stat().st_size != test_spec["bytes"] or file_sha256(numina_test) != test_spec["sha256"]:
         raise ValueError("Original Numina test split differs")
     source_files["numina/"+test_spec["path"]] = test_spec["sha256"]
-    source_files["v43_zip_sha256"] = file_sha256(v43_zip)
+    if file_sha256(v43_zip) != PINNED_V43_DATA_ZIP_SHA256:
+        raise ValueError("Original v43 dataset ZIP differs from fixed SHA")
+    source_files["v43_zip_sha256"] = PINNED_V43_DATA_ZIP_SHA256
     sys.path.insert(0, str(pure_source_dir))
     from prepare_public_v44 import (RowRejected, anchor_candidate, canonical_question,
                                     evaluation_index, json_records, normalize_tir,

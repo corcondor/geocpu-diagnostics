@@ -14,6 +14,12 @@ from adapter import file_sha256
 
 SCHEMA = "geocpu_bounded_python_tir_dataset_v1"
 PINNED_PURE_SOURCE_MANIFEST_SHA256 = "7c072451921710d7a43ee3172957def3c279e40a21ae03ec6c416d07a84baebf"
+PINNED_V43_DATA_ZIP_SHA256 = "0102dc9b01b4b795c3123b18cefc7a8734e47a06dd85292af464d3232704d198"
+PINNED_V43_PARENT_SHA256 = "a4b95d7d0f486146196271b3b1fbc6a1b6b3342d8fadd590320fc3842c1e80e5"
+PINNED_V43_SWE_SOURCE_SHA256 = "0bf62099ea2a41c8eb35c1ebdc2584f2c164ae3c82f741ab3eca44113f70f8cd"
+PINNED_V43_SWE_EVALUATOR_SHA256 = "c3589b97f531b6460a95907e56284df5f20be990eff1a4d2e56a921b4c705899"
+PINNED_V43_META_SHA256 = "7efa8dea9a0100e2250f72805c89cca7a281efec30b4479795743814756cdcd5"
+PINNED_V43_CAPTURE_SOURCE_SHA256 = "6bcf453c32cacff89d3e6b3062162c3ae43f6027fe8f6b3336c8c2c8740fc12d"
 MIN_UNIQUE_TRAIN = 50_000
 MIN_PYTHON_CANDIDATES = 10_000
 MIN_PUBLIC_TIR = 5_000
@@ -25,7 +31,7 @@ MIN_EVAL_PER_SPLIT = 64
 MIN_UNSEEN_JAPANESE = 16
 MIN_OLD_CPU_CASES = 12
 VERIFIER_SCHEMA = "geocpu_independent_full_row_replay_v1"
-VERIFIER_SOURCE_SHA256 = "325dbb2ba5eb0e73e5b01a7d6646e2724f0844e47b04bfbd5f27a96f844a4170"
+VERIFIER_SOURCE_SHA256 = "4d7e04c2b22615388920257c9af2fff97704bca5cca88aa5d4872483ea2ce1d6"
 
 
 def canonical_prompt(value: str) -> str:
@@ -88,6 +94,8 @@ def verify_dataset(data_dir: str | Path, expected_manifest_sha256: str) -> dict:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if manifest.get("schema") != SCHEMA:
         raise ValueError("Uncertified dataset schema")
+    if manifest.get("source_files", {}).get("v43_zip_sha256") != PINNED_V43_DATA_ZIP_SHA256:
+        raise ValueError("Original v43 training ZIP is not the pinned archive")
     files = manifest.get("files", {})
     required = ("train.jsonl", "old_skill_eval.jsonl", "unseen_eval.jsonl",
                 "v43_original_answers.jsonl")
@@ -230,6 +238,7 @@ def require_independent_execution_verification(data: dict, *, data_dir: str | Pa
             or proof.get("data_manifest_sha256") != data["manifest_sha256"]
             or proof.get("train_sha256") != data["files_sha256"]["train.jsonl"]
             or proof.get("meta_sha256") != expected_meta_sha256
+            or proof.get("v43_zip_sha256") != PINNED_V43_DATA_ZIP_SHA256
             or proof.get("pure_source_manifest_sha256") != expected_source_manifest_sha256
             or proof.get("train_rows") != data["counts"]["train_rows"]
             or not re.fullmatch(r"[0-9a-f]{64}", str(proof.get("converter_source_sha256", "")))
@@ -283,8 +292,79 @@ def require_v43_native_baseline(data_dir: str | Path, *, proof_dir: str | Path |
     proof_dir = Path(proof_dir)
     captured = proof_dir / "v43_native_full_answers.jsonl"
     graded = proof_dir / "v43_native_external_grades.jsonl"
+    all_captured = proof_dir / "swe200_full_answers.jsonl"
+    all_grades = proof_dir / "swe200_original_grades.jsonl"
+    original_audit = proof_dir / "original_swe_audit.jsonl"
+    claim_path = proof_dir / "claim.json"
+    if file_sha256(Path(__file__).with_name("v43_native_swe_capture_readonly.py")) != PINNED_V43_CAPTURE_SOURCE_SHA256:
+        raise ValueError("Original v43 capture source SHA differs")
+    claim = json.loads(claim_path.read_text(encoding="utf-8"))
+    if (claim.get("source_zip_sha256") != PINNED_V43_DATA_ZIP_SHA256
+            or claim.get("parent_sha256") != PINNED_V43_PARENT_SHA256
+            or claim.get("meta_sha256") != PINNED_V43_META_SHA256
+            or claim.get("eval_member_sha256") != PINNED_V43_SWE_SOURCE_SHA256
+            or claim.get("original_evaluator_sha256") != PINNED_V43_SWE_EVALUATOR_SHA256
+            or claim.get("script_sha256") != PINNED_V43_CAPTURE_SOURCE_SHA256
+            or claim.get("suite") != "heldout_swe200"
+            or claim.get("generation_limit") != 2048
+            or claim.get("training_updates") != 0
+            or claim.get("parent_checkpoint_modified") is not False):
+        raise ValueError("Original v43 capture claim differs from pinned source/profile")
     if file_sha256(captured) != expected_capture_sha256 or file_sha256(graded) != expected_grade_sha256:
         raise ValueError("Pinned original-v43 native capture or external grade SHA differs")
+    for name in ("old_skill_eval.jsonl", "v43_original_answers.jsonl"):
+        if file_sha256(Path(data_dir) / name) != file_sha256(proof_dir / name):
+            raise ValueError("Dataset old-skill source differs from native v43 capture: " + name)
+    full_rows = [row for _, row in _lines(all_captured)]
+    audit_rows = [row for _, row in _lines(original_audit)]
+    full_grade_rows = [row for _, row in _lines(all_grades)]
+    if not (len(full_rows) == len(audit_rows) == len(full_grade_rows) == 200):
+        raise ValueError("Original v43 evaluator did not cover exactly SWE200")
+    accepted_ids = set()
+    all_ids = set()
+    for index, (answer, audit, grade) in enumerate(zip(full_rows, audit_rows, full_grade_rows, strict=True)):
+        raw = answer.get("raw_output")
+        trace = answer.get("cpu_trace")
+        if not isinstance(trace, list) or any(not isinstance(step, dict) for step in trace):
+            raise ValueError(f"Original v43 CPU trace malformed at SWE row {index}")
+        r0_writes = [step["val"] for step in trace if step.get("dest") == "R0"]
+        cpu_final_val = str(r0_writes[-1]) if r0_writes else None
+        cleaned = re.sub(r"<[^>]+>(?:\s*=>\s*\[[^\]]+\])?", "", raw.strip()).strip() if isinstance(raw, str) else ""
+        text_emitted_ans = cleaned.split()[-1] if cleaned.split() else ""
+        reconstructed_final = (cpu_final_val if answer.get("cpu_invocations", 0) > 0
+                               and cpu_final_val is not None else text_emitted_ans)
+        reconstructed_correct = reconstructed_final == answer.get("expected_answer")
+        if (answer.get("id") != audit.get("id") or answer.get("id") != grade.get("id")
+                or answer.get("source_index") != index
+                or answer.get("source_member_sha256") != PINNED_V43_SWE_SOURCE_SHA256
+                or answer.get("parent_sha256") != PINNED_V43_PARENT_SHA256
+                or answer.get("profile") != "v43_cpu_native"
+                or answer.get("generation_limit") != 2048
+                or answer.get("full_answer_captured") is not True
+                or answer.get("reference_given_to_generation") is not False
+                or not isinstance(raw, str)
+                or answer.get("raw_output_sha256") != hashlib.sha256(raw.encode("utf-8")).hexdigest()
+                or audit.get("raw_output") != raw.strip()
+                or audit.get("target") != answer.get("expected_answer")
+                or audit.get("cpu_invocations") != answer.get("cpu_invocations")
+                or audit.get("ended_with_eos") != answer.get("ended_with_eos")
+                or grade.get("scorer_sha256") != PINNED_V43_SWE_EVALUATOR_SHA256
+                or grade.get("prompt_sha256") != answer.get("prompt_sha256")
+                or grade.get("raw_output_sha256") != answer.get("raw_output_sha256")
+                or grade.get("expected_answer") != answer.get("expected_answer")
+                or grade.get("correct") != audit.get("is_correct")
+                or audit.get("is_correct") != reconstructed_correct
+                or audit.get("final_answer") != reconstructed_final
+                or grade.get("final_answer") != audit.get("final_answer")
+                or grade.get("expected_loops") != audit.get("expected_loops")
+                or grade.get("executed_loops") != audit.get("executed_loops")
+                or grade.get("step_category") != audit.get("step_category")):
+            raise ValueError(f"Original v43 full answer/evaluator audit mismatch at SWE row {index}")
+        if answer["id"] in all_ids:
+            raise ValueError("Original v43 SWE IDs are not unique")
+        all_ids.add(answer["id"])
+        if grade["correct"] is True and answer["ended_with_eos"] is True:
+            accepted_ids.add(answer["id"])
     cases = {row["id"]: row for _, row in _lines(Path(data_dir) / "old_skill_eval.jsonl")}
     originals = {row["id"]: row for _, row in _lines(Path(data_dir) / "v43_original_answers.jsonl")}
     answer_rows = [row for _, row in _lines(captured)]
@@ -294,11 +374,13 @@ def require_v43_native_baseline(data_dir: str | Path, *, proof_dir: str | Path |
     if (len(answer_rows) != len(cases) or len(grade_rows) != len(cases)
             or set(cases) != set(originals) or set(cases) != set(answers) or set(cases) != set(grades)):
         raise ValueError("Original-v43 native proof does not cover every fixed old-skill case")
+    if set(cases) != accepted_ids:
+        raise ValueError("Fixed old-skill cases differ from original v43 SWE correct subset")
     for ident, case in cases.items():
         answer, grade = answers[ident], grades[ident]
         text = answer.get("raw_output")
         if (answer.get("profile") != "v43_cpu_native"
-                or answer.get("parent_sha256") != "a4b95d7d0f486146196271b3b1fbc6a1b6b3342d8fadd590320fc3842c1e80e5"
+                or answer.get("parent_sha256") != PINNED_V43_PARENT_SHA256
                 or answer.get("full_answer_captured") is not True
                 or not isinstance(text, str)
                 or answer.get("prompt") != case["prompt"]
@@ -308,7 +390,14 @@ def require_v43_native_baseline(data_dir: str | Path, *, proof_dir: str | Path |
                 or grade.get("raw_output_sha256") != case["v43_original_raw_sha256"]
                 or grade.get("expected_answer") != case["expected_answer"]
                 or grade.get("correct") is not True
+                or grade.get("scorer_sha256") != PINNED_V43_SWE_EVALUATOR_SHA256
                 or not isinstance(grade.get("reason"), str) or not grade["reason"]):
             raise ValueError("Original-v43 native capture/grade differs from fixed old-skill row: " + ident)
+        full = full_rows[answer["source_index"]]
+        if answer != full or grade != full_grade_rows[answer["source_index"]]:
+            raise ValueError("Accepted native subset differs from the original SWE200 capture: " + ident)
     return {"old_skill_originally_correct": len(cases),
-            "capture_sha256": expected_capture_sha256, "external_grade_sha256": expected_grade_sha256}
+            "capture_sha256": expected_capture_sha256, "external_grade_sha256": expected_grade_sha256,
+            "original_evaluator_sha256": PINNED_V43_SWE_EVALUATOR_SHA256,
+            "capture_source_sha256": PINNED_V43_CAPTURE_SOURCE_SHA256,
+            "all_swe_cases": len(full_rows)}

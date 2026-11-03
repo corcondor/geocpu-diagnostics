@@ -60,7 +60,7 @@ class AdmissionTests(unittest.TestCase):
                         "all_tool_observations_executed_and_matched": True,
                         "all_legacy_cpu_python_traces_matched": True,
                         "source_family_separation_checked": True},
-                    "source_files": {"v43_zip_sha256": "d" * 64},
+                    "source_files": {"v43_zip_sha256": admission.PINNED_V43_DATA_ZIP_SHA256},
                     "verification": {"converter_source_sha256": "e" * 64,
                                      "verifier_source_sha256": admission.VERIFIER_SOURCE_SHA256},
                     "counts": {"train_rows": 3, "train_converted_legacy_python": 1,
@@ -123,7 +123,8 @@ class AdmissionTests(unittest.TestCase):
                 out.write((json.dumps(receipt) + "\n").encode())
         proof = {"schema": admission.VERIFIER_SCHEMA, "status": "ALL_ROWS_REPLAYED",
                  "verifier_source_sha256": admission.VERIFIER_SOURCE_SHA256,
-                 "converter_source_sha256": "e" * 64, "v43_zip_sha256": "d" * 64,
+                 "converter_source_sha256": "e" * 64,
+                 "v43_zip_sha256": admission.PINNED_V43_DATA_ZIP_SHA256,
                  "data_manifest_sha256": sha, "train_sha256": data["files_sha256"]["train.jsonl"],
                  "meta_sha256": "c" * 64, "pure_source_manifest_sha256": "a" * 64,
                  "train_rows": 3,
@@ -146,14 +147,52 @@ class AdmissionTests(unittest.TestCase):
                 expected_capture_sha256=None, expected_grade_sha256=None)
         proof_dir = self.root / "original_native"
         proof_dir.mkdir()
-        capture = {"id": "o1", "profile": "v43_cpu_native",
-                   "parent_sha256": "a4b95d7d0f486146196271b3b1fbc6a1b6b3342d8fadd590320fc3842c1e80e5",
-                   "full_answer_captured": True, "prompt": "昔の問題", "raw_output": "3"}
-        grade = {"id": "o1", "prompt_sha256": hashlib.sha256("昔の問題".encode()).hexdigest(),
-                 "raw_output_sha256": hashlib.sha256("3".encode()).hexdigest(),
-                 "expected_answer": "3", "correct": True, "reason": "exact fixture"}
+        full, audits, grades = [], [], []
+        for index in range(200):
+            ident = "o1" if index == 0 else f"other_{index}"
+            prompt = "昔の問題" if index == 0 else f"別の問題 {index}"
+            raw = "3" if index == 0 else "0"
+            correct = index == 0
+            answer = {"id": ident, "source_index": index, "profile": "v43_cpu_native",
+                      "source_member_sha256": admission.PINNED_V43_SWE_SOURCE_SHA256,
+                      "parent_sha256": admission.PINNED_V43_PARENT_SHA256,
+                      "full_answer_captured": True, "reference_given_to_generation": False,
+                      "generation_limit": 2048, "prompt": prompt,
+                      "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
+                      "raw_output": raw, "raw_output_sha256": hashlib.sha256(raw.encode()).hexdigest(),
+                      "expected_answer": "3", "cpu_invocations": 1,
+                      "cpu_trace": [], "ended_with_eos": True}
+            audit = {"id": ident, "raw_output": raw, "target": "3",
+                     "cpu_invocations": 1, "ended_with_eos": True,
+                     "is_correct": correct, "final_answer": raw,
+                     "expected_loops": 1, "executed_loops": 1,
+                     "step_category": "fixture"}
+            grade = {"id": ident, "prompt_sha256": answer["prompt_sha256"],
+                     "raw_output_sha256": answer["raw_output_sha256"],
+                     "expected_answer": "3", "correct": correct,
+                     "scorer_sha256": admission.PINNED_V43_SWE_EVALUATOR_SHA256,
+                     "final_answer": raw, "expected_loops": 1, "executed_loops": 1,
+                     "step_category": "fixture", "reason": "exact fixture"}
+            full.append(answer)
+            audits.append(audit)
+            grades.append(grade)
+        capture, grade = full[0], grades[0]
+        _write_jsonl(proof_dir / "swe200_full_answers.jsonl", full)
+        _write_jsonl(proof_dir / "original_swe_audit.jsonl", audits)
+        _write_jsonl(proof_dir / "swe200_original_grades.jsonl", grades)
+        (proof_dir / "claim.json").write_text(json.dumps({
+            "source_zip_sha256": admission.PINNED_V43_DATA_ZIP_SHA256,
+            "parent_sha256": admission.PINNED_V43_PARENT_SHA256,
+            "meta_sha256": admission.PINNED_V43_META_SHA256,
+            "eval_member_sha256": admission.PINNED_V43_SWE_SOURCE_SHA256,
+            "original_evaluator_sha256": admission.PINNED_V43_SWE_EVALUATOR_SHA256,
+            "script_sha256": admission.PINNED_V43_CAPTURE_SOURCE_SHA256,
+            "suite": "heldout_swe200", "generation_limit": 2048,
+            "training_updates": 0, "parent_checkpoint_modified": False}), encoding="utf-8")
         _write_jsonl(proof_dir / "v43_native_full_answers.jsonl", [capture])
         _write_jsonl(proof_dir / "v43_native_external_grades.jsonl", [grade])
+        for name in ("old_skill_eval.jsonl", "v43_original_answers.jsonl"):
+            (proof_dir / name).write_bytes((self.root / name).read_bytes())
         accepted = admission.require_v43_native_baseline(
             self.root, proof_dir=proof_dir,
             expected_capture_sha256=file_sha256(proof_dir / "v43_native_full_answers.jsonl"),
