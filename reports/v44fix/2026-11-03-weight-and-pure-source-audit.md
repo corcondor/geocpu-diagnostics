@@ -23,6 +23,8 @@ Takehiらの[一次報告](https://rikiyat.github.io/blog/weight-space-programmi
 
 純v44 Hotfixの実保存 `before_public_answers.json` と `after_public_answers.json` の同じ4公開未学習例を集計した。`before` は元の純v44 releaseからSHA固定で再利用された0更新時の原回答で、Hotfixから再生成したものではない。学習前は4/4本が2,048トークン上限、自然EOS 0/4、Python呼出し0/4。10,000更新後は3/4本が上限、自然EOS 1/4、Python呼出し0/4。学習前の時点で「$104$ and $Calculate」の反復や「10.1mg」の反復が原回答にある。したがって学習後の崩れを、追加学習が初めて作った現象とは扱えない。4例の観測だけから全分野の率や原因比率を推定しない。
 
+保存済み8本の生成トークンへ、元v43の完全一致8トークン列×4回／16トークン列×4回の反復停止条件を再適用した。**発火は0/8本**。元v43の停止処理を純v44へ戻すだけでは、観測した長い反復を短縮できない。これは既存トークン列の再生であり、v43のモデルが同じ列を出すという主張ではない。[再生コード](../../src/pure_v44_candidates/replay_v43_guard_saved_tokens.py)と[全8本の原票](v43_guard_replay_saved_pure_hotfix.json)に入力SHAと判定位置を保存した。
+
 ## 追加の現行原物照合
 
 純v44 Hotfixの実行保存物 `strict_neural_migration.json` は、v43親から533神経テンソル・247,568,664パラメータを `strict=True` で読み、全FP32テンソルの内容一致を確認している。元コードも固定回路の既知バッファ以外の欠落を拒否する。この証拠は**起動時の重みの取り違え**を退けるが、入力形式や生成経路の変更による回答悪化は退けない。

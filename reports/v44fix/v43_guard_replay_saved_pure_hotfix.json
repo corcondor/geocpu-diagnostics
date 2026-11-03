@@ -1,0 +1,77 @@
+{
+  "after": {
+    "cases": [
+      {
+        "case_index": 0,
+        "saved_sampled_tokens": 2048,
+        "saved_stop_reason": "sampled_token_limit",
+        "v43_guard_first_sampled_position": null,
+        "v43_guard_reason": null
+      },
+      {
+        "case_index": 1,
+        "saved_sampled_tokens": 2048,
+        "saved_stop_reason": "sampled_token_limit",
+        "v43_guard_first_sampled_position": null,
+        "v43_guard_reason": null
+      },
+      {
+        "case_index": 2,
+        "saved_sampled_tokens": 15,
+        "saved_stop_reason": "eos",
+        "v43_guard_first_sampled_position": null,
+        "v43_guard_reason": null
+      },
+      {
+        "case_index": 3,
+        "saved_sampled_tokens": 2048,
+        "saved_stop_reason": "sampled_token_limit",
+        "v43_guard_first_sampled_position": null,
+        "v43_guard_reason": null
+      }
+    ],
+    "path": "G:\\マイドライブ\\GeoCPU_Frontier_CoTraining_v44_PythonTIR_Hotfix_20261103\\run_1\\training\\after_public_answers.json",
+    "sha256": "c4014fdff010904738621ee64955161d4483cd5df8507f2871d43ad54413ddc3"
+  },
+  "before": {
+    "cases": [
+      {
+        "case_index": 0,
+        "saved_sampled_tokens": 2048,
+        "saved_stop_reason": "sampled_token_limit",
+        "v43_guard_first_sampled_position": null,
+        "v43_guard_reason": null
+      },
+      {
+        "case_index": 1,
+        "saved_sampled_tokens": 2048,
+        "saved_stop_reason": "sampled_token_limit",
+        "v43_guard_first_sampled_position": null,
+        "v43_guard_reason": null
+      },
+      {
+        "case_index": 2,
+        "saved_sampled_tokens": 2048,
+        "saved_stop_reason": "sampled_token_limit",
+        "v43_guard_first_sampled_position": null,
+        "v43_guard_reason": null
+      },
+      {
+        "case_index": 3,
+        "saved_sampled_tokens": 2048,
+        "saved_stop_reason": "sampled_token_limit",
+        "v43_guard_first_sampled_position": null,
+        "v43_guard_reason": null
+      }
+    ],
+    "path": "G:\\マイドライブ\\GeoCPU_Frontier_CoTraining_v44_PythonTIR_Hotfix_20261103\\run_1\\training\\before_public_answers.json",
+    "sha256": "1963884af3799a8cc3d9c53c328de49288b4670cb075a1c92ae5a33a52f16e40"
+  },
+  "schema": "geocpu_v43_guard_replay_saved_pure_v44_v1",
+  "scope": "Saved tokens only; no model inference, no token injection, no training",
+  "v43_source": {
+    "guard_lines": "776-782",
+    "path": "C:\\Users\\81808\\.openclaw\\reports\\jmmlu_v1\\ag_fused_fullqa_training_v1\\v43_source_readonly_pure_audit_20261103\\integrated_model_v30.py",
+    "sha256": "c391d893ce3906fb0f9b1dcfa3bdad3825ff1d68229ef05dde1751f06569d156"
+  }
+}
