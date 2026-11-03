@@ -229,14 +229,18 @@ class IntegratedModelV44Fix(IntegratedModelV42):
                                     stop_reason = "tool_worker_startup_error"
                                     break
                             result = tool.execute(match.group(1))
+                            python_trace.append({"code": match.group(1), "success": bool(result.get("success")),
+                                                 "stdout": result.get("stdout", ""), "error": result.get("error")})
                             obs = observation_text(result)
+                            normalized_obs = canonical_normalize_text(obs)
+                            if any(char not in vocab for char in normalized_obs):
+                                stop_reason = "tool_output_unencodable"
+                                break
                             if state.compact_prefix.shape[1] + len(obs) >= self.config.max_positions - 5:
                                 stop_reason = "context_limit"
                                 break
                             state, injected = inject(state, obs, normalize=True)
                             full_text += injected
-                            python_trace.append({"code": match.group(1), "success": bool(result.get("success")),
-                                                 "stdout": result.get("stdout", ""), "error": result.get("error")})
                             py_scan = len(model_text)
                             if not result.get("worker_alive", True):   # e.g. killed by a timeout
                                 if owned_executor:

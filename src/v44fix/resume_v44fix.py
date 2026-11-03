@@ -37,14 +37,21 @@ def training_binding(train_path: str | Path, meta_path: str | Path, root: str | 
                      max_tokens_per_micro: int, grad_accum_steps: int) -> dict:
     root = Path(root)
     source_names = ("runtime_v44fix.py", "resume_v44fix.py", "tir_masking_v44fix.py",
+                    "integrated_model_v44fix.py", "tier8_readonly_v44fix.py",
+                    "build_v44fix_data.py", "gpt/prepare_public_v44.py",
+                    "gpt/tir_engine_v44r1.py", "gpt/resource_limited_worker_v44r1.py",
                     "runtime_cotraining_v41_247M.py", "integrated_model_v42.py",
                     "integrated_model_v30.py", "GeoCPU_CED_v1.py", "GeoCPU_CED_v2.py",
                     "fast_encoder_scan.py", "qwenputer_controller_v30.py",
                     "cpu_circuit_v30.py", "local_search_engine_v42.py",
                     "official_dc_reference_v22.py", "tir_engine_v44r1.py",
                     "executor_worker_v44r1.py", "resource_limited_worker_v44r1.py")
+    corpus = root / "data" / "knowledge_corpus_v43.jsonl"
+    if not corpus.is_file():
+        raise FileNotFoundError("Pinned v43 search corpus is missing: " + str(corpus))
     return {"schema": SCHEMA, "parent_sha256": PARENT_SHA256,
             "train_sha256": sha256_file(train_path), "meta_sha256": sha256_file(meta_path),
+            "search_corpus_sha256": sha256_file(corpus),
             "source_sha256": {name: sha256_file(root / name) for name in source_names},
             "max_steps": int(max_steps), "batch_size": int(batch_size), "lr": float(lr),
             "max_tokens_per_micro": int(max_tokens_per_micro),

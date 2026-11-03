@@ -1,22 +1,9 @@
 # -*- coding: utf-8 -*-
-"""
-runtime_v44fix.py: Scaled 247.5M Knowledge-Relational & Search Co-Training Engine v43.
+"""v44fix training and read-only eight-tier evaluation in an isolated source overlay.
 
-Guarantees:
-1. Retains 100% of the v41/v42 verified architecture (d_model=768, 10 Enc, 14 Dec, FFN=3072).
-2. Warm-Starts from milestone checkpoint_step_5000.pt (preserving SWE 95.5%, State Tracking 85.5%, Logic 65.0%).
-3. Intensive Knowledge & Search Co-Training:
-   - 268,032 Unified samples in train_v43_knowledge_unified.jsonl.
-   - Enriches 4-Choice Academic Search CoT, Relational/Causal Knowledge CoT, and Multi-Hop Retrieval.
-4. Scaled 15,000-Step Training Schedule (~3.7 full epochs over unified dataset).
-5. Comprehensive 7-Tier Benchmark Suite including:
-   - Tier 1: Held-Out SWE Step Control (200 questions)
-   - Tier 2: Decomposed State Tracking (200 questions)
-   - Tier 3: SoftBank JamC-QA Full (2,309 questions)
-   - Tier 4: Canonical Broad 8,100 Full Benchmark (7,536 JMMLU + 164 SWE + 400 ARC)
-   - Tier 5: 6-Operator Logical Instruction Contrast (400 questions)
-   - Tier 6: Search-Augmented Multi-Hop Retrieval (200 questions)
-   - Tier 7: Formal A/B Benchmark: Closed-Book (学習のみ) vs Open-Book (学習＋検索あり)
+The training forward, losses, optimizer, and sampler are inherited from the
+v44fix TIR-consistency candidate. Tier 8 adds four original v44 prompts and
+four content-matched v43-format prompts, reported as separate profiles.
 """
 from __future__ import annotations
 import sys
@@ -43,7 +30,8 @@ sys.path.append(str(ROOT))
 
 from GeoCPU_CED_v1 import CEDConfig
 from GeoCPU_CED_v2 import GeoCPU_CED_v2
-from integrated_model_v42 import IntegratedModelV42
+from integrated_model_v44fix import IntegratedModelV44Fix
+from tier8_readonly_v44fix import evaluate_model as evaluate_tier8_model
 from local_search_engine_v42 import LocalSearchEngineV42
 
 import eval_step_control_heldout
@@ -65,8 +53,27 @@ from resume_v44fix import (
     verify_checkpoint,
 )
 
+def run_tier8_probe(model, vocab, inv_vocab, args, out_dir, checkpoint, step):
+    """Run the two distinct read-only Tier 8 profiles and save their raw output."""
+    model.eval()
+    original = evaluate_tier8_model(model, vocab, inv_vocab,
+                                    max_tokens=args.tier8_max_tokens, profile="original_v44")
+    aligned = evaluate_tier8_model(model, vocab, inv_vocab,
+                                   max_tokens=args.tier8_max_tokens, profile="aligned_v43")
+    report = {"schema": "geocpu_v44fix_tier8_readonly_v1", "checkpoint": str(checkpoint),
+              "checkpoint_sha256": sha256_file(checkpoint), "step": step,
+              "max_tokens": args.tier8_max_tokens,
+              "original_v44": original, "aligned_v43": aligned}
+    path = Path(args.tier8_output) if args.tier8_output else out_dir / f"tier8_step_{step}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("x", encoding="utf-8") as stream:
+        json.dump(report, stream, ensure_ascii=False, indent=2)
+        stream.write("\n")
+    print(f"  Tier 8 raw result: {path}")
+    return original, aligned
+
 def main():
-    parser = argparse.ArgumentParser(description="GeoCPU v43: Knowledge-Relational & Search Co-Training Runtime")
+    parser = argparse.ArgumentParser(description="GeoCPU v44fix training and eight-tier evaluation")
     parser.add_argument("--train_path", type=str, default=str(ROOT / "data" / "train_v43_knowledge_unified.jsonl"))
     parser.add_argument("--meta_path", type=str, default=str(ROOT / "base_metadata.json"))
     parser.add_argument("--warmstart_path", type=str, default=str(ROOT / "checkpoints" / "checkpoint_step_5000.pt"))
@@ -76,18 +83,28 @@ def main():
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--lr", type=float, default=3.5e-5)
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
-    parser.add_argument("--eval_only", action="store_true", help="Run full 7-tier benchmark suite directly")
+    parser.add_argument("--eval_only", action="store_true", help="Run full 8-tier benchmark suite directly")
+    parser.add_argument("--tier8_only", action="store_true",
+                        help="Read-only Tier 8 probe without running Tiers 1-7; implies --eval_only")
     parser.add_argument("--stop_at_step", type=int, default=0, help="v44fix: stop early (gate) while the LR schedule still targets --max_steps")
-    parser.add_argument("--skip_final_eval", action="store_true", help="v44fix: skip the 7-tier suite after training")
+    parser.add_argument("--skip_final_eval", action="store_true", help="v44fix: skip the 8-tier suite after training")
     parser.add_argument("--max_tokens_per_micro", type=int, default=0, help="v44fix: override token budget (CPU smoke tests)")
+    parser.add_argument("--tier8_max_tokens", type=int, default=2048,
+                        help="Maximum native generated tokens per Tier 8 question; use 128 to reproduce v44's old cap")
+    parser.add_argument("--tier8_output", type=str, default=None,
+                        help="New JSON result path; defaults to output_dir/tier8_step_STEP.json and never overwrites")
     parser.add_argument("--require_exact_resume", action="store_true",
                         help="Require a verified v44fix checkpoint with optimizer, RNG, and sampler cursor")
     args = parser.parse_args()
+    if args.tier8_only:
+        if args.skip_final_eval:
+            parser.error("--tier8_only cannot be combined with --skip_final_eval")
+        args.eval_only = True
 
     print("=" * 95)
     print(f"[{now_iso()}] V43 SCALED 247.5M KNOWLEDGE-RELATIONAL & SEARCH CO-TRAINING ENGINE")
     print("=" * 95)
-    print(f"  Mode:            {'EVALUATION ONLY (7-Tier Benchmarks)' if args.eval_only else 'CO-TRAINING + 7-TIER BENCHMARKS'}")
+    print(f"  Mode:            {'EVALUATION ONLY (8-Tier Benchmarks)' if args.eval_only else 'CO-TRAINING + 8-TIER BENCHMARKS'}")
     print(f"  Train File:      {args.train_path}")
     target_ckpt = args.checkpoint or args.warmstart_path
     print(f"  Active Ckpt:     {target_ckpt}")
@@ -109,8 +126,12 @@ def main():
 
     base_model = GeoCPU_CED_v2(cfg)
     corpus_v43 = ROOT / "data" / "knowledge_corpus_v43.jsonl"
-    search_engine = LocalSearchEngineV42(corpus_path=corpus_v43 if corpus_v43.exists() else None)
-    model = IntegratedModelV42(base=base_model, search_engine=search_engine)
+    if not corpus_v43.is_file():
+        raise FileNotFoundError("Pinned v43 search corpus is missing: " + str(corpus_v43))
+    search_engine = LocalSearchEngineV42(corpus_path=corpus_v43)
+    # V44Fix adds only the Python generation method; inherited forward/parameters
+    # remain those of V42, so the training computation and checkpoint keys are unchanged.
+    model = IntegratedModelV44Fix(base=base_model, search_engine=search_engine)
 
     total_params = sum(p.numel() for p in model.parameters())
     print(f"  Model Parameters: {total_params:,} (247.56M Architecture Confirmed)")
@@ -288,11 +309,16 @@ def main():
                 break
 
     if args.skip_final_eval:
-        print(f"  skip_final_eval: last checkpoint {final_ckpt}; 7-tier suite skipped.", flush=True)
+        print(f"  skip_final_eval: last checkpoint {final_ckpt}; 8-tier suite skipped.", flush=True)
+        return
+
+    if args.tier8_only:
+        print("\n[TIER 8 ONLY] Original v44 and aligned v43 prompts...")
+        run_tier8_probe(model, vocab, inv_vocab, args, out_dir, final_ckpt, start_step)
         return
 
     # ==================================================================================
-    # EXECUTING FULL 7-TIER BENCHMARK SUITE (11,597 TOTAL QUESTIONS)
+    # EXECUTING TIERS 1-7 PLUS THE DISTINCT FOUR-PROMPT TIER 8 PROFILES
     # ==================================================================================
     required_evaluation_inputs = (
         "eval_swe_step_control_heldout.jsonl", "eval_v38_decomposed_state_bench200.jsonl",
@@ -303,13 +329,13 @@ def main():
     if missing_evaluation_inputs:
         raise FileNotFoundError("Seven-tier evaluation inputs are missing: " + repr(missing_evaluation_inputs))
     print("\n" + "=" * 95)
-    print(f"[{now_iso()}] EXECUTING FULL 7-TIER BENCHMARK SUITE (11,597 TOTAL QUESTIONS)")
+    print(f"[{now_iso()}] EXECUTING TIERS 1-8 (Tier 8 has two separate four-prompt profiles)")
     print("=" * 95)
     model.eval()
 
     # Tier 1: Held-Out SWE Step Control (200 items)
     t1_manifest = ROOT / "data" / "eval_swe_step_control_heldout.jsonl"
-    print("\n[TIER 1/7] Held-Out SWE Step-Control Benchmark (200 Items)...")
+    print("\n[TIER 1/8] Held-Out SWE Step-Control Benchmark (200 Items)...")
     t1_stats = eval_step_control_heldout.run_heldout_evaluation(
         checkpoint_path=final_ckpt, manifest_path=str(t1_manifest), arm="learned",
         device=args.device, model=model, vocab=vocab, inv_vocab=inv_vocab
@@ -317,14 +343,14 @@ def main():
 
     # Tier 2: Decomposed State Tracking (200 items)
     t2_manifest = ROOT / "data" / "eval_v38_decomposed_state_bench200.jsonl"
-    print("\n[TIER 2/7] Decomposed State Tracking Benchmark (200 Items)...")
+    print("\n[TIER 2/8] Decomposed State Tracking Benchmark (200 Items)...")
     t2_res = evaluate_tier2_decomposed_suite(model, t2_manifest, vocab, inv_vocab, dev)
 
     # Tier 3: SoftBank JamC-QA (2,309 items)
     jamc_manifest = str(ROOT / "data" / "jamcqa_manifest_test.jsonl")
     jamc_res = {}
     if os.path.exists(jamc_manifest):
-        print(f"\n[TIER 3/7] SoftBank JamC-QA Full Benchmark (2,309 items)...")
+        print(f"\n[TIER 3/8] SoftBank JamC-QA Full Benchmark (2,309 items)...")
         jamc_res = eval_jamcqa_official.run_jamcqa_official_eval(
             checkpoint_path=final_ckpt, manifest_path=jamc_manifest, mode="both",
             device=args.device, batch_size=64, max_gen_samples=100,
@@ -335,7 +361,7 @@ def main():
     bench_8100_manifest = str(ROOT / "data" / "benchmark_8100_manifest.jsonl")
     bench_8100_res = {}
     if os.path.exists(bench_8100_manifest):
-        print(f"\n[TIER 4/7] Canonical Broad 8,100 Full Benchmark (7,536 JMMLU + 164 SWE + 400 ARC)...")
+        print(f"\n[TIER 4/8] Canonical Broad 8,100 Full Benchmark (7,536 JMMLU + 164 SWE + 400 ARC)...")
         bench_8100_res = eval_benchmark_full_8100.run_evaluation(
             checkpoint_path=final_ckpt, manifest_path=bench_8100_manifest, arm="learned",
             device=args.device, batch_size=64, model=model, vocab=vocab, inv_vocab=inv_vocab
@@ -345,7 +371,7 @@ def main():
     t5_manifest = str(ROOT / "data" / "eval_v41_logical_instruction_operators_heldout.jsonl")
     t5_res = {}
     if os.path.exists(t5_manifest):
-        print(f"\n[TIER 5/7] 6-Operator Logical Instruction Contrast Benchmark (400 items)...")
+        print(f"\n[TIER 5/8] 6-Operator Logical Instruction Contrast Benchmark (400 items)...")
         t5_res = eval_logical_instruction_operators.run_logical_operator_evaluation(
             checkpoint_path=final_ckpt, manifest_path=t5_manifest, device=args.device,
             model=model, vocab=vocab, inv_vocab=inv_vocab
@@ -355,14 +381,14 @@ def main():
     t6_manifest = str(ROOT / "data" / "eval_v42_search_retrieval_aligned.jsonl")
     t6_res = {}
     if os.path.exists(t6_manifest):
-        print(f"\n[TIER 6/7] Search-Augmented Multi-Hop Retrieval Benchmark (200 items)...")
+        print(f"\n[TIER 6/8] Search-Augmented Multi-Hop Retrieval Benchmark (200 items)...")
         t6_res = eval_v42_search_retrieval.run_tier6_search_evaluation(
             checkpoint_path=final_ckpt, manifest_path=t6_manifest, device=args.device,
             model=model, vocab=vocab, inv_vocab=inv_vocab
         )
 
     # Tier 7: Formal A/B Benchmark: Closed-Book (学習のみ) vs Open-Book (学習＋検索あり)
-    print("\n[TIER 7/7] Formal A/B Dual Benchmark: Closed-Book (学習のみ) vs Open-Book (学習＋検索あり)...")
+    print("\n[TIER 7/8] Formal A/B Dual Benchmark: Closed-Book (学習のみ) vs Open-Book (学習＋検索あり)...")
     ab_res = eval_v43_ab_benchmark.run_v43_ab_benchmark(
         checkpoint_path=final_ckpt,
         manifest_path=bench_8100_manifest,
@@ -376,6 +402,13 @@ def main():
     if not all(isinstance(value, dict) and value for value in
                (t1_stats, t2_res, jamc_res, bench_8100_res, t5_res, t6_res, ab_res)):
         raise RuntimeError("Seven-tier evaluation returned an empty or incomplete tier")
+
+    # Tier 8 is a read-only formatting/tool-use probe. Keep the original v44
+    # prompts and content-matched v43 prompts separate to expose prompt effects.
+    print("\n[TIER 8/8] Python/C++/Rust and explanation probe (original v44 + aligned v43)...")
+    eval_step = start_step if args.eval_only else step
+    t8_original, t8_aligned = run_tier8_probe(
+        model, vocab, inv_vocab, args, out_dir, final_ckpt, eval_step)
 
     # ----------------------------------------------------------------------------------
     # MASTER HISTORICAL SCIENTIFIC SCOREBOARD
@@ -427,6 +460,10 @@ def main():
         print(f"{'Tier 7: ARM A - 学習のみ (Closed-Book)':<42} | {'200':>9} | {'--':>14} | {'--':>14} | {a_acc:>22.2f}%")
         print(f"{'Tier 7: ARM B - 学習＋検索 (Open-Book)':<42} | {'200':>9} | {'--':>14} | {'--':>14} | {b_acc:>22.2f}%")
         print(f"{'Tier 7: Absolute Search Gain (Δ Lift)':<42} | {'200':>9} | {'--':>14} | {'--':>14} | {diff:>+22.2f}%")
+    for label, result in (("original v44", t8_original), ("aligned v43", t8_aligned)):
+        print(f"Tier 8 {label}: code {result['tir_code_rate']:.2f}%, "
+              f"narrative {result['narrative_rate']:.2f}%, "
+              f"expected-language fence {result['expected_language_fence_rate']:.2f}%")
     print("=" * 125)
 
 if __name__ == "__main__":

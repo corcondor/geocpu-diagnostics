@@ -163,6 +163,13 @@ def convert(rec):
                        or receipt.get("verification") != "executed_all_blocks_in_this_problem_stdout_exact"
                        for receipt in receipts)):
             return None, "tir_missing_or_unverified_tool_receipt"
+        code_blocks = list(PYTHON_BLOCK.finditer(body))
+        for (start, end), code_block, receipt in zip(tools, code_blocks, receipts):
+            if (hashlib.sha256(code_block.group(1).encode("utf-8")).hexdigest()
+                    != receipt.get("code_sha256")
+                    or hashlib.sha256(body[start:end].encode("utf-8")).hexdigest()
+                    != receipt.get("observation_sha256")):
+                return None, "tir_receipt_text_mismatch"
         answer = body + "\n答え: " + ans
         return (("問題: " + q.strip() + "\n思考:", answer,
                  _segments_from_tools(len(answer), tools)), q), None
