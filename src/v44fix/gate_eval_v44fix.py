@@ -14,9 +14,38 @@ Measured with v43's own evaluators so numbers are comparable with v43's report (
 import argparse, hashlib, json, re, sys, time
 from fractions import Fraction
 from pathlib import Path
+from resume_v44fix import (PARENT_BYTES, PARENT_SHA256, receipt_path,
+                           sha256_file, verify_checkpoint)
 
 ROOT = Path(__file__).parent.resolve()
 sys.path.insert(0, str(ROOT))
+
+
+def evaluation_fingerprint(tir_path):
+    """Same profile hash for baseline and candidate; checkpoint is pinned separately."""
+    paths = [Path(__file__), ROOT / "integrated_model_v44fix.py",
+             ROOT / "integrated_model_v42.py", ROOT / "integrated_model_v30.py",
+             ROOT / "GeoCPU_CED_v1.py", ROOT / "GeoCPU_CED_v2.py",
+             ROOT / "qwenputer_controller_v30.py", ROOT / "cpu_circuit_v30.py",
+             ROOT / "local_search_engine_v42.py",
+             ROOT / "tir_engine_v44r1.py", ROOT / "executor_worker_v44r1.py",
+             ROOT / "resource_limited_worker_v44r1.py",
+             ROOT / "runtime_cotraining_v41_247M.py", ROOT / "base_metadata.json",
+             ROOT / "eval_step_control_heldout.py", ROOT / "eval_v38_decomposed_state_bench.py",
+             ROOT / "eval_v42_search_retrieval.py",
+             ROOT / "data" / "eval_swe_step_control_heldout.jsonl",
+             ROOT / "data" / "eval_v38_decomposed_state_bench200.jsonl",
+             ROOT / "data" / "eval_v42_search_retrieval_aligned.jsonl",
+             ROOT / "data" / "knowledge_corpus_v43.jsonl"]
+    if tir_path is not None:
+        paths.append(Path(tir_path))
+    digest = hashlib.sha256()
+    for path in paths:
+        if not path.is_file():
+            raise FileNotFoundError("Evaluation source/data is missing: " + str(path))
+        digest.update(str(path.relative_to(ROOT) if path.is_relative_to(ROOT) else path.name).encode("utf-8"))
+        digest.update(sha256_file(path).encode("ascii"))
+    return digest.hexdigest()
 
 ALU = [("数式 (87 * 14 + 23) を 13 で割った余りを求めよ。", "6"), ("数式 (56 * 9 + 31) を 7 で割った余りを求めよ。", "3"),
        ("数式 (123 + 456) * 2 を計算せよ。", "1158"), ("数式 (95 * 12 - 40) を 9 で割った余りを求めよ。", "2"),
@@ -66,6 +95,14 @@ def canon(ans):
     return s
 
 
+def tir_admission_checks(tir: dict) -> dict[str, bool]:
+    """Minimal evidence before a separate 10,000-update run, not a capability claim."""
+    return {"tir_100_cases": tir.get("n") == 100,
+            "python_call_rate>0": tir.get("python_call_rate", 0) > 0,
+            "python_success_and_exact_answer>=10/100":
+                tir.get("python_success_and_correct_cases", 0) >= 10}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", required=True)
@@ -78,6 +115,11 @@ def main():
     ap.add_argument("--skip-search", action="store_true")
     ap.add_argument("--device", default=None)
     args = ap.parse_args()
+    candidate = Path(args.ckpt)
+    if receipt_path(candidate).exists():
+        verify_checkpoint(candidate)
+    elif candidate.stat().st_size != PARENT_BYTES or sha256_file(candidate) != PARENT_SHA256:
+        raise ValueError("Evaluation checkpoint is neither verified v44fix nor pinned v43 parent")
     import torch
     from GeoCPU_CED_v1 import CEDConfig
     from GeoCPU_CED_v2 import GeoCPU_CED_v2
@@ -100,16 +142,17 @@ def main():
         raise SystemExit(f"checkpoint/model mismatch: missing={bad_missing[:5]} unexpected={res.unexpected_keys[:5]}")
     model.to(dev).eval()
     t0 = time.monotonic()
-    h = hashlib.sha256()
-    for p in (Path(__file__), ROOT / "integrated_model_v44fix.py", Path(args.tir) if args.tir else None):
-        if p is not None and p.exists():
-            h.update(p.read_bytes())
-    out = {"ckpt": args.ckpt, "step": ck.get("step") if isinstance(ck, dict) else None, "fingerprint": h.hexdigest()}
+    out = {"ckpt": args.ckpt, "step": ck.get("step") if isinstance(ck, dict) else None,
+           "fingerprint": evaluation_fingerprint(args.tir),
+           "checkpoint_sha256": sha256_file(candidate), "n_tir_requested": args.n_tir,
+           "baseline_sha256": sha256_file(args.baseline) if args.baseline else None}
 
     swe = eval_step_control_heldout.run_heldout_evaluation(
         manifest_path=str(ROOT / "data" / "eval_swe_step_control_heldout.jsonl"), arm="learned", device=str(dev),
         model=model, vocab=vocab, inv_vocab=inv, max_samples=args.n_swe)
-    n_swe = sum(v.get("total", 0) for v in (swe.get("by_loop_count") or {}).values()) or min(args.n_swe, 200)
+    n_swe = swe.get("total")
+    if type(n_swe) is not int or n_swe <= 0:
+        raise RuntimeError("SWE evaluator did not report an actual positive case count")
     out["swe"] = {"correct": swe.get("correct_val"), "n": n_swe, "acc": swe.get("correct_val", 0) / n_swe,
                   "strict_with_eos": swe.get("strict_with_eos")}
     model.eval()
@@ -158,8 +201,11 @@ def main():
                 pred = last_answer(g["output_text"])
                 tr.append({"ok": pred is not None and canon(pred) == canon(it["answer"]), "py": g["python_invocations"],
                            "py_ok": sum(t["success"] for t in g["python_trace"]), "stop": g["stop_reason"]})
-        out["tir"] = {"n": len(tr), "acc": sum(r["ok"] for r in tr) / max(1, len(tr)),
+        out["tir"] = {"n": len(tr), "correct": sum(r["ok"] for r in tr),
+                      "acc": sum(r["ok"] for r in tr) / max(1, len(tr)),
                       "python_call_rate": sum(r["py"] > 0 for r in tr) / max(1, len(tr)),
+                      "python_success_cases": sum(r["py_ok"] > 0 for r in tr),
+                      "python_success_and_correct_cases": sum(r["py_ok"] > 0 and r["ok"] for r in tr),
                       "python_success_calls": sum(r["py_ok"] for r in tr),
                       "stop_reasons": {s: sum(r["stop"] == s for r in tr) for s in {r["stop"] for r in tr}}}
 
@@ -176,8 +222,7 @@ def main():
             if k in out:
                 checks[f"{k}_drop<=0.05"] = out[k]["acc"] >= b[k]["acc"] - 0.05
         if "tir" in out:
-            # the new tool must at least start to appear; otherwise the long run would spend hours learning nothing new
-            checks["python_call_rate>0"] = out["tir"]["python_call_rate"] > 0
+            checks.update(tir_admission_checks(out["tir"]))
         out["gate"] = {"checks": checks, "verdict": "PASS" if all(checks.values()) else "FAIL"}
     out["sec"] = round(time.monotonic() - t0, 1)
     Path(args.out).write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")

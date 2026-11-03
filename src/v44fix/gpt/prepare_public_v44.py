@@ -201,7 +201,7 @@ def normalize_tir(solution, *, executor=None):
         else:
             result = executor.execute(python.group("body"))
             if result.get("exception_type") in ("ModuleNotFoundError", "ImportError"):
-                raise RuntimeError("Public TIR dependency unavailable: " + str(result.get("error")))
+                raise RowRejected("executed_python_dependency_unavailable")
             if result.get("timeout") or result.get("truncated") or not result.get("success") or result.get("stderr"):
                 raise RowRejected("executed_python_error_timeout_or_truncated")
             if str(result.get("stdout", "")).replace("\r\n", "\n") != expected:
@@ -330,6 +330,8 @@ def prepare_public_curriculum(output_dir, vocab_path, evaluation_dir, anchor_pat
         raise ValueError("All four exposure buckets must have positive integer targets")
     if not isinstance(verify_sample_count, int) or verify_sample_count < 0:
         raise ValueError("Execution sample count must be a nonnegative integer")
+    if not isinstance(max_total_tokens, int) or max_total_tokens < 2:
+        raise ValueError("Maximum total tokens must be an integer of at least two")
     stats, rejects, rejection_examples = Counter(), Counter(), []
     anchor_source_coverage = defaultdict(Counter)
     source_pins, eval_pins = [], []
@@ -502,6 +504,7 @@ def prepare_public_curriculum(output_dir, vocab_path, evaluation_dir, anchor_pat
                     "execution_sample_has_passed_problem": bool(execution_sample_passed),
                     "public_source_inputs": source_pins, "anchor_input": anchor_pin, "evaluation_inputs": eval_pins,
                     "source_lock_sha256": digest(lock_path), "vocabulary_sha256": digest(vocab_path),
+                    "max_total_tokens": max_total_tokens,
                     "split_rule": "Global canonical question SHA256 mod100: train<90,dev<95,test>=95; repetitions remain within train only",
                     "tool_verification": {"mode": "all" if verify_all else "fixed_first_eligible_problem_sample",
                                           "sample_problem_limit": verify_sample_count, "unexecuted_rows_are_author_recorded": True,
@@ -532,11 +535,13 @@ def main():
     parser.add_argument("--source-lock", default=str(Path(__file__).with_name("public_source_lock_v44.json")))
     parser.add_argument("--verify-sample-count", type=int, default=16)
     parser.add_argument("--verify-all", action="store_true")
+    parser.add_argument("--max-total-tokens", type=int, default=8192)
     parser.add_argument("--max-repeat-factor-per-bucket", type=float, default=16)
     args = parser.parse_args()
     manifest = prepare_public_curriculum(args.output_dir, args.vocab_path, args.evaluation_dir, args.anchor_path,
                                          source_lock_path=args.source_lock, verify_sample_count=args.verify_sample_count, verify_all=args.verify_all,
-                                         max_repeat_factor_per_bucket=args.max_repeat_factor_per_bucket)
+                                         max_repeat_factor_per_bucket=args.max_repeat_factor_per_bucket,
+                                         max_total_tokens=args.max_total_tokens)
     print(json.dumps({"training_eligible": manifest["training_eligible"], "counts": manifest["counts"], "rejections": manifest["rejections"]}, ensure_ascii=False), flush=True)
     if not manifest["training_eligible"]:
         raise SystemExit("Public curriculum incomplete or input pin mismatch; no training admission")

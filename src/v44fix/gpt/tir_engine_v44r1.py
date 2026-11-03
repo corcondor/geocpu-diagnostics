@@ -22,11 +22,18 @@ class PythonExecutor:
         self.timeout_seconds=float(timeout_seconds);self.max_output_chars=int(max_output_chars);self.max_code_chars=int(max_code_chars)
         self.temp=tempfile.TemporaryDirectory(prefix='geocpu_tir_');self.messages=queue.Queue();self.stderr_tail='';self.closed=False
         self.search_callback=search_callback;self.max_search_calls=int(max_search_calls);self.search_trace=[]
+        if sys.platform != 'linux':
+            self.temp.cleanup()
+            raise RuntimeError('Python TIR execution requires Linux resource limits')
         worker=Path(__file__).with_name('executor_worker_v44r1.py')
+        bounded_launcher=Path(__file__).with_name('resource_limited_worker_v44r1.py')
+        if not bounded_launcher.is_file():
+            self.temp.cleanup()
+            raise RuntimeError('Python TIR resource-limit launcher is missing')
         env={k:v for k,v in os.environ.items() if k.upper() in {'PATH','SYSTEMROOT','WINDIR','SYSTEMDRIVE','TEMP','TMP','HOME','USERPROFILE','LANG','LC_ALL'}}
         env.update(OPENBLAS_NUM_THREADS='1',OMP_NUM_THREADS='1',MKL_NUM_THREADS='1',PYTHONIOENCODING='utf-8',PYTHONDONTWRITEBYTECODE='1')
         kwargs={'creationflags':subprocess.CREATE_NO_WINDOW} if os.name=='nt' else {}
-        self.process=subprocess.Popen([sys.executable,'-u',str(worker)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+        self.process=subprocess.Popen([sys.executable,'-I','-u',str(bounded_launcher),str(worker)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
             cwd=self.temp.name,text=True,encoding='utf-8',bufsize=1,env=env,**kwargs)
         def read_stdout():
             try:

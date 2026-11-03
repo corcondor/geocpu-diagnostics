@@ -1,0 +1,16 @@
+{
+  "schema": "geocpu_v44fix_tir_consistency_package_receipt_v1",
+  "zip": {
+    "name": "GeoCPU_v44fix_TIR_consistency_bundle.zip",
+    "bytes": 268314,
+    "sha256": "5f83caadb05d7adca65908f34e82f75eca4aa5ea9476f733eec890f1c20317c8"
+  },
+  "manifest": {
+    "bytes": 8836,
+    "sha256": "7137b20131f41a77aaab3f757346ec86a7b2121b29044748494627e7894543c5"
+  },
+  "members": 56,
+  "training_run": false,
+  "colab_run": false,
+  "drive_written": false
+}

@@ -55,8 +55,14 @@ import eval_v42_search_retrieval
 import eval_v43_ab_benchmark
 
 from runtime_cotraining_v41_247M import (
-    now_iso, compute_cut_ce_loss, PreTokenizedMemoryDataset,
-    DynamicTokenBucketBatchSampler, zero_overhead_collate_fn, evaluate_tier2_decomposed_suite
+    now_iso, compute_cut_ce_loss,
+    DynamicTokenBucketBatchSampler, evaluate_tier2_decomposed_suite
+)
+from tir_masking_v44fix import ToolMaskedMemoryDataset, tool_aware_collate_fn
+from resume_v44fix import (
+    PARENT_BYTES, PARENT_SHA256, PARENT_STEP, ResumableTokenBucketBatchSampler,
+    load_checkpoint, restore_rng, save_checkpoint, sha256_file, training_binding,
+    verify_checkpoint,
 )
 
 def main():
@@ -74,6 +80,8 @@ def main():
     parser.add_argument("--stop_at_step", type=int, default=0, help="v44fix: stop early (gate) while the LR schedule still targets --max_steps")
     parser.add_argument("--skip_final_eval", action="store_true", help="v44fix: skip the 7-tier suite after training")
     parser.add_argument("--max_tokens_per_micro", type=int, default=0, help="v44fix: override token budget (CPU smoke tests)")
+    parser.add_argument("--require_exact_resume", action="store_true",
+                        help="Require a verified v44fix checkpoint with optimizer, RNG, and sampler cursor")
     args = parser.parse_args()
 
     print("=" * 95)
@@ -107,19 +115,26 @@ def main():
     total_params = sum(p.numel() for p in model.parameters())
     print(f"  Model Parameters: {total_params:,} (247.56M Architecture Confirmed)")
 
+    if not target_ckpt or not Path(target_ckpt).is_file():
+        raise FileNotFoundError(f"Required checkpoint is missing: {target_ckpt}")
     start_step = 0
-    if target_ckpt and os.path.exists(target_ckpt):
-        print(f"  Loading Weights from Checkpoint (CPU buffer): {target_ckpt}...")
-        ckpt = torch.load(target_ckpt, map_location="cpu")
-        sd = ckpt["model_state_dict"] if "model_state_dict" in ckpt else ckpt
-        model.load_state_dict(sd, strict=False)
-        if isinstance(ckpt, dict) and "step" in ckpt:
-            start_step = int(ckpt["step"])
-            print(f"  -> Resuming from Step {start_step} successfully into v43 architecture.")
-        else:
-            print("  -> Warmstart weights loaded successfully into v43 architecture.")
-    else:
-        print(f"  WARNING: Checkpoint not found at {target_ckpt}. Initializing cleanly.")
+    if not args.require_exact_resume:
+        parent = Path(target_ckpt)
+        if parent.stat().st_size != PARENT_BYTES or sha256_file(parent) != PARENT_SHA256:
+            raise ValueError("Warmstart is not the pinned v43 step-15000 checkpoint")
+        ckpt = torch.load(parent, map_location="cpu", weights_only=True)
+        if not isinstance(ckpt, dict) or ckpt.get("step") != PARENT_STEP or "model_state_dict" not in ckpt:
+            raise ValueError("Pinned v43 checkpoint lacks the expected step/model state")
+        model.load_state_dict(ckpt["model_state_dict"], strict=True)
+        start_step = PARENT_STEP
+        print(f"  -> Strict pinned v43 warm start at step {start_step}; optimizer starts a new v44fix run.")
+    elif args.eval_only:
+        verify_checkpoint(target_ckpt)
+        ckpt = torch.load(target_ckpt, map_location="cpu", weights_only=True)
+        if not isinstance(ckpt, dict) or "model_state_dict" not in ckpt:
+            raise ValueError("Exact evaluation checkpoint has no model state")
+        model.load_state_dict(ckpt["model_state_dict"], strict=True)
+        start_step = int(ckpt["step"])
 
     model.to(dev)
     out_dir = Path(args.output_dir)
@@ -149,8 +164,8 @@ def main():
         max_micro_batch = min(96, args.batch_size)
         print(f"  Execution Mode:  AMP bfloat16={use_amp} | Dynamic Token Budget: {max_tokens_per_micro:,} tok/micro (Max B={max_micro_batch}, Accum={grad_accum_steps})")
 
-        dataset = PreTokenizedMemoryDataset(args.train_path, vocab, max_len=cfg.max_positions)
-        batch_sampler = DynamicTokenBucketBatchSampler(
+        dataset = ToolMaskedMemoryDataset(args.train_path, vocab, max_len=cfg.max_positions)
+        batch_sampler = ResumableTokenBucketBatchSampler(
             dataset,
             max_batch_size=max_micro_batch,
             max_tokens=max_tokens_per_micro,
@@ -159,7 +174,7 @@ def main():
         dataloader = DataLoader(
             dataset,
             batch_sampler=batch_sampler,
-            collate_fn=zero_overhead_collate_fn,
+            collate_fn=tool_aware_collate_fn,
             pin_memory=(dev.type == "cuda")
         )
 
@@ -169,6 +184,17 @@ def main():
         except Exception:
             optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, betas=(0.9, 0.95), weight_decay=0.01)
 
+        binding = training_binding(args.train_path, args.meta_path, ROOT,
+            max_steps=args.max_steps, batch_size=args.batch_size, lr=args.lr,
+            max_tokens_per_micro=max_tokens_per_micro, grad_accum_steps=grad_accum_steps)
+        pending_rng = None
+        if args.require_exact_resume:
+            start_step, pending_rng = load_checkpoint(target_ckpt, expected_binding=binding,
+                model=model, optimizer=optimizer, sampler=batch_sampler)
+            if not PARENT_STEP < start_step <= args.max_steps:
+                raise ValueError("Exact resume step is outside the declared training run")
+            print(f"  -> Strict v44fix resume at step {start_step}, with Adam/RNG/batch cursor restored.")
+
         def get_lr(st: int) -> float:
             warmup = 300
             if st < warmup:
@@ -177,8 +203,6 @@ def main():
             return max(8e-6, args.lr * 0.5 * (1.0 + math.cos(math.pi * prog)))
 
         def run_microbatch_safe(inp: torch.Tensor, tgt: torch.Tensor, vmask: torch.Tensor, lmask: torch.Tensor, weight: float) -> torch.Tensor:
-            cur_b = inp.size(0)
-            oom_hit = False
             try:
                 with torch.amp.autocast(device_type=dev.type, enabled=use_amp, dtype=torch.bfloat16):
                     out = model(inp, vmask, arm="learned", skip_head=True)
@@ -188,19 +212,9 @@ def main():
                 t_loss.backward()
                 return t_loss.detach()
             except torch.OutOfMemoryError as e:
-                traceback.clear_frames(e.__traceback__)
-                oom_hit = True
-
-            if oom_hit:
-                if dev.type == "cuda":
-                    torch.cuda.empty_cache()
-                half = cur_b // 2
-                if half == 0:
-                    print("  [OOM Warning] Single sequence exceeded memory; skipping.", flush=True)
-                    return torch.tensor(0.0, device=dev)
-                t_loss1 = run_microbatch_safe(inp[:half], tgt[:half], vmask[:half], lmask[:half], weight * (half / cur_b))
-                t_loss2 = run_microbatch_safe(inp[half:], tgt[half:], vmask[half:], lmask[half:], weight * ((cur_b - half) / cur_b))
-                return t_loss1 + t_loss2
+                # A failed backward can leave partial gradients. Never retry
+                # the same batch against those gradients or accept the step.
+                raise RuntimeError("OOM: entire update rejected; no checkpoint advanced") from e
 
         print(f"\nStarting Knowledge Co-Training from step {start_step} to {args.max_steps}...")
         step = start_step
@@ -211,6 +225,16 @@ def main():
 
         model.train()
         data_iter = iter(dataloader)
+        if pending_rng is not None:
+            restore_rng(pending_rng)  # DataLoader iterator setup may consume CPU RNG.
+
+        def save_step(accepted_step: int) -> str:
+            path = out_dir / f"checkpoint_step_{accepted_step}.pt"
+            receipt = save_checkpoint(path, step=accepted_step, model=model,
+                optimizer=optimizer, sampler=batch_sampler, binding=binding,
+                config=cfg_dict, meta=meta)
+            print(f"  --> Verified checkpoint {path.name} SHA256={receipt['sha256']}")
+            return str(path)
 
         while step < args.max_steps:
             step += 1
@@ -219,7 +243,7 @@ def main():
                 pg["lr"] = lr
 
             optimizer.zero_grad(set_to_none=True)
-            accum_loss = 0.0
+            accum_loss = torch.zeros((), dtype=torch.float32, device=dev)
 
             for accum_idx in range(grad_accum_steps):
                 try:
@@ -232,18 +256,22 @@ def main():
                 tgt = batch["targets"].to(dev, non_blocking=True)
                 vmask = batch["valid_mask"].to(dev, non_blocking=True)
                 lmask = batch["loss_mask"].to(dev, non_blocking=True)
+                if not bool(batch["loss_mask"].any()):
+                    raise ValueError("Batch has no supervised target positions")
 
                 loss_val = run_microbatch_safe(inp, tgt, vmask, lmask, 1.0 / grad_accum_steps)
-                accum_loss += loss_val.item()
+                accum_loss = accum_loss + loss_val
 
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            if not bool(torch.isfinite(accum_loss)):
+                raise FloatingPointError("Non-finite loss: update rejected")
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, error_if_nonfinite=True)
             optimizer.step()
 
             running_loss += accum_loss
 
             if step % log_interval == 0:
-                avg_loss = running_loss / log_interval
-                running_loss = 0.0
+                avg_loss = float((running_loss / log_interval).item())
+                running_loss = torch.zeros((), dtype=torch.float32, device=dev)
                 elapsed = time.time() - t_start
                 steps_per_sec = (step - start_step) / max(1.0, elapsed)
                 eta_sec = (args.max_steps - step) / max(0.01, steps_per_sec)
@@ -251,26 +279,11 @@ def main():
                       f"Throughput: {steps_per_sec:.2f} step/s | ETA: {eta_sec/60:.1f}m", flush=True)
 
             if step % checkpoint_interval == 0 or step == args.max_steps:
-                ckpt_file = out_dir / f"checkpoint_step_{step}.pt"
-                print(f"  --> Saving Checkpoint at step {step} to {ckpt_file}...", flush=True)
-                tmp_file = ckpt_file.with_suffix(".pt.tmp")  # v44fix: never leave a truncated checkpoint under the final name
-                torch.save({
-                    "step": step,
-                    "model_state_dict": model.state_dict(),
-                    "config": cfg_dict,
-                    "meta": meta
-                }, str(tmp_file))
-                os.replace(tmp_file, ckpt_file)
-                final_ckpt = str(ckpt_file)
+                final_ckpt = save_step(step)
 
             if args.stop_at_step and step >= args.stop_at_step:
                 if not (step % checkpoint_interval == 0 or step == args.max_steps):
-                    ckpt_file = out_dir / f"checkpoint_step_{step}.pt"
-                    print(f"  --> Saving gate checkpoint at step {step} to {ckpt_file}...", flush=True)
-                    tmp_file = ckpt_file.with_suffix(".pt.tmp")
-                    torch.save({"step": step, "model_state_dict": model.state_dict(), "config": cfg_dict, "meta": meta}, str(tmp_file))
-                    os.replace(tmp_file, ckpt_file)
-                    final_ckpt = str(ckpt_file)
+                    final_ckpt = save_step(step)
                 print(f"  --> stop_at_step={args.stop_at_step} reached (LR schedule targets max_steps={args.max_steps}).", flush=True)
                 break
 
@@ -281,6 +294,14 @@ def main():
     # ==================================================================================
     # EXECUTING FULL 7-TIER BENCHMARK SUITE (11,597 TOTAL QUESTIONS)
     # ==================================================================================
+    required_evaluation_inputs = (
+        "eval_swe_step_control_heldout.jsonl", "eval_v38_decomposed_state_bench200.jsonl",
+        "jamcqa_manifest_test.jsonl", "benchmark_8100_manifest.jsonl",
+        "eval_v41_logical_instruction_operators_heldout.jsonl",
+        "eval_v42_search_retrieval_aligned.jsonl", "knowledge_corpus_v43.jsonl")
+    missing_evaluation_inputs = [name for name in required_evaluation_inputs if not (ROOT / "data" / name).is_file()]
+    if missing_evaluation_inputs:
+        raise FileNotFoundError("Seven-tier evaluation inputs are missing: " + repr(missing_evaluation_inputs))
     print("\n" + "=" * 95)
     print(f"[{now_iso()}] EXECUTING FULL 7-TIER BENCHMARK SUITE (11,597 TOTAL QUESTIONS)")
     print("=" * 95)
@@ -352,6 +373,9 @@ def main():
         inv_vocab=inv_vocab,
         corpus_path=str(corpus_v43) if corpus_v43.exists() else None
     )
+    if not all(isinstance(value, dict) and value for value in
+               (t1_stats, t2_res, jamc_res, bench_8100_res, t5_res, t6_res, ab_res)):
+        raise RuntimeError("Seven-tier evaluation returned an empty or incomplete tier")
 
     # ----------------------------------------------------------------------------------
     # MASTER HISTORICAL SCIENTIFIC SCOREBOARD
