@@ -1,0 +1,74 @@
+{
+  "converted_by_original_family": {
+    "Algebraic_Composite_Aligned": {
+      "all_segments_are_tool": 9828,
+      "code_count_matches_observations": 9828,
+      "final_suffix_contains_japanese": 9828,
+      "final_suffix_has_answer_marker": 9828,
+      "final_suffix_numeric_only": 0,
+      "python_code_blocks": 29484,
+      "rows": 9828,
+      "target_contains_japanese": 9828,
+      "tool_observation_segments": 29484,
+      "two_or_more_tool_steps": 9828
+    },
+    "Comparative_Conditional_Aligned": {
+      "all_segments_are_tool": 15000,
+      "code_count_matches_observations": 15000,
+      "final_suffix_contains_japanese": 15000,
+      "final_suffix_has_answer_marker": 15000,
+      "final_suffix_numeric_only": 0,
+      "python_code_blocks": 45000,
+      "rows": 15000,
+      "target_contains_japanese": 15000,
+      "tool_observation_segments": 45000,
+      "two_or_more_tool_steps": 15000
+    },
+    "swe_alu_accumulate_sum": {
+      "all_segments_are_tool": 8,
+      "code_count_matches_observations": 8,
+      "final_suffix_contains_japanese": 0,
+      "final_suffix_has_answer_marker": 0,
+      "final_suffix_numeric_only": 8,
+      "python_code_blocks": 48,
+      "rows": 8,
+      "target_contains_japanese": 0,
+      "tool_observation_segments": 48,
+      "two_or_more_tool_steps": 8
+    }
+  },
+  "converted_total": {
+    "all_segments_are_tool": 24836,
+    "code_count_matches_observations": 24836,
+    "final_suffix_contains_japanese": 24828,
+    "final_suffix_has_answer_marker": 24828,
+    "final_suffix_numeric_only": 8,
+    "python_code_blocks": 74532,
+    "rows": 24836,
+    "target_contains_japanese": 24828,
+    "tool_observation_segments": 74532,
+    "two_or_more_tool_steps": 24836
+  },
+  "fixed_diagnostic": {
+    "canonical_prompt_matches_in_original_rows": 0,
+    "cases": 44,
+    "original_rows_scanned": 268032
+  },
+  "inputs": {
+    "cases": {
+      "path": "C:\\Users\\81808\\.openclaw\\workspace\\geocpu-diagnostics\\src\\pure_v44_candidates\\hybrid_v43_python_gradual\\fixed_interim_diagnostic_44_v2.jsonl",
+      "sha256": "4032a2c17de2ce56a7758cd35c16db2c2b357ce76b394522411e86c0aa682b45"
+    },
+    "converted": {
+      "path": "C:\\Users\\81808\\.openclaw\\workspace\\geocpu-diagnostics\\src\\pure_v44_candidates\\v43_alu_to_python\\provenance_full_final\\converted_with_source_refs.jsonl",
+      "sha256": "53387b2987df02d91b51b4afc8ab2369cc0e53b9e4bdd0cfd480c3586de7f3db"
+    },
+    "v43_zip": {
+      "path": "C:\\Users\\81808\\.openclaw\\reports\\jmmlu_v1\\ag_fused_fullqa_training_v1\\v43_v44fix_paired_eval_assets\\v43_source.zip",
+      "sha256": "0102dc9b01b4b795c3123b18cefc7a8734e47a06dd85292af464d3232704d198"
+    }
+  },
+  "interpretation_limit": "Japanese characters and answer markers are surface checks. They do not establish a grounded explanation; the eight SWE rows have numeric-only final suffixes.",
+  "schema": "geocpu_hybrid_semantic_readonly_audit_v1",
+  "training_updates": 0
+}
