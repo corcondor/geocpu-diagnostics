@@ -1,0 +1,67 @@
+{
+  "schema": "geocpu_public_curriculum_source_lock_v1",
+  "inspected_at": "2026-11-03",
+  "repos": {
+    "numina": {
+      "repo_id": "project-numina/NuminaMath-TIR",
+      "revision": "77a91d7b7a1a98ac4b1beb7d86c09d156b935dcd",
+      "license": "apache-2.0",
+      "homepage": "https://huggingface.co/datasets/project-numina/NuminaMath-TIR",
+      "files": {
+        "train": {
+          "path": "data/train-00000-of-00001.parquet",
+          "bytes": 147342955,
+          "sha256": "66163f9fdf2220fed2116142781fe7019a117191e7f08a3339a70a98401061d8"
+        },
+        "test": {
+          "path": "data/test-00000-of-00001.parquet",
+          "bytes": 215035,
+          "sha256": "c563eac44e004697447e78470e414c255f8c450478772a84173886daa24039c0"
+        }
+      }
+    },
+    "japanese": {
+      "repo_id": "kunishou/databricks-dolly-15k-ja",
+      "revision": "6391034b0126850543299cda071dc6281c31a6fb",
+      "license": "cc-by-sa-3.0",
+      "homepage": "https://huggingface.co/datasets/kunishou/databricks-dolly-15k-ja",
+      "files": {
+        "train": {
+          "path": "databricks-dolly-15k-ja.json",
+          "bytes": 17062018,
+          "sha256": "f4f814b77074a864ed15859b354470b10b8d970647165dc4e2ed08a6ff139417"
+        }
+      }
+    },
+    "code": {
+      "repo_id": "ise-uiuc/Magicoder-OSS-Instruct-75K",
+      "revision": "5f839b1f368a76b161028bb9edff055db34022b2",
+      "license": "mit",
+      "homepage": "https://huggingface.co/datasets/ise-uiuc/Magicoder-OSS-Instruct-75K",
+      "files": {
+        "train": {
+          "path": "data-oss_instruct-decontaminated.jsonl",
+          "bytes": 203201169,
+          "sha256": "f988f14d3516a9f958eeea310f63903727c6d3463bc9cb435288b6ca4bb09cf9"
+        }
+      }
+    }
+  },
+  "source_information": "Repository commit and LFS SHA256 from official Hugging Face API. No new model-generated training records.",
+  "planned_exposure_counts": {
+    "tir": 105000,
+    "code": 40000,
+    "japanese": 40000,
+    "anchor": 80000
+  },
+  "licenses": [
+    "Apache-2.0",
+    "CC-BY-SA-3.0",
+    "MIT"
+  ],
+  "notes": [
+    "Japanese Dolly contains translated instruction-response data, not verified 72-subject expert CoT.",
+    "Magicoder contains public multi-language code responses, not every requested programming language.",
+    "NuminaMath-TIR is English. Official test split is excluded from training."
+  ]
+}

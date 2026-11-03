@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.pt
+*.zip
+*.jsonl
+*.sqlite
+*.db
+*.log
