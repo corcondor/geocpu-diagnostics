@@ -21,7 +21,9 @@
 
 本体回路の値を Python で再現できても、自然文から形式前提へ写す部分は証明されません。そこで論理行を受理するには、元の問・前提の真偽・命題式・結論を独立に照合し、元 CPU と Python の観測も一致させます。LogiQA・FOLIO・JNLI の元 target が正しいかを ALU trace だけで承認しません。元の日本語説明や Lean コードは、検査が済むまで書き換えません。
 
-会話・算数の別系列は `JMultiWOZ_Dialogue_State_Tracking` 4,331 行、`GSM8K_Japanese_Full` 7,329 行です。JMultiWOZ の実例は `SET` による対話スロットの更新ですが、独立した状態照合は未実施です。実例の日本語には「東周辺で、予算は格な民」など不自然な断片があります。GSM の実例は 10 円の商品 1 万個を 30% 割引で買う問題に 700 円と付いており、正しくは 70,000 円です。元の `SET R0 700` が実行器で再現されても誤教材を移してはいけません。
+会話・算数の別系列は `JMultiWOZ_Dialogue_State_Tracking` 4,331 行、`GSM8K_Japanese_Full` 7,329 行です。JMultiWOZ の実例は `SET` による対話スロットの更新ですが、独立した状態照合は未実施です。**v43 の 4,331 行を全走査すると、初期エリア・予算・種類と更新後エリアがすべて一文字になっていました（4,331/4,331 行）。** 実例の日本語は「東周辺で、予算は格な民を探しています」です。元 ZIP の `data/train_v43_knowledge_unified.jsonl` の1始まり47行目、改行を含む原行 SHA256 は `86d0fe5ea7eec06cf886f3a3c180a8b2361731433a6a9179200e85ff478ba701` です。元生成器 [`build_v37_generalized_state_dataset.py`](../../../../../reports/jmmlu_v1/ag_fused_fullqa_training_v1/Grand_cotraining_frontier_v37/build_v37_generalized_state_dataset.py) の49〜61行は京都・格安・民宿などの完全な語を持ちますが、195〜206行で `c1[0]`・`price[0]`・`cat[0]` を使って先頭文字だけを書いています。この生成器の SHA256 は `072216f14e4fb0f526f2f546a1b33e2951b0e65a77d613c579b4c9ac7665d8ab` です。したがって4,331行を自然な日本語会話とPythonの良質な橋として一括採用しません。状態追跡能力の候補としては別に評価する必要があります。
+
+GSM の**一つの**実例は 10 円の商品 1 万個を 30% 割引で買う問題に 700 円と付いており、正しくは 70,000 円です。元 ZIP の同じ学習 member の1始まり13行目、原行 SHA256 は `8eb226f7ded3ea96ac91a175defb708e6f119667729b116e4be1fab09b10f18d` です。元の `SET R0 700` が実行器で再現されても誤教材を移してはいけません。7,329行全体が誤りとは判定していません。
 
 検索系列の `search_augmented_1hop_fact` 4,000 行と `search_augmented_2hop_entity_chain` 3,000 行は、同梱の aligned 評価 200 prompt と完全一致するため全除外です。`v43_search_augmented_general_knowledge` 10,000 行と `v43_academic_multichoice_search_cot` 12,000 行の検索結果は外部ソース依存で、固定 Python 数学実行だけから元観測を再現したとは言えません。この時点では受理していません。
 
