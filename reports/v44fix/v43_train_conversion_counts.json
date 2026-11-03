@@ -1,0 +1,418 @@
+{
+  "zip_path": "G:\\マイドライブ\\GeoCPU_Frontier_CoTraining_v43\\Grand_cotraining_v43.zip",
+  "train_member": "data/train_v43_knowledge_unified.jsonl",
+  "train_rows": 268032,
+  "unique_prompts_sha256": 224113,
+  "unique_prompt_target_sha256": 224113,
+  "bundled_eval_names": [
+    "data/eval_v42_search_retrieval_aligned.jsonl",
+    "data/eval_v42_search_retrieval_heldout.jsonl",
+    "data/eval_swe_step_control_heldout.jsonl",
+    "data/eval_v38_decomposed_state_bench200.jsonl",
+    "data/eval_v33_state_tracking_heldout.jsonl",
+    "data/jamcqa_manifest_test.jsonl",
+    "data/benchmark_8100_manifest.jsonl",
+    "data/eval_v41_logical_instruction_operators_heldout.jsonl"
+  ],
+  "bundled_eval_unique_prompts": 11388,
+  "train_rows_exact_prompt_matching_bundled_eval": 7000,
+  "bundled_eval_prompt_rows_by_file": {
+    "data/eval_v42_search_retrieval_aligned.jsonl": 200,
+    "data/eval_v42_search_retrieval_heldout.jsonl": 200,
+    "data/eval_swe_step_control_heldout.jsonl": 200,
+    "data/eval_v38_decomposed_state_bench200.jsonl": 200,
+    "data/eval_v33_state_tracking_heldout.jsonl": 188,
+    "data/jamcqa_manifest_test.jsonl": 2309,
+    "data/benchmark_8100_manifest.jsonl": 8100,
+    "data/eval_v41_logical_instruction_operators_heldout.jsonl": 400
+  },
+  "train_prompt_overlap_rows_by_eval_file": {
+    "data/eval_v42_search_retrieval_aligned.jsonl": 7000
+  },
+  "train_prompt_overlap_rows_by_source": {
+    "search_augmented_1hop_fact": 4000,
+    "search_augmented_2hop_entity_chain": 3000
+  },
+  "sources": {
+    "SoftBank_JSQuAD_Full": 61954,
+    "Yahoo_JAPAN_JNLI_Full": 19992,
+    "Comparative_Conditional_Aligned": 15000,
+    "v43_relational_causal_cot": 15000,
+    "Databricks_Dolly_Full": 14618,
+    "LogiQA2_Official_FOL": 12047,
+    "v43_academic_multichoice_search_cot": 12000,
+    "bAbI_Dual_Object_Dynamic_Binding": 11698,
+    "v43_search_augmented_general_knowledge": 10000,
+    "Algebraic_Composite_Aligned": 9828,
+    "SoftBank_JCommonsenseQA_Full": 8876,
+    "GSM8K_Japanese_Full": 7329,
+    "bAbI_Spatial_Tracking_MultiChar_Generalized": 6000,
+    "bAbI_Inventory_Add_Sub": 4918,
+    "JMultiWOZ_Dialogue_State_Tracking": 4331,
+    "search_augmented_1hop_fact": 4000,
+    "RIKEN_AIP_ichikara_Full": 3212,
+    "search_augmented_2hop_entity_chain": 3000,
+    "bAbI_Dual_Object_Clean_Generalized": 3000,
+    "swe_alu_accumulate_sum": 2995,
+    "Procedural_Status_substitute_redirection": 2973,
+    "Procedural_Status_true_undo_rollback": 2787,
+    "Procedural_Status_executed_transfer": 2732,
+    "Procedural_Status_unapproved_proposal": 2694,
+    "swe_alu_modulo_loop": 2199,
+    "swe_alu_multiply_power": 2148,
+    "swe_alu_parity_branch": 1993,
+    "bAbI_Distractor_Filtering": 1773,
+    "swe_alu_conditional_filter_loop": 1543,
+    "swe_alu_bxor_product": 1496,
+    "Procedural_Loop_Aligned": 1335,
+    "Yale_FOLIO_FirstOrderLogic": 1204,
+    "swe_alu_modulo_expr": 1199,
+    "JNLI_Logical_Operator_not_necessarily_true": 926,
+    "JNLI_Logical_Operator_positive_entailment": 926,
+    "JNLI_Logical_Operator_set_complement_not_applicable": 925,
+    "JNLI_Logical_Operator_non_entailment_undeducible": 925,
+    "JNLI_Logical_Operator_empty_witness_unsatisfiable": 925,
+    "JNLI_Logical_Operator_negation_contradiction": 925,
+    "swe_alu_conditional_filter_py": 620,
+    "Government_Legal_Full": 619,
+    "ARC_Grid_color_swap_2_3": 500,
+    "ARC_Grid_shift_down": 500,
+    "ARC_Grid_shift_right": 500,
+    "ARC_Grid_diagonal_cross": 500,
+    "ARC_Grid_color_swap_0_1": 500,
+    "ARC_Grid_border_fill": 500,
+    "ARC_Grid_flip_vertical": 500,
+    "ARC_Grid_flip_horizontal": 500,
+    "ARC_Grid_center_fill": 500,
+    "ARC_Grid_invert_colors": 500,
+    "l_pdf_exhaustive_42_problems": 246,
+    "formal_logic_impl_and": 72,
+    "formal_logic_demorgan": 8,
+    "formal_logic_syllogism": 8,
+    "formal_logic_contrapositive": 8,
+    "dialogue_tokinikagiri": 5,
+    "dialogue_poly_quantifier": 4,
+    "dialogue_domain_quantifier": 4,
+    "lean4_and_commutative": 1,
+    "lean4_nat_transitivity": 1,
+    "l_pdf_deduction_reidai_11_demorgan": 1,
+    "lean4_double_negation_intro": 1,
+    "lean4_nat_add_zero": 1,
+    "l_pdf_deduction_enshu_13_1": 1,
+    "lean4_or_commutative": 1,
+    "l_pdf_deduction_reidai_23": 1,
+    "lean4_impl_trans_chain": 1,
+    "dialogue_wittgenstein": 1,
+    "dialogue_momotaro": 1,
+    "l_pdf_deduction_reidai_22": 1
+  },
+  "tags": {
+    "search_rows": 29000,
+    "search_result_rows": 7000,
+    "cpu_rows": 133896
+  },
+  "opcode_occurrences": {
+    "SET": 243919,
+    "ADD": 59818,
+    "DEC": 47994,
+    "SEARCH": 32000,
+    "MUL": 25564,
+    "MOD": 23056,
+    "SUB": 22587,
+    "IMP": 13055,
+    "BXOR": 3346,
+    "NOT": 2756,
+    "AND": 1032,
+    "XOR": 393,
+    "IFF": 16,
+    "OR": 9,
+    "B": 1,
+    "NPB": 1
+  },
+  "one_prefix_example_per_source": {
+    "search_augmented_1hop_fact": {
+      "prompt_prefix": "質問: 日本国憲法において戦争の放棄および戦力の不保持を定めている条文は何条か？\n思考:",
+      "target_prefix": " 外部検索エンジンで確認します。<SEARCH 憲法 9条> => [RESULT: 憲法第9条 | 日本国憲法第9条: 戦争の放棄、戦力不保持、交戦権の否認を規定する。] 検索結果より、答えは 憲法第9条 です。答え: 憲法第9条"
+    },
+    "Algebraic_Composite_Aligned": {
+      "prompt_prefix": "問題: 数式 (93 * 12 + 15) を 11 で割った余りを求めよ。\n思考:",
+      "target_prefix": "演算の順序に従って計算します。まず掛け算を実行します。<MUL R0 93 12> => [R0=1116] 次に15を足します。<ADD R0 R0 15> => [R0=1131] 最後に11で割った余りを計算します。<MOD R0 R0 11> => [R0=9] 計算結果は9です。答え: 9"
+    },
+    "Databricks_Dolly_Full": {
+      "prompt_prefix": "指示: この文章をもとに、ルベンサンドの発明者と発明された場所を教えてください。\n文脈: 1920年頃から1935年頃まで、ネブラスカ州オマハに住んでいたリトアニア生まれのユダヤ系食料品商、ルーベン・クラコフスキー(ファーストネームはReu",
+      "target_prefix": "ルーベンサンドの発明者は一人では決められない。本文では、次のような答えが示されている:\n* ルーベン・クラコフスキーはネブラスカ州オマハで発明した。\n* アーノルド・ルーベンがニューヨークの「ルーベンズ・デリカテッセン」でサンドイッチを考案した。\n* ニューヨークの「ルーベンズ・デリカテッセン」で、アルフレッド・シャイニングがサンドイッチを考案した。"
+    },
+    "LogiQA2_Official_FOL": {
+      "prompt_prefix": "タスク: 論理推論・質問演算子識別 (LogiQA 2.0 Official)\n【本文】\nZero advantage consciousness refers to a kind of crisis consciousness and s",
+      "target_prefix": "【質問の論理演算子分類】P |- Q (論理的帰結・真の選択)\n【形式論理構造 (FOL)】\n  (Predicate Logic Constraint Extraction)\n【ALU論理検証】<SET R0 1> => [R0=1] <SET R1 1> => [R1=1] <IMP R2 R0 R1> => [R2=1]\n選択肢 A (Israel is one of the countries with the poorest natural resources in"
+    },
+    "search_augmented_2hop_entity_chain": {
+      "prompt_prefix": "質問: 通信機器大手ノキア（Nokia）が本社を置く国の首都はどこか？\n思考:",
+      "target_prefix": " 関連情報を多段階検索で調査します。<SEARCH ノキア 本社> => [RESULT: ノキア 本社 | ノキア 本社: 所在地・関連先は フィンランド です。] 中間の特定結果に基づき、次の検索を行います。<SEARCH フィンランド 首都> => [RESULT: フィンランド 首都 | フィンランド 首都: 正確な情報は ヘルシンキ です。] 以上の検索結果を総合して結論を導出します。答え: ヘルシンキ"
+    },
+    "v43_search_augmented_general_knowledge": {
+      "prompt_prefix": "質問: 庶民の意見を直接聞くために「目安箱」を設置した江戸幕府第8代将軍は誰か？\n思考:",
+      "target_prefix": " 外部エンジンで確認します。<SEARCH 享保の改革 徳川吉宗 目安箱> => [RESULT (src: ja.wikipedia.org, date: 時期未詳): その後、奈良時代の766年...の下で、訴人が政治への不満を表明した後、弾正台に訴状を提出する方法がとられていた。 · 一般的に目安箱といえば江戸時代の1721年（享保6年）に徳川吉宗が設置したものを指...] 検索結果より、答えは 徳川吉宗 です。\n回答: 徳川吉宗"
+    },
+    "v43_academic_multichoice_search_cot": {
+      "prompt_prefix": "問題: 自動車メーカー「ボルボ（Volvo）」が創業・本社を置く国の首都はどこか？\nA: ストックホルム\nB: ベルリン\nC: ベルン\nD: ウィーン\n思考:",
+      "target_prefix": " 外部エンジンで関連事実を検索・照会します。<SEARCH ボルボ 本社 スウェーデン 首都 ストックホルム> => [RESULT (src: ja.wikipedia.org, date: 2018年): 2018年 - 同じく吉利グループだが資本関係はない「ABボルボ」と路上危険データを共有することを発表。 · 2021年 - ナスダック・ストックホルムに株式上場。浙江吉利控股集団は筆頭株主の地位を保つ。] 検索された事実に基づき選択肢を検証します。正解は選択肢Aの「ス"
+    },
+    "Comparative_Conditional_Aligned": {
+      "prompt_prefix": "問題: トレイにはリンゴが571個、ナップサックにはミカンが595個入っています。どちらに何個多く入っていますか？\n思考:",
+      "target_prefix": "トレイの個数をR0、ナップサックの個数をR1に設定します。<SET R0 571> => [R0=571] <SET R1 595> => [R1=595] 大きい方から小さい方を引いて差を計算します。<SUB R2 R1 R0> => [R2=24] 差は24個であり、ナップサックの方が多いです。答え: ナップサックに24個多く入っています。"
+    },
+    "v43_relational_causal_cot": {
+      "prompt_prefix": "タスク: 歴史・科学・社会の因果関係推論 (Relational CoT)\n問い: mRNAの開始コドンに続く以下の変化のうち、以降の読み枠を破壊して最も重大な影響を及ぼす可能性が高いのはどれか？\n選択肢: A: 単一のヌクレオチドの欠失 ",
+      "target_prefix": " 【因果関係の連鎖】\n1. 遺伝暗号（コドン）は3つの塩基（トリプレット）単位で1つのアミノ酸を指定する。\n2. 3塩基（三重鎖）の欠失なら1つのアミノ酸が抜けるだけで枠は維持され、置換なら1文字が変わるだけ（ミスセンス/サイレント）。\n3. しかし「単一（1塩基）の欠失」は読み枠全体がずれるフレームシフト変異を引き起こし、以降の全配列が破壊される。\n【結論】正解は 単一のヌクレオチドの欠失（A）である。\n正解: A"
+    },
+    "swe_alu_accumulate_sum": {
+      "prompt_prefix": "タスク: SWE プログラム実行・状態トレース\n以下のコードを実行した直後の変数 R0 の正確な最終値を答えよ。\n```python\nR0 = 73\nfor i in range(1):\n    R0 += i * 2\n```\n最終値 R0",
+      "target_prefix": "<SET R0 73> => [R0=73] <SET R1 1> => [R1=1] <SET R2 0> => [R2=0] <ADD R0 R0 R2> => [R0=73] <ADD R2 R2 2> => [R2=2] <DEC R1> => [R1=0] 73"
+    },
+    "JNLI_Logical_Operator_set_complement_not_applicable": {
+      "prompt_prefix": "タスク: 自然言語指示の論理演算子変換・3値論理推論 (JNLI Grounded)\n【本文】\n（1）山の岩場のある空き地で、フリスビーをしている人たちがいます。 （2）標高の高い雪山を歩いて降りていく人がいます。 （3）赤くて四角い電車が",
+      "target_prefix": "【1. 指示の論理演算子への変換】\n指示『次のA〜Cのうち、『前提から真偽が確定する（真または偽と断定できる）』という条件に【該当しないもの】を選べ。』は形式論理演算 `¬Deducible(x) (集合の補集合・該当しないものの抽出)` に対応する。\n理由: 真(含意)または偽(矛盾)として確定する集合の補集合（真偽未確定）に属する選択肢を抽出する。\n【2. 各選択肢の論理状態検証】\n- A: 本文から導出可能で真 (P |- Q)\n- B: 本文と矛盾し偽 (P |- ¬"
+    },
+    "GSM8K_Japanese_Full": {
+      "prompt_prefix": "算数文章題: 卓球ボールは 1 個あたり 10 円で販売されています。ジョニーはいたずらのために 1 万個を購入し、大量購入のために 30% の割引を受けます。彼はいくら支払いますか?\n思考:",
+      "target_prefix": "問題の条件に従って計算を組み立てます。<SET R0 700> => [R0=700] 答えは700です。答: 700"
+    },
+    "RIKEN_AIP_ichikara_Full": {
+      "prompt_prefix": "指示: 結納はどういうことをするのですか?その意味も含めて教えてください。\n応答:",
+      "target_prefix": "結納とは、婚約の確認を互いに行い、結婚によって両家が親戚関係となることを祝福する意味を持つ、日本の伝統的な婚約の儀式です。\n\n\n一般的な結納式の流れとは、次の通りです。\n\n\n1、口上(こうじょう)\n\n名字が変わらない側が、決まり文句の口上を述べ、結納品(金)の中身が書かれた目録を名字が変わる側へ渡します。\n\n\n2、受書(うけしょ)\n\n結納品を受け取った側が受書を返します。\n\n\n3、結びの言葉\n\n贈った側が「無事に結納を納めることができました」と結の言葉を述べて終了します。\n\n"
+    },
+    "JNLI_Logical_Operator_non_entailment_undeducible": {
+      "prompt_prefix": "タスク: 自然言語指示の論理演算子変換・3値論理推論 (JNLI Grounded)\n【本文】\n（1）駅のホームには、丸みをおびた黄色とブルーの列車が停まっている。 （2）水上でヨットに乗ってる人がいます。 （3）サーフボードで波に乗ってい",
+      "target_prefix": "【1. 指示の論理演算子への変換】\n指示『次のA〜Cのうち、【本文（前提）からは導けない（真偽を確定できない）】ものを選べ。』は形式論理演算 `P |/- Q ∧ P |/- ¬Q (非含意・独立命題の識別)` に対応する。\n理由: 『本文から導けない』とは偽(矛盾)である必要はなく、本文の情報だけでは真偽が確定しない独立命題（P |/- Q）を指す。\n【2. 各選択肢の論理状態検証】\n- A: 本文から導出可能で真 (P |- Q)\n- C: 本文と矛盾し偽 (P |- ¬"
+    },
+    "SoftBank_JSQuAD_Full": {
+      "prompt_prefix": "文脈: ウクライナ [SEP] ウクライナは多民族国家である。主要民族はウクライナ人で、全人口の約8割を占める。ロシア人は約2割を占める。ほかに少数民族としてクリミア・タタール人、モルドヴァ人、ブルガリア人、ハンガリー人、ルーマニア人、ユダ",
+      "target_prefix": "ウクライナ"
+    },
+    "ARC_Grid_color_swap_2_3": {
+      "prompt_prefix": "タスク: ARC抽象幾何推論 (color_swap_2_3)\n規則説明: 色 2 と色 3 を相互置換せよ。\n入力グリッド: [[0, 3, 3, 3, 3, 0], [3, 0, 1, 3, 3, 3], [3, 3, 2, 3, 3,",
+      "target_prefix": "[[0, 2, 2, 2, 2, 0], [2, 0, 1, 2, 2, 2], [2, 2, 3, 2, 2, 1], [0, 0, 0, 2, 1, 0]]"
+    },
+    "Yahoo_JAPAN_JNLI_Full": {
+      "prompt_prefix": "前提: フリスビーを持った男性が、芝生の上を走っています。\n仮説: 芝生の上で、男性が走っています。\n問: 前提に対して仮説はどのような論理関係ですか？\n思考:",
+      "target_prefix": "前提と仮説の論理整合性を検証します。<SET R0 0> => [R0=0] 判定は含意です。答: 含意"
+    },
+    "Procedural_Status_substitute_redirection": {
+      "prompt_prefix": "状況: 村田がマスターキーを保管・管理しています。 西山への引き渡しを試みましたが不在のため中断し、正式に杉本へ引き渡しました。\n質問: 現在、マスターキーの担当者（保管者）は誰ですか？\n思考:",
+      "target_prefix": "マスターキーの担当者をR0で追跡します。登場人物コード: 村田=1, 西山=2, 杉本=3。<SET R0 1> => [R0=1] 西山への引き渡しは中断され、正式に杉本（コード3）へ設定しました。<SET R0 3> => [R0=3] 最終的な担当者コードはR0=3（杉本）です。答え: 杉本です。"
+    },
+    "bAbI_Distractor_Filtering": {
+      "prompt_prefix": "状況: 菅原が書類を持っています。 松尾はコーヒーを飲みました。 菅原は書類を千葉に渡しました。 松尾は電話に出ました。\n質問: 現在、書類を持っているのは誰ですか？\n思考:",
+      "target_prefix": "書類の所持者をR0で追跡します。菅原=1, 松尾=2, 千葉=3。<SET R0 1> => [R0=1] 松尾の行動は書類の移動ではないためR0は変化しません。菅原から千葉（コード3）に渡りました。<SET R0 3> => [R0=3] 最終的な所持者コードはR0=3（千葉）です。答え: 現在書類を持っているのは千葉です。"
+    },
+    "l_pdf_exhaustive_42_problems": {
+      "prompt_prefix": "タスク: 論理学・自然演繹推論 (L.pdf)\n<s>[INST] 【意味論的分析】『論理学入門』例題18 (p.30): 反証モデルの具体的構成 について、真理値表または反証モデルを用いて妥当性を判定・検証してください。\n対象: ∀x F",
+      "target_prefix": "ST]\n<thought>\n思考プロセス:\n1. 意味論の定義1（すべての前提が真で結論が偽となる行の不存在）。\n2. 真理関数的評価または解釈写像 I の適用。\n3. 妥当性の判定確定。\n</thought>\n【意味論的検証】\n```text\nドメイン D: 人間全体の集合\n解釈 I:\n  名前 a: のび太くん (∈ D)\n  述語 F: 男全体の集合（Fx は「xは男である」）\n```\n\n【結論】\nこのモデルにおいて、ドメインにはしずかちゃん等の女性が存在するため ∀x"
+    },
+    "swe_alu_modulo_expr": {
+      "prompt_prefix": "タスク: SWE プログラム実行・状態トレース\n以下のコードを実行した直後の変数 R0 の正確な最終値を答えよ。\n```python\nR0 = (361 + 15 * 14) % 19\n```\n最終値 R0 =",
+      "target_prefix": "<SET R0 361> => [R0=361] <MUL R2 15 14> => [R2=210] <ADD R0 R0 R2> => [R0=571] <MOD R0 R0 19> => [R0=1] 1"
+    },
+    "bAbI_Dual_Object_Dynamic_Binding": {
+      "prompt_prefix": "状況: 乙が本を持っています。 Z氏が鍵を持っています。 乙は本をW氏に渡しました。 Z氏は鍵を乙に渡しました。\n質問: 現在、鍵を持っているのは誰ですか？\n思考:",
+      "target_prefix": "本の所持者をR0、鍵の所持者をR1で追跡します。登場人物コード: 乙=1, Z氏=2, W氏=3。<SET R0 1> => [R0=1] <SET R1 2> => [R1=2] 乙が本をW氏（コード3）に渡しました。<SET R0 3> => [R0=3] Z氏が鍵を乙（コード1）に渡しました。<SET R1 1> => [R1=1] 現在の状態: 鍵はR1=1（乙）です。答え: 乙が持っています。"
+    },
+    "JMultiWOZ_Dialogue_State_Tracking": {
+      "prompt_prefix": "対話履歴:\nユーザー: 東周辺で、予算は格な民を探しています。\nシステム: 東の格な民ですね。お調べします。\nユーザー: すみません、エリアを横に変更してください。予算と種類はそのままです。\n質問: 現在確定しているエリア、予算、種類の条件",
+      "target_prefix": "対話状態スロットを追跡します。登場人物コード: 東=1, 横=2。エリアをR0、予算をR1、種類をR2に割り当てます。<SET R0 1> => [R0=1] <SET R1 1> => [R1=1] <SET R2 1> => [R2=1] ユーザーがエリアを横（コード2）に変更しました。予算と種類はそのまま維持します。<SET R0 2> => [R0=2] 現在の確定スロット: エリアR0=2（横）、予算は格、種類は民。答え: 横、予算は格（種類は民）です。"
+    },
+    "SoftBank_JCommonsenseQA_Full": {
+      "prompt_prefix": "指示:: 質問と回答の選択肢を入力として受け取り、選択肢から回答を選択してください。回答の他には何も含めないことを厳守してください。\n\n質問:: 地球上の全てを表すのに使われる言葉はどれ?\n選択肢:: 絵本 世界 半球 図鑑 全国\n回答::",
+      "target_prefix": "世界"
+    },
+    "bAbI_Spatial_Tracking_MultiChar_Generalized": {
+      "prompt_prefix": "状況: 福田が役員室に移動しました。 清水が資料室に移動しました。 石川が倉庫に移動しました。 福田が開発室に移動しました。\n質問: 現在、福田はどこにいますか？\n思考:",
+      "target_prefix": "登場人物コード: 福田=1, 清水=2, 石川=3。場所コード: 役員室=1, 資料室=2, 倉庫=4, 開発室=3。福田の現在地をR0で追跡します。福田が役員室（コード1）に移動しました。<SET R0 1> => [R0=1] 清水と石川は別人物なのでR0は維持します。福田が開発室（コード3）に移動しました。<SET R0 3> => [R0=3] 最終位置はR0=3（開発室）です。答え: 福田は開発室にいます。"
+    },
+    "swe_alu_multiply_power": {
+      "prompt_prefix": "タスク: SWE プログラム実行・状態トレース\n以下のコードを実行した直後の変数 R0 の正確な最終値を答えよ。\n```python\nR0 = 47\nfor _ in range(2):\n    R0 *= 2\n```\n最終値 R0 =",
+      "target_prefix": "<SET R0 47> => [R0=47] <SET R1 2> => [R1=2] <MUL R0 R0 2> => [R0=94] <DEC R1> => [R1=1] <MUL R0 R0 2> => [R0=188] <DEC R1> => [R1=0] 188"
+    },
+    "Procedural_Status_unapproved_proposal": {
+      "prompt_prefix": "状況: 大塚がマスターキーを保管・管理しています。 工藤への引き継ぎ申請が提出されましたが、上長の承認が下りず保留のままです。\n質問: 現在、マスターキーの担当者（保管者）は誰ですか？\n思考:",
+      "target_prefix": "マスターキーの担当者をR0で追跡します。登場人物コード: 大塚=1, 工藤=2。<SET R0 1> => [R0=1] 工藤への引き継ぎ申請は未承認のため、管理者は変更されません。R0は1のまま維持します。最終的な担当者コードはR0=1（大塚）です。答え: 大塚です。"
+    },
+    "Procedural_Status_true_undo_rollback": {
+      "prompt_prefix": "状況: Y氏が重要書類を保管・管理しています。 Y氏は重要書類を丁へ引き渡しました。 しかし手続きに不備があったため引き渡しを取り消し、重要書類を直ちに元のY氏へ戻しました。\n質問: 現在、重要書類の担当者（保管者）は誰ですか？\n思考:",
+      "target_prefix": "重要書類の担当者をR0で追跡します。登場人物コード: Y氏=1, 丁=2。<SET R0 1> => [R0=1] Y氏が丁（コード2）へ引き渡しました。<SET R0 2> => [R0=2] 引き渡しが取り消され元のY氏（コード1）へ戻しました。<SET R0 1> => [R0=1] 最終的な担当者コードはR0=1（Y氏）です。答え: Y氏です。"
+    },
+    "Government_Legal_Full": {
+      "prompt_prefix": "指示:: 質問と回答の選択肢を入力として受け取り、選択肢から回答を選択してください。回答の他には何も含めないことを厳守してください。\n\n質問:: 日本国憲法第25条に関する記述として正しいものはどれですか？\n選択肢:: 内閣総理大臣の私的見",
+      "target_prefix": "すべて国民は、健康で文化的な最低限度の生活を営む権利を有する。国は、すべての生活部面について、社会福祉、社会保障及び公衆衛生の向上及び増進に努めなければならない。"
+    },
+    "swe_alu_conditional_filter_loop": {
+      "prompt_prefix": "タスク: SWE プログラム実行・状態トレース\n以下のコードを実行した直後の変数 R0 の正確な最終値を答えよ。\n```python\nR0 = 1059\nif 0 % 2 == 0: R0 += 0\nelse: R0 -= 4\nif 2 %",
+      "target_prefix": "<SET R0 1059> => [R0=1059] <SET R1 4> => [R1=4] <ADD R0 R0 0> => [R0=1059] <DEC R1> => [R1=3] <SUB R0 R0 4> => [R0=1055] <DEC R1> => [R1=2] <ADD R0 R0 8> => [R0=1063] <DEC R1> => [R1=1] <SUB R0 R0 4> => [R0=1059] <DEC R1> => [R1=0] 1059"
+    },
+    "formal_logic_impl_and": {
+      "prompt_prefix": "タスク: 形式言語化・記号論理推論 (CoT)\n次の命題を形式言語および記号論理式に変換し、思考の連鎖(CoT)を経て真理値を判定せよ。\n領域: 科学実験計測\n前提: 「もし反応槽の温度が設定閾値に到達するならば、触媒注入ポンプが稼働するか",
+      "target_prefix": "【命題の定義と形式化】\n- 命題変数 A: 反応槽の温度が設定閾値に到達する (値: 1)\n- 命題変数 B: 触媒注入ポンプが稼働する (値: 1)\n- 命題変数 C: 化学反応熱のデータ収集が開始される (値: 0)\n- 論理式: A => (B ∧ C)\n\n【論理的導出・推論過程】\n1. 連言 (B ∧ C) の評価: B=1, C=0 であるため、(B ∧ C) = 0。\n2. 含意 A => (B ∧ C) の真理値表評価:\n   - 前件 A = 1\n   - 後"
+    },
+    "Procedural_Status_executed_transfer": {
+      "prompt_prefix": "状況: 岡田が入館パスを保管・管理しています。 安藤への引き継ぎ申請が正式に承認され、入館パスの引き渡しが完了しました。\n質問: 現在、入館パスの担当者（保管者）は誰ですか？\n思考:",
+      "target_prefix": "入館パスの担当者をR0で追跡します。登場人物コード: 岡田=1, 安藤=2。<SET R0 1> => [R0=1] 申請が承認され安藤（コード2）へ引き渡されました。<SET R0 2> => [R0=2] 最終的な担当者コードはR0=2（安藤）です。答え: 安藤です。"
+    },
+    "swe_alu_modulo_loop": {
+      "prompt_prefix": "タスク: SWE プログラム実行・状態トレース\n以下のコードを実行した直後の変数 R0 の正確な最終値を答えよ。\n```python\nR0 = 1856\nfor i in range(7):\n    R0 = (R0 + 10) % 13\n",
+      "target_prefix": "<SET R0 1856> => [R0=1856] <SET R1 7> => [R1=7] <ADD R0 R0 10> => [R0=1866] <MOD R0 R0 13> => [R0=7] <DEC R1> => [R1=6] <ADD R0 R0 10> => [R0=17] <MOD R0 R0 13> => [R0=4] <DEC R1> => [R1=5] <ADD R0 R0 10> => [R0=14] <MOD R0 R0 13> => [R0=1]"
+    },
+    "bAbI_Inventory_Add_Sub": {
+      "prompt_prefix": "問題: キャビネットにダンボールが12個あります。 さらに3個のダンボールが届きました。 その後、5個のダンボールを出荷しました。 現在、キャビネットにダンボールは何個ありますか？\n思考:",
+      "target_prefix": "キャビネットのダンボール在庫をR0で計算します。<SET R0 12> => [R0=12] 3個届いたので加算します。<ADD R0 R0 3> => [R0=15] 5個出荷したので減算します。<SUB R0 R0 5> => [R0=10] 答え: 現在キャビネットにダンボールは10個あります。"
+    },
+    "ARC_Grid_shift_down": {
+      "prompt_prefix": "タスク: ARC抽象幾何推論 (shift_down)\n規則説明: グリッドを行方向に下へ1行巡回シフトせよ。\n入力グリッド: [[3, 2, 0, 0, 2], [0, 3, 0, 2, 2], [2, 2, 0, 1, 2], [1, ",
+      "target_prefix": "[[1, 3, 1, 2, 3], [3, 2, 0, 0, 2], [0, 3, 0, 2, 2], [2, 2, 0, 1, 2]]"
+    },
+    "bAbI_Dual_Object_Clean_Generalized": {
+      "prompt_prefix": "状況: 坂本が書類を持っています。 阿部が本を持っています。 坂本は書類を森に渡しました。 阿部は本を坂本に渡しました。\n質問: 現在、書類と本はそれぞれ誰が持っていますか？\n思考:",
+      "target_prefix": "書類の所持者をR0、本の所持者をR1で追跡します。登場人物コード: 坂本=1, 阿部=2, 森=3。<SET R0 1> => [R0=1] <SET R1 2> => [R1=2] 坂本が書類を森（コード3）に渡しました。<SET R0 3> => [R0=3] 阿部が本を坂本（コード1）に渡しました。<SET R1 1> => [R1=1] 現在の状態: 書類はR0=3（森）、本はR1=1（坂本）です。答え: 書類は森、本は坂本が持っています。"
+    },
+    "swe_alu_bxor_product": {
+      "prompt_prefix": "タスク: SWE プログラム実行・状態トレース\n以下のコードを実行した直後の変数 R0 の正確な最終値を答えよ。\n```python\nR0 = (51 * 5) ^ (14 * 6)\n```\n最終値 R0 =",
+      "target_prefix": "<MUL R1 51 5> => [R1=255] <MUL R2 14 6> => [R2=84] <BXOR R0 R1 R2> => [R0=171] 171"
+    },
+    "JNLI_Logical_Operator_not_necessarily_true": {
+      "prompt_prefix": "タスク: 自然言語指示の論理演算子変換・3値論理推論 (JNLI Grounded)\n【本文】\n（1）女子テニス選手がサーブを打っています。 （2）壁や床やバスルームがないバスルームです。 （3）サーフボードを手に持ったサングラスの男性が、",
+      "target_prefix": "【1. 指示の論理演算子への変換】\n指示『次のA〜Cのうち、前提が真であっても【必ずしも正しいとはいえない（反例または未確定の余地がある）】で、かつ明確な矛盾(偽)ではないものを選べ。』は形式論理演算 `¬∀x P(x) ≡ ∃x ¬P(x) (全称否定・反例可能性)` に対応する。\n理由: 『必ずしも正しいとはいえない (¬∀)』は、真であることが保証されない（反例が存在しうる ∃x ¬P(x)）命題を選択する。\n【2. 各選択肢の論理状態検証】\n- B: 本文から導出可能"
+    },
+    "swe_alu_parity_branch": {
+      "prompt_prefix": "タスク: SWE プログラム実行・状態トレース\n以下のコードを実行した直後の変数 R0 の正確な最終値を答えよ。\n```python\nR0 = 1111\nif R0 % 2 == 0: R0 += 32 * 4\nelse: R0 += 32",
+      "target_prefix": "<SET R0 1111> => [R0=1111] <MOD R2 R0 2> => [R2=1] <MUL R3 32 9> => [R3=288] <SET R1 1> => [R1=1] <ADD R0 R0 R3> => [R0=1399] <DEC R1> => [R1=0] 1399"
+    },
+    "ARC_Grid_shift_right": {
+      "prompt_prefix": "タスク: ARC抽象幾何推論 (shift_right)\n規則説明: グリッドを列方向に右へ1列巡回シフトせよ。\n入力グリッド: [[3, 3, 1, 2, 2, 1], [1, 2, 0, 3, 2, 3], [3, 0, 2, 3, 0",
+      "target_prefix": "[[1, 3, 3, 1, 2, 2], [3, 1, 2, 0, 3, 2], [2, 3, 0, 2, 3, 0], [0, 0, 0, 0, 3, 0], [0, 3, 3, 1, 0, 0], [3, 1, 1, 0, 2, 2]]"
+    },
+    "Procedural_Loop_Aligned": {
+      "prompt_prefix": "問題: 4個の郵便物を順番に検品します。1回ごとに残り回数を追跡し、すべて完了したか答えてください。\n思考:",
+      "target_prefix": "残り回数カウンタをR1に設定します。<SET R1 4> => [R1=4] 1回目の検品を行いました。<DEC R1> => [R1=3] 残り3回です。 2回目の検品を行いました。<DEC R1> => [R1=2] 残り2回です。 3回目の検品を行いました。<DEC R1> => [R1=1] 残り1回です。 4回目の検品を行いました。<DEC R1> => [R1=0] カウンタが0に達しました。 すべての検品が完了しました。 答え: 4個の郵便物の検品が完了しました"
+    },
+    "JNLI_Logical_Operator_empty_witness_unsatisfiable": {
+      "prompt_prefix": "タスク: 自然言語指示の論理演算子変換・3値論理推論 (JNLI Grounded)\n【本文】\n（1）目玉の造り物が付いた紫色の持ち手のハサミを手に持った人がいます。 （2）バスケコートでボールを使っています。 （3）海岸の砂浜に駐車場の看",
+      "target_prefix": "【1. 指示の論理演算子への変換】\n指示『次のA〜Cのうち、『前提と矛盾せず両立する』という条件を満たすか判定し、【前提と両立するいかなる場合も存在しない（条件を満たすものが存在しない）】ものを選べ。』は形式論理演算 `¬∃x (P(x) ∧ Q(x)) ≡ ∀x (P(x) -> ¬Q(x)) (存在否定・充足不能)` に対応する。\n理由: 前提 P と同時に成り立つケースが1つも存在しない（¬∃x (P ∧ Q) すなわち矛盾 F）選択肢を抽出する。\n【2. 各選択肢の論"
+    },
+    "JNLI_Logical_Operator_negation_contradiction": {
+      "prompt_prefix": "タスク: 自然言語指示の論理演算子変換・3値論理推論 (JNLI Grounded)\n【本文】\n（1）止まっているバスの前面部に、台が有り自転車が乗せられています。 （2）公園で男性がバットを構えています。 （3）寝ている赤ちゃんの隣に熊の",
+      "target_prefix": "【1. 指示の論理演算子への変換】\n指示『次のA〜Cのうち、前提と照らして【誤っている（矛盾する）】ものを選べ。』は形式論理演算 `P |- ¬Q (否定・矛盾検出)` に対応する。\n理由: 単なる未記載ではなく、前提と明確に矛盾し偽となる命題（P |- ¬Q）を選択する。\n【2. 各選択肢の論理状態検証】\n- B: 本文から導出可能で真 (P |- Q)\n- A: 本文と矛盾し偽 (P |- ¬Q)\n- C: 本文からは導けない・真偽未確定 (P |/- Q ∧ P |/-"
+    },
+    "ARC_Grid_diagonal_cross": {
+      "prompt_prefix": "タスク: ARC抽象幾何推論 (diagonal_cross)\n規則説明: 主対角線を 7 で描画せよ。\n入力グリッド: [[0, 3, 1, 3, 2, 3], [1, 1, 3, 1, 2, 0], [3, 3, 0, 2, 0, 2]",
+      "target_prefix": "[[8, 3, 1, 3, 2, 3], [1, 8, 3, 1, 2, 0], [3, 3, 8, 2, 0, 2], [0, 1, 2, 8, 1, 2]]"
+    },
+    "ARC_Grid_color_swap_0_1": {
+      "prompt_prefix": "タスク: ARC抽象幾何推論 (color_swap_0_1)\n規則説明: 色 0 と色 1 を相互置換せよ。\n入力グリッド: [[1, 2, 3, 3], [3, 1, 1, 1], [2, 0, 1, 3], [3, 3, 3, 3],",
+      "target_prefix": "[[0, 2, 3, 3], [3, 0, 0, 0], [2, 1, 0, 3], [3, 3, 3, 3], [3, 0, 1, 0]]"
+    },
+    "ARC_Grid_border_fill": {
+      "prompt_prefix": "タスク: ARC抽象幾何推論 (border_fill)\n規則説明: 外枠境界を 9 で埋めよ。\n入力グリッド: [[2, 3, 2, 2, 1], [3, 2, 0, 1, 3], [3, 1, 1, 1, 1]]\n出力グリッド:",
+      "target_prefix": "[[9, 9, 9, 9, 9], [9, 2, 0, 1, 9], [9, 9, 9, 9, 9]]"
+    },
+    "Yale_FOLIO_FirstOrderLogic": {
+      "prompt_prefix": "タスク: 一階述語論理・3値論理検証 (Yale FOLIO)\n【前提 (Premises)】\nThe USS Salem is a heavy cruiser built for the United States Navy.\nThe l",
+      "target_prefix": "【一階述語論理式 (FOL)】\n前提:\nHeavyCruiser(usssalem) ∧ BuiltFor(usssalem, unitedstatesnavy)\nLastHeavyCruiserToEnterService(usssalem)\nMuseumShip(usssalem)\n∀x (MuseumShip(x) → OpenToPublic(x))\nServedIn(usssalem, atlantic) ∧ ServedIn(usssalem, mediterra"
+    },
+    "ARC_Grid_flip_vertical": {
+      "prompt_prefix": "タスク: ARC抽象幾何推論 (flip_vertical)\n規則説明: グリッドを上下反転せよ。\n入力グリッド: [[0, 3, 1, 0, 2, 2], [1, 0, 3, 3, 3, 1], [0, 0, 1, 0, 3, 3], [",
+      "target_prefix": "[[0, 1, 1, 0, 2, 0], [0, 3, 0, 3, 2, 0], [1, 1, 1, 0, 2, 1], [0, 0, 1, 0, 3, 3], [1, 0, 3, 3, 3, 1], [0, 3, 1, 0, 2, 2]]"
+    },
+    "ARC_Grid_flip_horizontal": {
+      "prompt_prefix": "タスク: ARC抽象幾何推論 (flip_horizontal)\n規則説明: グリッドを左右反転せよ。\n入力グリッド: [[1, 3, 3], [0, 0, 1], [1, 3, 2], [1, 2, 0], [1, 0, 1], [2, ",
+      "target_prefix": "[[3, 3, 1], [1, 0, 0], [2, 3, 1], [0, 2, 1], [1, 0, 1], [1, 0, 2]]"
+    },
+    "JNLI_Logical_Operator_positive_entailment": {
+      "prompt_prefix": "タスク: 自然言語指示の論理演算子変換・3値論理推論 (JNLI Grounded)\n【本文】\n（1）コートでテニスの試合が行われています。 （2）スーツケースの中に女の子が入り込んでいます。 （3）リンゴとキウイが三つずつ置かれています。",
+      "target_prefix": "【1. 指示の論理演算子への変換】\n指示『次のA〜Cのうち、前提から論理的に【正しい（確実に導ける）】ものを選べ。』は形式論理演算 `P |- Q (含意・肯定導出)` に対応する。\n理由: 前提から確実に真であると導出できる命題（P |- Q）を選択する。\n【2. 各選択肢の論理状態検証】\n- A: 本文から導出可能で真 (P |- Q)\n- C: 本文と矛盾し偽 (P |- ¬Q)\n- B: 本文からは導けない・真偽未確定 (P |/- Q ∧ P |/- ¬Q)\n【3."
+    },
+    "ARC_Grid_center_fill": {
+      "prompt_prefix": "タスク: ARC抽象幾何推論 (center_fill)\n規則説明: 中心座標を 8 に変更せよ。\n入力グリッド: [[2, 1, 2, 0, 1, 2], [0, 0, 0, 0, 1, 1], [3, 1, 0, 1, 1, 1], [",
+      "target_prefix": "[[2, 1, 2, 0, 1, 2], [0, 5, 5, 5, 5, 1], [3, 5, 5, 5, 5, 1], [1, 5, 5, 5, 5, 0], [0, 2, 2, 3, 1, 1]]"
+    },
+    "swe_alu_conditional_filter_py": {
+      "prompt_prefix": "タスク: SWE プログラム実行・状態トレース\n以下のコードを実行した直後の変数 R0 の正確な最終値を答えよ。\n```python\nR0 = 26\nif 0 % 2 == 0: R0 += 0\nelse: R0 -= 3\nif 2 % 2",
+      "target_prefix": "<SET R0 26> => [R0=26] <SET R1 2> => [R1=2] <ADD R0 R0 0> => [R0=26] <DEC R1> => [R1=1] <ADD R0 R0 8> => [R0=34] <DEC R1> => [R1=0] 34"
+    },
+    "ARC_Grid_invert_colors": {
+      "prompt_prefix": "タスク: ARC抽象幾何推論 (invert_colors)\n規則説明: 各マスの数値を (x + 1) mod 4 に変換せよ。\n入力グリッド: [[1, 0, 3, 2], [1, 2, 1, 2], [1, 3, 1, 3], [3,",
+      "target_prefix": "[[2, 3, 0, 1], [2, 1, 2, 1], [2, 0, 2, 0], [0, 1, 0, 1], [0, 2, 0, 0], [3, 0, 0, 3]]"
+    },
+    "formal_logic_demorgan": {
+      "prompt_prefix": "タスク: ド・モルガンの法則の形式化と検証 (CoT)\n命題: 「患者の動脈血酸素飽和度が低下する、または補助酸素供給弁が全開になるである」の否定は、記号論理学でどう表現されるか？\n思考の連鎖:",
+      "target_prefix": "【形式化】\n- A: 患者の動脈血酸素飽和度が低下する\n- B: 補助酸素供給弁が全開になる\n- 選言: A ∨ B\n- 選言の否定: ~(A ∨ B)\n\n【ド・モルガンの法則による展開】\n1. ~(A ∨ B) は、~A ∧ ~B と論理的に同値である。\n2. 日本語表現: 「患者の動脈血酸素飽和度が低下するではなく、かつ補助酸素供給弁が全開になるでもない」。\n\n【Lean 4 形式証明】\n```lean\ntheorem demorgan_SpO2Low (A B : Pr"
+    },
+    "dialogue_tokinikagiri": {
+      "prompt_prefix": "タスク: 論理学・自然演繹推論 (L.pdf)\nユーザー: 「こんにちは！日常会話の論理について質問させてください。『十分な睡眠をとるときに限り、集中して研究に取り組むし、学術論文を執筆する』という発言を聞いたのですが、これって『十分な睡眠",
+      "target_prefix": "【思考の連鎖 (CoT)】\n1. 対話意図と背景知識の想起:\n   - ユーザーは日常日本語の『〜のときに限り』と『〜ならば』の意味論的差異を尋ねている。\n   - 東工大哲学研究会『論理学入門』1.2.2節および野矢茂樹『論理学』における文体変種の議論を想起する。\n   - 日常語の『AならばB (A -> B)』に対し、『Aのときに限りB』は矢印の向きが逆転し B -> A（必要条件）を表す。\n2. 記号化と構造分析:\n   - T: 十分な睡眠をとる, P: 集中して研"
+    },
+    "formal_logic_syllogism": {
+      "prompt_prefix": "タスク: 三段論法の形式化と推論 (CoT)\n前提1: 「口座残高および信用枠が十分であるならば、即時振替取引が承認されるである。」\n前提2: 「即時振替取引が承認されるならば、電子決済領収書が即時発行されるである。」\n問: 「口座残高およ",
+      "target_prefix": "【命題の形式化】\n- A: 口座残高および信用枠が十分である\n- B: 即時振替取引が承認される\n- C: 電子決済領収書が即時発行される\n- 前提1: A -> B\n- 前提2: B -> C\n- 導出目標: A -> C\n\n【論理的導出】\n1. 仮定として A を導入する。\n2. 前提1 (A -> B) に仮定 A を適用し、前件肯定より B を得る。\n3. 前提2 (B -> C) に得られた B を適用し、前件肯定より C を得る。\n4. 仮定 A の下で C が導"
+    },
+    "formal_logic_contrapositive": {
+      "prompt_prefix": "タスク: 対偶の導出と形式証明 (CoT)\n命題: 「軌道修正信号を受信するならば、推進スラスタが自動点火するである。」\n問: この命題の対偶を記号論理で記述し、Lean 4で証明せよ。\n思考の連鎖:",
+      "target_prefix": "【命題の形式化と対偶の定義】\n- 元の命題: A -> B\n- 対偶 (Contrapositive): ~B -> ~A\n\n【論理的導出】\n1. 仮定として ~B を導入する。\n2. さらに背理法または否定導入のため仮定 A をおく。\n3. A -> B より B が導出される。\n4. これは仮定 ~B と直接矛盾する。\n5. 矛盾が生じたため仮定 A は否定され、~A が成立する。\n6. したがって ~B -> ~A が成り立つ。\n\n【Lean 4 証明コード】\n```l"
+    },
+    "lean4_and_commutative": {
+      "prompt_prefix": "タスク: Lean 4 による対話的定理証明\n次の論理・数理命題を Lean 4 で記述し、タクティック証明コードを作成せよ。\n対象命題: 命題 p と q の連言の可換性 (p ∧ q -> q ∧ p)\n思考の連鎖:",
+      "target_prefix": "【証明戦略の立案 (CoT)】\n連言仮定 h : p ∧ q を分解し、hp : p と hq : q を得る。And.intro hq hp により q ∧ p を証明する。\n\n【Lean 4 定理定義と証明コード】\n```lean\ntheorem and_comm (p q : Prop) (h : p ∧ q) : q ∧ p := by\n  cases h with\n  | intro hp hq =>\n    exact And.intro hq hp\n```\n\n答"
+    },
+    "dialogue_poly_quantifier": {
+      "prompt_prefix": "タスク: 論理学・自然演繹推論 (L.pdf)\nユーザー: 「述語論理で『誰もが誰かを知っている』と『誰かが誰からも知っている』は、量化子の順番が違うだけに見えますが、具体的にどう違うのでしょうか？図や日常例で教えてください！」\nアシスタン",
+      "target_prefix": "【思考の連鎖 (CoT)】\n1. 課題の分析:\n   - 東工大哲学研究会『論理学入門』2.2.1節「多重量化を含む場合」の核心的例題。\n   - 式1: ∀x ∃y F(xy) (誰もが誰かを知っている)\n   - 式2: ∃y ∀x F(xy) (誰かが誰からも知っている)\n2. 意味論的真理条件の対比:\n   - 式1 (∀x ∃y): 各人 x ごとに、その人が知っている相手 y が選ばれる（対象 y は人によって異なってよい）。\n   - 式2 (∃y ∀x): ま"
+    },
+    "dialogue_domain_quantifier": {
+      "prompt_prefix": "タスク: 論理学・自然演繹推論 (L.pdf)\nユーザー: 「論理学を勉強していて疑問に思ったのですが、『すべての素数は自然数である』を記号化するとき、なぜ連言 ∀x(素数である ∧ 自然数である) ではなく条件文 ∀x(素数である -> ",
+      "target_prefix": "【思考の連鎖 (CoT)】\n1. 課題の言語哲学的本質:\n   - 東工大哲学研究会『論理学入門』2.2.2節「日本語文の記号化」におけるドメイン（議論領域 D）の決定的一節を想起。\n   - 全称文において連言 ∀x(Fx ∧ Gx) と書くと、議論領域 D に負の整数や分数が入ってきた際、     『負の整数や分数も素数であるであり自然数である』という偽の主張に化けてしまう。\n   - 全称文は法則文であり、前提条件 Fx -> によって法則の適用範囲を限定しなければなら"
+    },
+    "lean4_nat_transitivity": {
+      "prompt_prefix": "タスク: Lean 4 による対話的定理証明\n次の論理・数理命題を Lean 4 で記述し、タクティック証明コードを作成せよ。\n対象命題: 自然数の不等式の推移律 (a < b かつ b < c ならば a < c)\n思考の連鎖:",
+      "target_prefix": "【証明戦略の立案 (CoT)】\n標準ライブラリの推移性定理 Nat.lt_trans に前提仮定 h1 と h2 を直接適用して証明する。\n\n【Lean 4 定理定義と証明コード】\n```lean\ntheorem nat_lt_trans (a b c : Nat) (h1 : a < b) (h2 : b < c) : a < c := by\n  exact Nat.lt_trans h1 h2\n```\n\n答え: 証明完了 (Q.E.D.)"
+    },
+    "l_pdf_deduction_reidai_11_demorgan": {
+      "prompt_prefix": "タスク: 論理学・自然演繹推論 (L.pdf)\nユーザー: 「論理学の演繹について質問です。以下の問題の演繹的推論を構成してください。\n【問題】 例題 11 (自然演繹によるド・モルガン則のShow Line証明)\n前提と結論: Show ",
+      "target_prefix": "【思考の連鎖 (CoT)】\n1. 自然言語の読解と記号論理的定式化:\n   - 領域: 暗号認証ゲートウェイのアクセス制御\n   - 述語定義:\n- P: パスワード認証に成功する\n- Q: 生体認証に成功する\n   - 形式論理式: Show ~(P ∨ Q) ↔ ~P ∧ ~Q\n\n2. 演繹的証明戦略の立案 (Proof Strategy):\n   - 東工大哲学研究会『論理学入門』の構文論に則り、目標論理式を Show Line として宣言する。\n   - 条件文の導出"
+    },
+    "lean4_double_negation_intro": {
+      "prompt_prefix": "タスク: Lean 4 による対話的定理証明\n次の論理・数理命題を Lean 4 で記述し、タクティック証明コードを作成せよ。\n対象命題: 二重否定の導入 (p -> Not (Not p))\n思考の連鎖:",
+      "target_prefix": "【証明戦略の立案 (CoT)】\n目標 Not (Not p) は (Not p -> False) である。仮定 hnp : Not p を導入し、hnp に hp を適用して矛盾 False を導く。\n\n【Lean 4 定理定義と証明コード】\n```lean\ntheorem not_not_intro (p : Prop) (hp : p) : Not (Not p) := by\n  intro hnp\n  exact hnp hp\n```\n\n答え: 証明完了 (Q.E.D"
+    },
+    "lean4_nat_add_zero": {
+      "prompt_prefix": "タスク: Lean 4 による対話的定理証明\n次の論理・数理命題を Lean 4 で記述し、タクティック証明コードを作成せよ。\n対象命題: 自然数 n に対する 0 の加法単位元 (n + 0 = n)\n思考の連鎖:",
+      "target_prefix": "【証明戦略の立案 (CoT)】\n自然数の加法の定義より、n + 0 は定義上 n に簡約されるため、反射律 rfl により直ちに証明完了。\n\n【Lean 4 定理定義と証明コード】\n```lean\ntheorem add_zero_identity (n : Nat) : n + 0 = n := by\n  rfl\n```\n\n答え: 証明完了 (Q.E.D.)"
+    },
+    "l_pdf_deduction_enshu_13_1": {
+      "prompt_prefix": "タスク: 論理学・自然演繹推論 (L.pdf)\nユーザー: 「論理学の演繹について質問です。以下の問題の演繹的推論を構成してください。\n【問題】 演習問題 13-1 (述語論理における全称Modus Ponens)\n前提と結論: ∀x(Fx",
+      "target_prefix": "【思考の連鎖 (CoT)】\n1. 自然言語の読解と記号論理的定式化:\n   - 領域: 医療診断システムの投薬プロトコル\n   - 述語定義:\n- Fx: xが陽性反応を示す\n- Gx: xに所定の治療薬を投与する\n   - 形式論理式: ∀x(Fx -> Gx), ∀xFx ∴ ∀xGx\n\n2. 演繹的証明戦略の立案 (Proof Strategy):\n   - 東工大哲学研究会『論理学入門』の構文論に則り、目標論理式を Show Line として宣言する。\n   - 条件"
+    },
+    "lean4_or_commutative": {
+      "prompt_prefix": "タスク: Lean 4 による対話的定理証明\n次の論理・数理命題を Lean 4 で記述し、タクティック証明コードを作成せよ。\n対象命題: 命題 p と q の選言の可換性 (p ∨ q -> q ∨ p)\n思考の連鎖:",
+      "target_prefix": "【証明戦略の立案 (CoT)】\n選言仮定 h に対し場合分け (cases) を行う。左辺成立時は Or.inr、右辺成立時は Or.inl を適用する。\n\n【Lean 4 定理定義と証明コード】\n```lean\ntheorem or_comm (p q : Prop) (h : p ∨ q) : q ∨ p := by\n  cases h with\n  | inl hp => exact Or.inr hp\n  | inr hq => exact Or.inl hq\n```"
+    },
+    "l_pdf_deduction_reidai_23": {
+      "prompt_prefix": "タスク: 論理学・自然演繹推論 (L.pdf)\nユーザー: 「論理学の演繹について質問です。以下の問題の演繹的推論を構成してください。\n【問題】 例題 23 (存在前提と全称結論の多段入れ子演繹)\n前提と結論: ∃x Fx -> ∀x Gx",
+      "target_prefix": "【思考の連鎖 (CoT)】\n1. 自然言語の読解と記号論理的定式化:\n   - 領域: 自動運転システムの緊急フェイルセーフ制御\n   - 述語定義:\n- Fx: xが障害物を検知している\n- Gx: xが警告モードに移行する\n- Hx: xが待機モードにある\n- Jx: xが緊急停止準備に入る\n   - 形式論理式: ∃x Fx -> ∀x Gx, ∀x(Gx ∨ Hx) -> ∀x Jx ∴ ∀x(Fx -> Jx)\n\n2. 演繹的証明戦略の立案 (Proof Strat"
+    },
+    "lean4_impl_trans_chain": {
+      "prompt_prefix": "タスク: Lean 4 による対話的定理証明\n次の論理・数理命題を Lean 4 で記述し、タクティック証明コードを作成せよ。\n対象命題: 三段階の含意の連鎖 (a -> b, b -> c, c -> d |- a -> d)\n思考の連鎖",
+      "target_prefix": "【証明戦略の立案 (CoT)】\nha : a を導入し、have 構文により順次 hb : b、hc : c を導出して、最終的に h3 hc で d を得る。\n\n【Lean 4 定理定義と証明コード】\n```lean\ntheorem chain_four (a b c d : Prop) (h1 : a -> b) (h2 : b -> c) (h3 : c -> d) : a -> d := by\n  intro ha\n  have hb := h1 ha\n  have "
+    },
+    "dialogue_wittgenstein": {
+      "prompt_prefix": "タスク: 論理学・自然演繹推論 (L.pdf)\nユーザー: 「ウィトゲンシュタインの『論理哲学論考』に『論理の命題はトートロジーである。それゆえ論理の命題は何事も語らない』という有名な言葉がありますが、これは具体的にどういう意味なのでしょう",
+      "target_prefix": "【思考の連鎖 (CoT)】\n1. 哲学的問題の同定:\n   - ウィトゲンシュタイン『論考』6.1, 6.1.1 の命題。\n   - 東工大哲学研究会『論理学入門』演習問題3（たかし君は東工大生である / 留年している）のモデルを想起。\n2. 可能世界の展開:\n   - P: たかし君は東工大生である, Q: たかし君は留年している\n   - 現実世界の候補は 4 つの要素命題の組み合わせ:\n     1. P ∧ Q, 2. ~P ∧ Q, 3. P ∧ ~Q, 4. ~P"
+    },
+    "dialogue_momotaro": {
+      "prompt_prefix": "タスク: 論理学・自然演繹推論 (L.pdf)\nユーザー: 「東工大哲学研の『論理学入門』に出てくる有名な桃太郎の演習問題について教えてください！『桃太郎が鬼退治にいくのは、犬もサルも仲間にならないなどということがない場合だけだ』という日本",
+      "target_prefix": "【思考の連鎖 (CoT)】\n1. 課題の分析:\n   - V: 桃太郎は鬼退治に行く, X: サルが仲間になる, Y: 犬が仲間になる\n   - 部分文1: 『犬もサルも仲間にならない』 => ~Y ∧ ~X\n   - 部分文2: 『〜などということはない』 => 否定 ~ (~Y ∧ ~X)\n   - 文体変種: 『〜場合だけだ』 => 必要条件（ときに限り）の構文 => 後件 -> 前件\n   - 総合結合: V -> ~(~Y ∧ ~X)\n2. ド・モルガンの法則による"
+    },
+    "l_pdf_deduction_reidai_22": {
+      "prompt_prefix": "タスク: 論理学・自然演繹推論 (L.pdf)\nユーザー: 「論理学の演繹について質問です。以下の問題の演繹的推論を構成してください。\n【問題】 例題 22 (選言前件の全称演繹 UD)\n前提と結論: ∀x(Fx ∨ Hx -> Gx) ∴",
+      "target_prefix": "【思考の連鎖 (CoT)】\n1. 自然言語の読解と記号論理的定式化:\n   - 領域: 分散データベースのデータ完全性保証\n   - 述語定義:\n- Fx: xが新規作成された\n- Hx: xが更新された\n- Gx: xが検証ログに記録される\n   - 形式論理式: ∀x(Fx ∨ Hx -> Gx) ∴ ∀x(Fx -> Gx)\n\n2. 演繹的証明戦略の立案 (Proof Strategy):\n   - 東工大哲学研究会『論理学入門』の構文論に則り、目標論理式を Show "
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "date": "2026-11-03",
+  "scope": "pure_v44_prompt_boundary_cpu_shape_only",
+  "unit_tests_passed": 5,
+  "unit_tests_failed": 0,
+  "actual_public_source_examples": 3,
+  "actual_saved_public_test_records_shape_checked": 4,
+  "actual_v43_dolly_train_dev_test_records": 3,
+  "model_loads": 0,
+  "training_updates": 0,
+  "model_generations": 0,
+  "original_prepare_sha256": "60917f850b9253e70010d0f414e0efb202de37d6ee2d85578c6e93ee7c4d939e",
+  "candidate_prepare_sha256": "e86ca0b7394c4efc3abc0814affb0c417bdde7a127ecd1acc999c2992f90d5c4",
+  "original_evaluate_sha256": "81ab9e60e5bf13ae24a0439fa704e2fd3a53dc7cc9a871127acac34dbf9686de",
+  "candidate_evaluate_sha256": "2afcde9aee5d60ce04eb3d5149c7a234f74da97b2c2e01faf37584b17530b377",
+  "public_format_samples_sha256": "77e6d865b1911ca5b52f56e9719f4648895829d567de62049df134dda5ab22f8",
+  "v43_training_zip_sha256": "0102dc9b01b4b795c3123b18cefc7a8734e47a06dd85292af464d3232704d198",
+  "v43_dolly_anchor_samples_sha256": "c85cccaf7d2f72bd4181ea2fc86778d25f306245a4278727a4ad1a50e985801b"
+}

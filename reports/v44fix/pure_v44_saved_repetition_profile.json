@@ -1,0 +1,51 @@
+{
+  "schema": "geocpu.pure_v44.saved_repetition_profile.v1",
+  "input_file_sha256": "c4014fdff010904738621ee64955161d4483cd5df8507f2871d43ad54413ddc3",
+  "metric_definition": "Distinct contiguous eight-token windows divided by all such windows in the last at most 512 model-generated tokens, excluding EOS; low values indicate token recurrence but do not establish a weight cause or answer quality.",
+  "cases": [
+    {
+      "case_index": 0,
+      "sampled_tokens_including_eos": 2048,
+      "natural_eos": false,
+      "stop_reason": "sampled_token_limit",
+      "tail_window_tokens": 512,
+      "tail_eight_gram_count": 505,
+      "tail_distinct_eight_grams": 53,
+      "tail_distinct_fraction": 0.10495049504950495,
+      "tool_invocations": 0
+    },
+    {
+      "case_index": 1,
+      "sampled_tokens_including_eos": 2048,
+      "natural_eos": false,
+      "stop_reason": "sampled_token_limit",
+      "tail_window_tokens": 512,
+      "tail_eight_gram_count": 505,
+      "tail_distinct_eight_grams": 19,
+      "tail_distinct_fraction": 0.03762376237623762,
+      "tool_invocations": 0
+    },
+    {
+      "case_index": 2,
+      "sampled_tokens_including_eos": 15,
+      "natural_eos": true,
+      "stop_reason": "eos",
+      "tail_window_tokens": 14,
+      "tail_eight_gram_count": 7,
+      "tail_distinct_eight_grams": 7,
+      "tail_distinct_fraction": 1.0,
+      "tool_invocations": 0
+    },
+    {
+      "case_index": 3,
+      "sampled_tokens_including_eos": 2048,
+      "natural_eos": false,
+      "stop_reason": "sampled_token_limit",
+      "tail_window_tokens": 512,
+      "tail_eight_gram_count": 505,
+      "tail_distinct_eight_grams": 12,
+      "tail_distinct_fraction": 0.023762376237623763,
+      "tool_invocations": 0
+    }
+  ]
+}

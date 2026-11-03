@@ -41,3 +41,13 @@ Claudeの一時作業領域から、当初Drive診断メモの隣では見つか
 元の純v44コードを使い、ランダムな8幅の小型CPU模型に12文字を与えた。全文の各位置logitと、先頭1文字をprefillして残りを1文字ずつstepしたlogitを比較した。dense armの最大差は`2.5331974029541016e-7`、learned armは`3.5762786865234375e-7`で、いずれもargmax不一致0/12位置。再現用の読取専用入口は [`tiny_full_step_probe.py`](../../src/pure_v44_candidates/tiny_full_step_probe.py)、全位置原票は [`tiny_full_step_probe.json`](tiny_full_step_probe.json)。これは**短い小型ランダム模型のコード経路**だけの検査で、実247M保存重み・長文・CUDA精度・自然文の品質まで一致を証明しない。
 
 元v43と純v44の`IntegratedModelV27`の主要10メソッドを、両ソースから直接AST比較した。`_main`など4メソッドは完全一致。残りの差は、2,048位置を超えたときの長さ減衰引数と、文脈上限を超えたときの処理に集中する。短い系列の数式本体を変更した差はこの範囲で見つからなかった。ただし生成器、入力形式、CUDA計算精度、旧ALU実行器はこのAST比較の対象外である。[比較コード](../../src/pure_v44_candidates/compare_retained_neural_ast.py)と[メソッド別原票](retained_neural_ast_comparison.json)を保存した。
+
+## 追加の読取専用作業
+
+武飛らの公開実験ログまで照合した[重み編集の適用判定](2026-11-03-weight-space-intervention-assessment.md)を保存した。純v44の保存済み4回答の末尾トークン列は強く重複しているが、Qwenで発見された方向がGeoCPUにあるという証拠ではない。元保存モデルへの編集と追加学習は0回である。
+
+純v44の親子を同じHotfix生成コードで比較する[読取専用の入口](../../src/pure_v44_candidates/matched_pure_v44_readonly.py)は静的検査を通過した。語彙ID3,898件はすべて同じで、メタデータのバイト差は文脈長2,048から8,192への変更だけだった。[検査状態](2026-11-03-matched-pure-v44-evaluation-status.md)と[メタデータ原票](2026-11-03-v43-v44-metadata-identity.json)を保存した。ColabのGPU接続が無かったため、親子の原回答はまだ生成していない。
+
+旧v43教材268,032行の[変換範囲調査](2026-11-03-v43-train-to-python-feasibility.md)では、旧CPU命令候補133,896行、検索29,000行を確認した。元回路とPythonの演算規則、検索観測の一致を確認しない一括変換は採用していない。同梱の非held検索評価200問と訓練7,000行にpromptの完全一致があるため、その200問を未見評価と呼ばない。
+
+旧v43の実promptと回答先頭空白に合わせた[独立の教材候補](../../src/pure_v44_candidates/v43_prompt_boundary/README.md)は、実データによるCPU検査5/5件を通過した。これは元の重み・コードを変えておらず、生成品質への効果も未測定である。
