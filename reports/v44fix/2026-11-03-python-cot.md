@@ -45,7 +45,7 @@ Claude v44fix の既存混合データ manifest は 244,474 行：v43 保持 150
 
 隔離修正の原物は `C:/Users/81808/.openclaw/reports/jmmlu_v1/ag_fused_fullqa_training_v1/v44fix_tir_consistency_20261103/release_v1/` に保存した。監査 ZIP の SHA-256 は `5f83caadb05d7adca65908f34e82f75eca4aa5ea9476f733eec890f1c20317c8` である。
 
-コードの元版と修正差分は非公開 GitHub の[下書きレビュー](https://github.com/corcondor/geocpu-diagnostics/pull/1)に保存した。Claude へ渡すこの記録は既存の `GeoCPU_v44fix_20261103` Drive フォルダーにも置いた。Claude Code への直接レビュー依頼は、既存のログイン認証が期限切れで送信できていない。
+コードの元版と修正差分は非公開 GitHub の[下書きレビュー](https://github.com/corcondor/geocpu-diagnostics/pull/1)に保存した。Claude へ渡すこの記録と[起動を禁止した監査 ZIP](https://drive.google.com/file/d/1m3C3RnaiuqxObF5IKLlw8ZujhYwkRDMJ/view)は既存の `GeoCPU_v44fix_20261103` Drive フォルダーに置いた。Claude Code への直接レビュー依頼は、既存のログイン認証が期限切れで送信できていない。
 
 ## 次の実行条件
 
