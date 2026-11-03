@@ -39,6 +39,7 @@ def main():
     if sha(outpath)!=manifest["output_sha256"]:raise RuntimeError("Converted output changed")
     sys.path.insert(0,str(V44_DIR))
     from training_data_v44 import encode_supervision
+    from tir_engine_v44r1 import PYTHON_BLOCK
     counts=collections.Counter();last_line=0
     with zipfile.ZipFile(args.zip_path) as archive:
         if sha(args.zip_path)!=manifest["source_zip_sha256"]:raise RuntimeError("Source ZIP changed")
@@ -73,9 +74,12 @@ def main():
                 program+="\n".join(instruction(pair) for pair in pairs)+"\n"
                 stdout="".join(f'[{p.group("observed")}={p.group("value")}]\n' for p in pairs)
                 observation="\n```output\n"+stdout+"```\n"
-                expected=prefix+"```python\n"+program+"```\n"+observation+trailing
+                expected=prefix+"\n```python\n"+program+"```\n"+observation+trailing
                 if row["target"]!=expected:raise RuntimeError("Converted target differs from exact source command plan")
-                start=len(prefix+"```python\n"+program+"```\n")
+                native_blocks=list(PYTHON_BLOCK.finditer(row["target"]))
+                if len(native_blocks)!=1 or native_blocks[0].group(1)!=program:
+                    raise RuntimeError("Native v44 Python fence not detected")
+                start=len(prefix+"\n```python\n"+program+"```\n")
                 if row["target_segments"]!=[{"start":start,"end":start+len(observation),"role":"tool","train":False}]:
                     raise RuntimeError("Tool observation span mismatch")
                 _,tags=encode_supervision(row,vocab,max_positions=2048)
@@ -90,7 +94,8 @@ def main():
            "last_source_line_1based":last_line,
            "checks":["raw source line SHA","monotonic source refs","original prompt boundary",
                      "evaluation prompt exclusion","exact generated code and tool observations",
-                     "pure v44 vocabulary and 2048 positions","tool output mask and true EOS"]}
+                     "pure v44 native Python fence","pure v44 vocabulary and 2048 positions",
+                     "tool output mask and true EOS"]}
     args.audit_path.parent.mkdir(parents=True,exist_ok=True)
     args.audit_path.write_text(json.dumps(audit,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
     print(json.dumps(audit,ensure_ascii=True))

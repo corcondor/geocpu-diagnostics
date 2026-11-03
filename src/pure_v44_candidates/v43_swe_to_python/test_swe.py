@@ -1,10 +1,12 @@
 import json
+import sys
 import unittest
 import zipfile
 
 from src.pure_v44_candidates.v43_swe_to_python.convert_swe import (
     prompt_program, task_result, parse_swe_suffix, expected_commands,
 )
+from src.pure_v44_candidates.v43_alu_to_python.convert_sample import V44_DIR
 
 ZIP = r"G:\マイドライブ\GeoCPU_Frontier_CoTraining_v43\Grand_cotraining_v43.zip"
 MEMBER = "data/train_v43_knowledge_unified.jsonl"
@@ -47,6 +49,15 @@ class SourceRowTests(unittest.TestCase):
             self.assertEqual(final, stated)
             self.assertEqual([p.group(0).split("=>",1)[0].rstrip() for p in pairs],
                              expected_commands(row["source"], code))
+
+    def test_native_tir_requires_generated_fence_at_line_start(self):
+        sys.path.insert(0,str(V44_DIR))
+        from tir_engine_v44r1 import PYTHON_BLOCK
+        code="print(7)\n"
+        self.assertIsNone(PYTHON_BLOCK.search(" ```python\n"+code+"```\n"))
+        match=PYTHON_BLOCK.search(" \n```python\n"+code+"```\n")
+        self.assertIsNotNone(match)
+        self.assertEqual(match.group(1),code)
 
 
 if __name__ == "__main__": unittest.main()

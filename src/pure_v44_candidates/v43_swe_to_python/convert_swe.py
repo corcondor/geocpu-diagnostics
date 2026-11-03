@@ -228,7 +228,7 @@ def instruction(pair) -> str:
 
 def convert_swe(row: dict, raw: bytes, line_number: int, cpu, executor, vocab: dict) -> dict:
     from training_data_v44 import encode_supervision
-    from tir_engine_v44r1 import observation_text
+    from tir_engine_v44r1 import observation_text, PYTHON_BLOCK
 
     source = row.get("source")
     if source not in SOURCE_FAMILIES: raise Reject("source_not_selected")
@@ -267,7 +267,13 @@ def convert_swe(row: dict, raw: bytes, line_number: int, cpu, executor, vocab: d
         raise Reject("python_tool_observation_mismatch")
     prefix = suffix[:pairs[0].start()]
     trailing = suffix[pairs[-1].end():]
-    answer = prefix + "```python\n" + program + "```\n"
+    # The native TIR reader only recognizes a Python fence at line start.
+    # Preserve the original leading space at the prompt/answer boundary, then
+    # start a new generated line before the fence.
+    answer = prefix + "\n```python\n" + program + "```\n"
+    blocks = list(PYTHON_BLOCK.finditer(answer))
+    if len(blocks) != 1 or blocks[0].group(1) != program:
+        raise Reject("v44_native_python_fence_not_detected")
     start = len(answer)
     observation = observation_text(result)
     answer += observation + trailing
