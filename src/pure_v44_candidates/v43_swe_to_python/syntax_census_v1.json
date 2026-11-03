@@ -1,0 +1,45 @@
+{
+  "source_zip_sha256": "0102dc9b01b4b795c3123b18cefc7a8734e47a06dd85292af464d3232704d198",
+  "source_member": "data/train_v43_knowledge_unified.jsonl",
+  "counts": {
+    "swe_rows": 14193,
+    "syntactic_candidate_unverified": 12859,
+    "task_final_mismatch": 1334
+  },
+  "by_source": {
+    "swe_alu_accumulate_sum": {
+      "total": 2995,
+      "syntactic_candidate_unverified": 2995
+    },
+    "swe_alu_bxor_product": {
+      "total": 1496,
+      "syntactic_candidate_unverified": 1496
+    },
+    "swe_alu_conditional_filter_loop": {
+      "total": 1543,
+      "task_final_mismatch": 1334,
+      "syntactic_candidate_unverified": 209
+    },
+    "swe_alu_conditional_filter_py": {
+      "total": 620,
+      "syntactic_candidate_unverified": 620
+    },
+    "swe_alu_modulo_expr": {
+      "total": 1199,
+      "syntactic_candidate_unverified": 1199
+    },
+    "swe_alu_modulo_loop": {
+      "total": 2199,
+      "syntactic_candidate_unverified": 2199
+    },
+    "swe_alu_multiply_power": {
+      "total": 2148,
+      "syntactic_candidate_unverified": 2148
+    },
+    "swe_alu_parity_branch": {
+      "total": 1993,
+      "syntactic_candidate_unverified": 1993
+    }
+  },
+  "warning": "Syntactic candidates have NOT passed original CPU, Python executor, vocabulary, EOS, or 2048-position tests."
+}
