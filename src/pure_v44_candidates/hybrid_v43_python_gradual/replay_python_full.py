@@ -47,14 +47,11 @@ def _load_module(path: Path, name: str):
     return module
 
 
-def replay(*, v43_zip: Path, converted: Path, v43_code_dir: Path,
-           python_code_dir: Path, converter_path: Path, output_dir: Path):
-    if output_dir.exists():
-        raise FileExistsError("Use a new output directory for this one-time replay")
-    if (file_sha(v43_zip) != PINNED_V43_ZIP_SHA
-            or file_sha(converted) != PINNED_CONVERTED_SHA
-            or file_sha(converter_path) != PINNED_CONVERTER_SHA):
-        raise ValueError("Pinned v43, conversion, or converter source differs")
+def verify_runtime_sources(*, v43_zip: Path, v43_code_dir: Path,
+                           python_code_dir: Path) -> dict:
+    """Verify the two exact runtime trees before any dynamic import."""
+    if file_sha(v43_zip) != PINNED_V43_ZIP_SHA:
+        raise ValueError("Pinned original v43 ZIP differs")
     manifest_path = python_code_dir / "hotfix_manifest.json"
     if file_sha(manifest_path) != PINNED_PURE_SOURCE_MANIFEST_SHA:
         raise ValueError("Pinned public Python source manifest differs")
@@ -69,8 +66,8 @@ def replay(*, v43_zip: Path, converted: Path, v43_code_dir: Path,
     pure_pins = {name: item["sha256"] for name, item in pure_manifest["files"].items()}
     _verify_importable_tree(python_code_dir, pure_pins)
     for name in ("tir_engine_v44r1.py", "training_data_v44.py",
-                 "executor_worker_v44r1.py", "resource_limited_worker_v44r1.py"):
-        if file_sha(python_code_dir / name) != pure_manifest["files"][name]["sha256"]:
+                 "executor_worker_v44r1.py"):
+        if name not in pure_manifest["files"] or file_sha(python_code_dir / name) != pure_manifest["files"][name]["sha256"]:
             raise ValueError("Python execution source differs from pinned pure-v44 bundle: " + name)
     with zipfile.ZipFile(v43_zip) as archive:
         v43_pins = {member.filename: sha256(archive.read(member)).hexdigest()
@@ -80,6 +77,20 @@ def replay(*, v43_zip: Path, converted: Path, v43_code_dir: Path,
         for name in ("qwenputer_controller_v30.py", "cpu_circuit_v30.py"):
             if archive.read(name) != (v43_code_dir / name).read_bytes():
                 raise ValueError("Runtime CPU source differs from original v43 ZIP: " + name)
+    return pure_manifest
+
+
+def replay(*, v43_zip: Path, converted: Path, v43_code_dir: Path,
+           python_code_dir: Path, converter_path: Path, output_dir: Path):
+    if output_dir.exists():
+        raise FileExistsError("Use a new output directory for this one-time replay")
+    if (file_sha(v43_zip) != PINNED_V43_ZIP_SHA
+            or file_sha(converted) != PINNED_CONVERTED_SHA
+            or file_sha(converter_path) != PINNED_CONVERTER_SHA):
+        raise ValueError("Pinned v43, conversion, or converter source differs")
+    pure_manifest = verify_runtime_sources(v43_zip=v43_zip, v43_code_dir=v43_code_dir,
+                                           python_code_dir=python_code_dir)
+    with zipfile.ZipFile(v43_zip) as archive:
         meta = json.loads(archive.read("base_metadata.json"))
         vocab = meta["vocab"]
         converted_rows = [json.loads(line) for line in converted.read_text(encoding="utf-8").splitlines()]
@@ -148,6 +159,10 @@ def replay(*, v43_zip: Path, converted: Path, v43_code_dir: Path,
             if index % 1000 == 0:
                 sink.flush()
                 print(json.dumps({"replayed": index, "python_blocks_executed": total_blocks}), flush=True)
+    verify_runtime_sources(v43_zip=v43_zip, v43_code_dir=v43_code_dir,
+                           python_code_dir=python_code_dir)
+    if file_sha(converted) != PINNED_CONVERTED_SHA or file_sha(converter_path) != PINNED_CONVERTER_SHA:
+        raise ValueError("Replay input changed during execution")
     manifest = {"schema": "geocpu_hybrid_independent_python_replay_v1",
                 "source_zip_sha256": PINNED_V43_ZIP_SHA,
                 "converted_sha256": PINNED_CONVERTED_SHA,
