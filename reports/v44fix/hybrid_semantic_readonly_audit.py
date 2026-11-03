@@ -6,6 +6,7 @@ counts describe text structure; they do not certify semantic grounding.
 from __future__ import annotations
 
 import argparse
+import ast
 from collections import Counter, defaultdict
 from hashlib import sha256
 import json
@@ -19,10 +20,14 @@ PINS = {
     "v43_zip": "0102dc9b01b4b795c3123b18cefc7a8734e47a06dd85292af464d3232704d198",
     "converted": "53387b2987df02d91b51b4afc8ab2369cc0e53b9e4bdd0cfd480c3586de7f3db",
     "cases": "4032a2c17de2ce56a7758cd35c16db2c2b357ce76b394522411e86c0aa682b45",
+    "tir_source": "375d0844b616f3913b942db11edd425e78bf6ed13b8fa803c7e3ea183739538e",
 }
 TRAIN_MEMBER = "data/train_v43_knowledge_unified.jsonl"
 JAPANESE = re.compile(r"[ぁ-んァ-ン一-龯]")
 CODE_FENCE = re.compile(r"(?m)^```python[ \t]*$")
+PYTHON_BLOCK = re.compile(r"(?ms)^```python[ \t]*\r?\n(.*?)^```[ \t]*(?:\r?\n|$)")
+FORGED_OUTPUT = re.compile(r"(?m)^```output[ \t]*(?:\r?\n|$)")
+OBSERVATION = re.compile(r"\n```output\n\[R\d+=\d+\]\n```\n\Z")
 NUMERIC_ONLY = re.compile(r"\s*\d+\s*\Z")
 
 
@@ -45,8 +50,9 @@ def canonical_question(value: str) -> str:
     return re.sub(r"\s+", "", text)
 
 
-def audit(v43_zip: Path, converted: Path, cases: Path) -> dict:
-    paths = {"v43_zip": v43_zip, "converted": converted, "cases": cases}
+def audit(v43_zip: Path, converted: Path, cases: Path, tir_source: Path) -> dict:
+    paths = {"v43_zip": v43_zip, "converted": converted,
+             "cases": cases, "tir_source": tir_source}
     observed = {name: file_sha(path) for name, path in paths.items()}
     if observed != PINS:
         raise ValueError(f"Pinned input SHA-256 differs: {observed}")
@@ -62,12 +68,33 @@ def audit(v43_zip: Path, converted: Path, cases: Path) -> dict:
                 raise ValueError("Converted row has no observation segment")
             suffix = target[spans[-1]["end"]:]
             code_count = len(CODE_FENCE.findall(target))
+            sampled_parts = []
+            previous_end = 0
+            observation_slices_match = True
+            for span in spans:
+                start, end = span["start"], span["end"]
+                sampled_parts.append(target[previous_end:start])
+                previous_end = end
+                observation_slices_match &= bool(OBSERVATION.fullmatch(target[start:end]))
+            sampled_parts.append(target[previous_end:])
+            model_text = "".join(sampled_parts)
+            parsed_blocks = list(PYTHON_BLOCK.finditer(model_text))
+            try:
+                for match in parsed_blocks:
+                    ast.parse(match.group(1))
+                syntax_valid = True
+            except SyntaxError:
+                syntax_valid = False
             values = {
                 "rows": 1,
                 "python_code_blocks": code_count,
                 "tool_observation_segments": len(spans),
                 "all_segments_are_tool": int(all(s.get("role") == "tool" for s in spans)),
                 "code_count_matches_observations": int(code_count == len(spans)),
+                "tir_parser_recognizes_all_blocks": int(len(parsed_blocks) == len(spans)),
+                "observation_slices_match_runtime_format": int(observation_slices_match),
+                "python_syntax_valid": int(syntax_valid),
+                "no_forged_output_in_model_text": int(FORGED_OUTPUT.search(model_text) is None),
                 "two_or_more_tool_steps": int(len(spans) >= 2),
                 "target_contains_japanese": int(bool(JAPANESE.search(target))),
                 "final_suffix_contains_japanese": int(bool(JAPANESE.search(suffix))),
@@ -114,11 +141,11 @@ def audit(v43_zip: Path, converted: Path, cases: Path) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    for name in ("v43_zip", "converted", "cases", "output"):
+    for name in ("v43_zip", "converted", "cases", "tir_source", "output"):
         parser.add_argument("--" + name.replace("_", "-"), required=True, type=Path)
     args = parser.parse_args()
-    result = audit(args.v43_zip, args.converted, args.cases)
-    with args.output.open("x", encoding="utf-8") as stream:
+    result = audit(args.v43_zip, args.converted, args.cases, args.tir_source)
+    with args.output.open("w", encoding="utf-8") as stream:
         json.dump(result, stream, ensure_ascii=False, sort_keys=True, indent=2)
         stream.write("\n")
     print(json.dumps({"rows": result["converted_total"]["rows"],
