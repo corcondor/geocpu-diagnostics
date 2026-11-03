@@ -44,7 +44,7 @@ Claudeの一時作業領域から、当初Drive診断メモの隣では見つか
 
 ## 追加の読取専用作業
 
-武飛らの公開実験ログまで照合した[重み編集の適用判定](2026-11-03-weight-space-intervention-assessment.md)を保存した。純v44の保存済み4回答の末尾トークン列は強く重複しているが、Qwenで発見された方向がGeoCPUにあるという証拠ではない。元保存モデルへの編集と追加学習は0回である。
+武飛らの公開実験ログまで照合した[重み編集の適用判定](2026-11-03-weight-space-intervention-assessment.md)を保存した。純v44の保存済み4回答の末尾トークン列は強く重複しているが、Qwenで発見された方向がGeoCPUにあるという証拠ではない。[一時介入の別枝候補](../../src/pure_v44_candidates/weight_direction/README.md)は合成行列で6件の試験を通過した。実モデルでの活性採取と原回答比較は未実施で、元保存モデルへの編集と追加学習は0回である。
 
 純v44の親子を同じHotfix生成コードで比較する[読取専用の入口](../../src/pure_v44_candidates/matched_pure_v44_readonly.py)は静的検査を通過した。語彙ID3,898件はすべて同じで、メタデータのバイト差は文脈長2,048から8,192への変更だけだった。[検査状態](2026-11-03-matched-pure-v44-evaluation-status.md)と[メタデータ原票](2026-11-03-v43-v44-metadata-identity.json)を保存した。ColabのGPU接続が無かったため、親子の原回答はまだ生成していない。
 
