@@ -13,7 +13,7 @@ import zipfile
 from pathlib import Path
 
 from src.pure_v44_candidates.v43_alu_to_python.convert_sample import (
-    V44_DIR, TRAIN_MEMBER, evaluation_prompts, normalized_prompt,
+    SOURCE_DIR, V44_DIR, TRAIN_MEMBER, evaluation_prompts, normalized_prompt,
 )
 from src.pure_v44_candidates.v43_swe_to_python.convert_swe import (
     SOURCE_FAMILIES, parse_swe_suffix, instruction,
@@ -92,6 +92,12 @@ def main():
            "converted_sha256":manifest["output_sha256"],"accepted":counts["accepted"],
            "accepted_by_source":{k:v for k,v in counts.items() if k!="accepted"},
            "last_source_line_1based":last_line,
+           "code_bindings_sha256":{
+               "converter":sha(Path(__file__).with_name("convert_swe.py")),
+               "native_tir_engine":sha(V44_DIR/"tir_engine_v44r1.py"),
+               "native_training_data":sha(V44_DIR/"training_data_v44.py"),
+               "original_cpu_controller":sha(SOURCE_DIR/"qwenputer_controller_v30.py"),
+               "original_cpu_circuit":sha(SOURCE_DIR/"cpu_circuit_v30.py")},
            "checks":["raw source line SHA","monotonic source refs","original prompt boundary",
                      "evaluation prompt exclusion","exact generated code and tool observations",
                      "pure v44 native Python fence","pure v44 vocabulary and 2048 positions",
