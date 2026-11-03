@@ -24,6 +24,96 @@ from train_hybrid_stage import (_load_stage_checkpoint, _prepare_source,
 
 CASES_SHA256 = "4032a2c17de2ce56a7758cd35c16db2c2b357ce76b394522411e86c0aa682b45"
 CASES_NAME = "fixed_interim_diagnostic_44_v2.jsonl"
+FP16_DERIVED_SOURCE_SHA = {
+    "integrated_model_v42.py": "b0399051354edc8348b6dfe61b46ce1874ae2e59fa01a11ae852eb076f72ba30",
+    "integrated_model_v44fix.py": "41ce599ffbe15455c6a3c8167d1357fb5d50c007e2bb04195620992f2c2b22d5",
+}
+_BF16_LITERAL = b"dtype=torch.bfloat16"
+_FP16_LITERAL = b"dtype=torch.float16"
+
+
+def _verify_hybrid_precision_binding(binding: dict, contract: dict) -> None:
+    corresponding = {"train_bf16_native": "eval_bf16_native",
+                     "train_fp16_gradscaler_v1": "eval_fp16_native_v1"}
+    expected_eval = corresponding.get(binding.get("precision_profile"))
+    if expected_eval is None or contract.get("precision_profile") != expected_eval:
+        raise ValueError("Training and diagnostic precision profiles differ")
+    for bound_name, claimed_name in (
+        ("original_swe200_baseline_complete_sha256", "parent_swe200_baseline_complete_sha256"),
+        ("parent_fixed44_raw_diagnostic_complete_sha256", "parent_fixed44_raw_diagnostic_complete_sha256"),
+    ):
+        digest = binding.get(bound_name)
+        if (not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+                or contract.get(claimed_name) != digest):
+            raise ValueError("Same-precision parent baseline is not bound to this evaluation claim")
+
+
+def _derived_fp16_source(original: bytes, name: str) -> bytes:
+    if original.count(_BF16_LITERAL) != 1:
+        raise ValueError("Pinned generator autocast expression changed: " + name)
+    changed = original.replace(_BF16_LITERAL, _FP16_LITERAL)
+    if sha256(changed).hexdigest() != FP16_DERIVED_SOURCE_SHA[name]:
+        raise ValueError("Derived fp16 generator source differs from the fixed profile")
+    return changed
+
+
+def _prepare_eval_source(v43_zip: Path, overlay_source: Path, target: Path,
+                         precision_profile: str) -> Path:
+    source = _prepare_source(v43_zip, overlay_source, target)
+    if precision_profile == "eval_fp16_native_v1":
+        for name in FP16_DERIVED_SOURCE_SHA:
+            path = source / name
+            path.write_bytes(_derived_fp16_source(path.read_bytes(), name))
+    _verify_eval_source(v43_zip, overlay_source, source, precision_profile)
+    return source
+
+
+def _verify_eval_source(v43_zip: Path, overlay_source: Path, source: Path,
+                        precision_profile: str) -> None:
+    if source.is_symlink():
+        raise ValueError("Isolated evaluation source root is a symbolic link")
+    if precision_profile == "eval_bf16_native":
+        _verify_extracted_source(v43_zip, overlay_source, source)
+        return
+    if precision_profile != "eval_fp16_native_v1" or file_sha(v43_zip) != PINNED_V43_ZIP_SHA:
+        raise ValueError("Unknown or changed evaluation precision/source")
+    with zipfile.ZipFile(v43_zip) as archive:
+        expected_files = {member.filename for member in archive.infolist() if not member.is_dir()}
+        expected_files.update(SOURCE_OVERLAY_SHA)
+        for member in archive.infolist():
+            if member.is_dir() or member.filename in SOURCE_OVERLAY_SHA:
+                continue
+            path = source / member.filename
+            if not path.is_file():
+                raise ValueError("Evaluation source/data is missing: " + member.filename)
+            if member.filename == "integrated_model_v42.py":
+                expected = _derived_fp16_source(archive.read(member), member.filename)
+                digest = sha256(expected).hexdigest()
+            else:
+                h = sha256()
+                with archive.open(member) as stream:
+                    for block in iter(lambda: stream.read(8 << 20), b""):
+                        h.update(block)
+                digest = h.hexdigest()
+            if file_sha(path) != digest:
+                raise ValueError("Evaluation source/data changed: " + member.filename)
+    for name, digest in SOURCE_OVERLAY_SHA.items():
+        original = overlay_source / name
+        if file_sha(original) != digest:
+            raise ValueError("Original additive overlay changed: " + name)
+        expected = original.read_bytes()
+        if name == "integrated_model_v44fix.py":
+            expected = _derived_fp16_source(expected, name)
+        if sha256((source / name).read_bytes()).digest() != sha256(expected).digest():
+            raise ValueError("Evaluation overlay changed: " + name)
+    actual_files = set()
+    for candidate in source.rglob("*"):
+        if candidate.is_symlink():
+            raise ValueError("Isolated evaluation source contains a symbolic link")
+        if candidate.is_file():
+            actual_files.add(candidate.relative_to(source).as_posix())
+    if actual_files != expected_files:
+        raise ValueError("Isolated evaluation source contains a missing or unpinned file")
 
 
 def _expected_runs(cases):
@@ -31,7 +121,7 @@ def _expected_runs(cases):
 
 
 def _validate_saved_rows(existing, expected_runs, *, arm, checkpoint_sha,
-                         evaluator_sha, overlay_sha):
+                         evaluator_sha, overlay_sha, precision_profile):
     if len(existing) > len(expected_runs):
         raise ValueError("Saved raw-answer cursor exceeds the fixed diagnostic")
     for row, (case, profile) in zip(existing, expected_runs):
@@ -42,29 +132,38 @@ def _validate_saved_rows(existing, expected_runs, *, arm, checkpoint_sha,
                 or row.get("cases_sha256") != CASES_SHA256
                 or row.get("source_sha256") != evaluator_sha
                 or row.get("overlay_sha256") != overlay_sha
+                or row.get("precision_profile") != precision_profile
                 or row.get("v43_zip_sha256") != PINNED_V43_ZIP_SHA
                 or row.get("expected_answer") != case["target"]
                 or row.get("group") != case["group"]
                 or type(row.get("generated_tokens")) is not int
-                or not 0 <= row["generated_tokens"] <= 2048
+                or row["generated_tokens"] < 0
+                or row.get("generation_iteration_limit") != 2048
+                or not isinstance(row.get("generated_token_ids"), list)
+                or len(row["generated_token_ids"]) != row["generated_tokens"]
+                or any(type(token) is not int or token < 0 for token in row["generated_token_ids"])
+                or row.get("generated_token_ids_sha256") != sha256(json.dumps(
+                    row["generated_token_ids"], separators=(",", ":")).encode()).hexdigest()
                 or row.get("raw_answer_sha256") != sha256(row["raw_answer"].encode()).hexdigest()
                 or row.get("model_generated_text_sha256") != sha256(row["model_generated_text"].encode()).hexdigest()):
             raise ValueError("Saved raw answer differs from the fixed source/checkpoint/cases")
 
 
 def _partial_record(*, arm, checkpoint_sha, evaluator_sha, overlay_sha,
-                    raw_sha, completed, required):
+                    raw_sha, completed, required, precision_profile):
     return {"schema":"geocpu_v43_python_gradual_raw_diagnostic_partial_v1",
             "arm":arm, "checkpoint_sha256":checkpoint_sha,
             "cases_sha256":CASES_SHA256, "completed_generations":completed,
             "required_generations":required, "raw_answers_sha256":raw_sha,
             "source_sha256":evaluator_sha, "v43_zip_sha256":PINNED_V43_ZIP_SHA,
             "overlay_sha256":overlay_sha, "max_generated_tokens":2048,
+            "precision_profile":precision_profile,
             "training_updates":0}
 
 
 def seal_interrupted_partial(*, output_dir: Path, checkpoint: Path, arm: str,
-                             overlay_source: Path, v43_zip: Path) -> dict:
+                             overlay_source: Path, v43_zip: Path,
+                             precision_profile: str) -> dict:
     """Watchdog seals only whole flushed rows after the child has exited."""
     raw_path = output_dir / "raw_answers_44_profiles.jsonl"
     if (output_dir / "COMPLETE.json").exists() or (output_dir / "PARTIAL.json").exists():
@@ -78,8 +177,7 @@ def seal_interrupted_partial(*, output_dir: Path, checkpoint: Path, arm: str,
     cases_path = Path(__file__).with_name(CASES_NAME)
     if file_sha(cases_path) != CASES_SHA256 or file_sha(v43_zip) != PINNED_V43_ZIP_SHA:
         raise ValueError("Diagnostic cases or original source changed")
-    from train_hybrid_stage import _verify_extracted_source
-    _verify_extracted_source(v43_zip, overlay_source, output_dir / "isolated_source")
+    _verify_eval_source(v43_zip, overlay_source, output_dir / "isolated_source", precision_profile)
     cases = [json.loads(line) for line in cases_path.read_text(encoding="utf-8").splitlines()]
     runs = _expected_runs(cases)
     if not rows or len(rows) >= len(runs):
@@ -88,11 +186,13 @@ def seal_interrupted_partial(*, output_dir: Path, checkpoint: Path, arm: str,
     checkpoint_sha = file_sha(checkpoint)
     overlay_sha = sha256(json.dumps(SOURCE_OVERLAY_SHA, sort_keys=True).encode()).hexdigest()
     _validate_saved_rows(rows, runs, arm=arm, checkpoint_sha=checkpoint_sha,
-                         evaluator_sha=evaluator_sha, overlay_sha=overlay_sha)
+                         evaluator_sha=evaluator_sha, overlay_sha=overlay_sha,
+                         precision_profile=precision_profile)
     partial = _partial_record(arm=arm, checkpoint_sha=checkpoint_sha,
                               evaluator_sha=evaluator_sha, overlay_sha=overlay_sha,
                               raw_sha=sha256(raw).hexdigest(),
-                              completed=len(rows), required=len(runs))
+                              completed=len(rows), required=len(runs),
+                              precision_profile=precision_profile)
     target = output_dir / "PARTIAL.json"
     temporary = output_dir / "PARTIAL.json.tmp"
     with temporary.open("x", encoding="utf-8") as sink:
@@ -110,6 +210,8 @@ def _score_swe(result, target: str, profile: str, expected_loops: int) -> dict:
     words = cleaned.split()
     text_last = words[-1] if words else ""
     original_final = r0[-1] if result.get("cpu_invocations", 0) and r0 else text_last
+    cpu_trace_final = r0[-1] if result.get("cpu_invocations", 0) and r0 else None
+    native_cpu_correct = cpu_trace_final == target.strip()
     dec_count = sum(step.get("op") == "DEC" for step in trace)
     compute_count = sum(step.get("op") in ("ADD", "SUB", "MUL", "MOD", "BXOR") for step in trace)
     executed_loops = dec_count if dec_count else compute_count
@@ -130,20 +232,28 @@ def _score_swe(result, target: str, profile: str, expected_loops: int) -> dict:
     python_execution_correct = bool(py_trace and py_r0 and all(step.get("success") for step in py_trace)
                                     and python_final == target.strip())
     prose_correct = explanation_final == target.strip()
-    return {"old_cpu_native_rule_correct": original_final == target.strip() if profile == "native" else None,
+    natural_eos = bool(result.get("ended_with_eos", False))
+    return {"old_original_evaluator_correct": original_final == target.strip() if profile == "native" else None,
+            "old_cpu_native_rule_correct": native_cpu_correct if profile == "native" else None,
+            "old_cpu_native_rule_and_natural_eos_correct":
+                (native_cpu_correct and natural_eos) if profile == "native" else None,
             "python_executed_and_numeric_correct": python_execution_correct if profile != "native" else None,
             "python_final_answer_numeric_correct": prose_correct if profile != "native" else None,
             "python_japanese_explanation_present": japanese_explanation_present if profile != "native" else None,
             "python_grounded_explanation_grade": None,
             "python_execution_and_final_answer_correct": (python_execution_correct and prose_correct)
                 if profile != "native" else None,
-            "cpu_final": original_final, "python_final": python_final,
+            "python_natural_eos": natural_eos if profile != "native" else None,
+            "python_execution_final_and_eos_correct":
+                (python_execution_correct and prose_correct and natural_eos) if profile != "native" else None,
+            "cpu_final": cpu_trace_final, "original_evaluator_final": original_final,
+            "python_final": python_final,
             "explanation_final_numeric": explanation_final,
             "final_model_prose": final_prose if profile != "native" else None,
             "native_expected_loops": expected_loops if profile == "native" else None,
             "native_executed_loops": executed_loops if profile == "native" else None,
             "native_step_class": step_class if profile == "native" else None,
-            "native_natural_eos": bool(result.get("ended_with_eos", False)) if profile == "native" else None}
+            "native_natural_eos": natural_eos if profile == "native" else None}
 
 
 def evaluate(*, v43_zip: Path, overlay_source: Path, checkpoint: Path,
@@ -176,17 +286,19 @@ def evaluate(*, v43_zip: Path, overlay_source: Path, checkpoint: Path,
     if checkpoint_kind == "parent" and (checkpoint.stat().st_size != PARENT_CHECKPOINT_BYTES
                                         or file_sha(checkpoint) != PARENT_CHECKPOINT_SHA):
         raise ValueError("Original v43 parent checkpoint differs")
+    precision_profile = contract["precision_profile"]
     checkpoint_sha = file_sha(checkpoint)
     evaluator_sha = file_sha(__file__)
     overlay_binding_sha = sha256(json.dumps(SOURCE_OVERLAY_SHA, sort_keys=True).encode()).hexdigest()
     output_dir.mkdir(parents=True, exist_ok=resume)
     source = output_dir / "isolated_source"
     if not resume:
-        source = _prepare_source(v43_zip, overlay_source, source)
+        source = _prepare_eval_source(v43_zip, overlay_source, source, precision_profile)
     elif not source.is_dir():
         raise FileNotFoundError("Partial diagnostic has no isolated original source")
     else:
-        _verify_extracted_source(v43_zip, overlay_source, source)
+        _verify_eval_source(v43_zip, overlay_source, source, precision_profile)
+    sys.dont_write_bytecode = True
     sys.path.insert(0, str(source))
     import torch
     from GeoCPU_CED_v1 import CEDConfig
@@ -213,15 +325,27 @@ def evaluate(*, v43_zip: Path, overlay_source: Path, checkpoint: Path,
                 or binding.get("v43_zip_sha256") != PINNED_V43_ZIP_SHA
                 or binding.get("converted_sha256") != PINNED_CONVERTED_SHA
                 or binding.get("stage_source_sha256") != file_sha(Path(__file__).with_name("train_hybrid_stage.py"))
+                or binding.get("source_pools_sha256") != file_sha(Path(__file__).with_name("source_pools.py"))
+                or binding.get("hybrid_data_sha256") != file_sha(Path(__file__).with_name("hybrid_data.py"))
                 or binding.get("overlay_sha256") != SOURCE_OVERLAY_SHA
                 or binding.get("arm") not in ("control", "python")):
             raise ValueError("Expected an admitted 250-update hybrid checkpoint")
+        _verify_hybrid_precision_binding(binding, contract)
         state = payload["model_state_dict"]
         arm = payload["binding"]["arm"]
     else:
         raise ValueError("Checkpoint kind must be parent or hybrid_250")
-    if contract["arm"] != arm or contract["gpu_count"] != torch.cuda.device_count():
+    if (contract["arm"] != arm or contract["gpu_count"] != torch.cuda.device_count()
+            or precision_profile not in ("eval_bf16_native", "eval_fp16_native_v1")
+            or contract["gpu_names"] != [torch.cuda.get_device_name(i)
+                                          for i in range(torch.cuda.device_count())]):
         raise ValueError("Fresh Root claim arm or GPU count differs from the diagnostic")
+    if precision_profile == "eval_bf16_native":
+        for device_index in range(torch.cuda.device_count()):
+            with torch.cuda.device(device_index):
+                if (torch.cuda.get_device_capability(device_index)[0] < 8
+                        or not torch.cuda.is_bf16_supported()):
+                    raise ValueError("Native bf16 evaluation requires support on every allocated GPU")
     claim_copy = output_dir / ("prelaunch_claim_" + contract["claim_id"] + ".json")
     if claim_copy.exists():
         raise ValueError("This one-use diagnostic claim was already consumed")
@@ -250,6 +374,7 @@ def evaluate(*, v43_zip: Path, overlay_source: Path, checkpoint: Path,
                 or partial.get("cases_sha256") != CASES_SHA256
                 or partial.get("source_sha256") != evaluator_sha
                 or partial.get("overlay_sha256") != overlay_binding_sha
+                or partial.get("precision_profile") != precision_profile
                 or partial.get("raw_answers_sha256") != file_sha(output_file)
                 or partial.get("max_generated_tokens") != 2048):
             raise ValueError("Partial run source, checkpoint, or raw answers differ")
@@ -260,20 +385,21 @@ def evaluate(*, v43_zip: Path, overlay_source: Path, checkpoint: Path,
             raise ValueError("Partial diagnostic cursor is invalid")
         _validate_saved_rows(existing, expected_runs, arm=arm,
                              checkpoint_sha=checkpoint_sha,
-                             evaluator_sha=evaluator_sha, overlay_sha=overlay_binding_sha)
+                             evaluator_sha=evaluator_sha, overlay_sha=overlay_binding_sha,
+                             precision_profile=precision_profile)
     profile_counts = {name: sum(row["profile"] == name for row in existing)
                       for name in ("native", "python_cued", "python_uncued")}
     with output_file.open("a" if resume else "x", encoding="utf-8", newline="\n") as sink, PythonExecutor() as executor, torch.inference_mode():
         for case, profile in expected_runs[len(existing):]:
             if (time.monotonic() - started >= hard_stop_seconds - save_reserve_seconds
                     or (absolute_stop - datetime.now(timezone.utc)).total_seconds() <= save_reserve_seconds):
-                _verify_extracted_source(v43_zip, overlay_source, source)
+                _verify_eval_source(v43_zip, overlay_source, source, precision_profile)
                 if file_sha(checkpoint) != checkpoint_sha:
                     raise ValueError("Checkpoint changed during diagnostic")
                 partial = _partial_record(arm=arm, checkpoint_sha=checkpoint_sha,
                     evaluator_sha=evaluator_sha, overlay_sha=overlay_binding_sha,
                     raw_sha=file_sha(output_file), completed=sum(profile_counts.values()),
-                    required=len(expected_runs))
+                    required=len(expected_runs), precision_profile=precision_profile)
                 (output_dir / "PARTIAL.json").write_text(json.dumps(partial, sort_keys=True, indent=2)+"\n", encoding="utf-8")
                 return partial
             prompt = PYTHON_MODE_CUE + case["prompt"] if profile == "python_cued" else case["prompt"]
@@ -293,12 +419,17 @@ def evaluate(*, v43_zip: Path, overlay_source: Path, checkpoint: Path,
                        "cases_sha256":CASES_SHA256,
                        "source_sha256":evaluator_sha,
                        "overlay_sha256":overlay_binding_sha,
+                       "precision_profile":precision_profile,
                        "v43_zip_sha256":PINNED_V43_ZIP_SHA,
                        "raw_answer": result["output_text"],
                        "raw_answer_sha256": sha256(result["output_text"].encode()).hexdigest(),
                        "model_generated_text": result.get("model_generated_text", result["output_text"]),
                        "model_generated_text_sha256": sha256(result.get("model_generated_text", result["output_text"]).encode()).hexdigest(),
-                       "generated_tokens": result["generated_tokens"],
+                       "generated_tokens": len(result["generated_tokens"]),
+                       "generation_iteration_limit": 2048,
+                       "generated_token_ids": result["generated_tokens"],
+                       "generated_token_ids_sha256": sha256(json.dumps(
+                           result["generated_tokens"], separators=(",", ":")).encode()).hexdigest(),
                        "ended_with_eos": bool(result["ended_with_eos"]),
                        "stop_reason": result.get("stop_reason", "eos" if result["ended_with_eos"] else "limit_or_other"),
                        "cpu_invocations": result.get("cpu_invocations", 0),
@@ -314,7 +445,7 @@ def evaluate(*, v43_zip: Path, overlay_source: Path, checkpoint: Path,
             profile_counts[profile] = profile_counts.get(profile, 0) + 1
     if profile_counts != {"native": 44, "python_cued": 20, "python_uncued": 20}:
         raise ValueError("A fixed diagnostic profile is missing")
-    _verify_extracted_source(v43_zip, overlay_source, source)
+    _verify_eval_source(v43_zip, overlay_source, source, precision_profile)
     if file_sha(checkpoint) != checkpoint_sha:
         raise ValueError("Checkpoint changed during diagnostic")
     manifest = {"schema": "geocpu_v43_python_gradual_raw_diagnostic_v1",
@@ -325,6 +456,7 @@ def evaluate(*, v43_zip: Path, overlay_source: Path, checkpoint: Path,
                 "cases_sha256": CASES_SHA256,
                 "source_sha256": evaluator_sha,
                 "overlay_sha256": overlay_binding_sha,
+                "precision_profile":precision_profile,
                 "raw_answers_sha256": file_sha(output_file),
                 "profile_counts": profile_counts,
                 "max_generated_tokens": 2048,

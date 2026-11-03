@@ -33,7 +33,8 @@ class PrelaunchContractTests(unittest.TestCase):
                  "official_minimum_free_device_seconds":5000,
                  "root_reserved_device_seconds":reserve,
                  "bounded_run_seconds":1800,"save_reserve_seconds":180,
-                 "gpu_count":2,"evidence":evidence}
+                 "gpu_count":2,"gpu_names":["NVIDIA A100-SXM4-40GB"]*2,
+                 "precision_profile":"train_bf16_native","evidence":evidence}
         contract = root / "prelaunch.json"
         contract.write_text(json.dumps(claim),encoding="utf-8")
         return contract

@@ -4,6 +4,8 @@ Kaggle quota is checked *before* a private version is created.  An already
 running notebook cannot retroactively prove that free capacity was available
 at launch, so this module requires the Root's fresh provider/ledger/job-status
 evidence copied into the job and rechecks their bytes and declared bounds.
+The in-job copy cannot atomically consume the shared claim across multiple
+jobs. Root must consume it in the external ledger before a serialized submit.
 """
 from __future__ import annotations
 
@@ -41,6 +43,12 @@ def verify_prelaunch_contract(path: str | Path, *, now: datetime | None = None,
             or re.fullmatch(r"[A-Za-z0-9_-]{16,128}", record["run_id"]) is None
             or type(record.get("gpu_count")) is not int or not 1 <= record["gpu_count"] <= 4):
         raise ValueError("Root run ID or GPU count is invalid")
+    if (record.get("precision_profile") not in {"train_bf16_native", "train_fp16_gradscaler_v1",
+                                                "eval_bf16_native", "eval_fp16_native_v1"}
+            or not isinstance(record.get("gpu_names"), list)
+            or len(record["gpu_names"]) != record["gpu_count"]
+            or any(not isinstance(name, str) or not name.strip() for name in record["gpu_names"])):
+        raise ValueError("Root claim lacks a fixed precision and GPU model profile")
     observed = _utc(record["official_quota_observed_at_utc"])
     if not 0 <= (now - observed).total_seconds() <= MAX_AGE_SECONDS:
         raise ValueError("Official fresh free quota observation is stale")

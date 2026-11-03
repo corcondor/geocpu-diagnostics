@@ -3,6 +3,9 @@
 The native v43 generator has no internal wall limit.  The child therefore runs
 under this parent watchdog.  A killed child can leave flushed whole rows; the
 parent seals only verified rows as PARTIAL, never COMPLETE or a score.
+This entry cannot atomically consume a claim across separate Kaggle jobs.
+Root must consume the shared ledger claim before serial job submission and
+must not resubmit a job whose creation status is unknown.
 """
 from __future__ import annotations
 
@@ -25,6 +28,8 @@ def launch(args) -> dict:
     contract = verify_prelaunch_contract(args.prelaunch_contract,
         required_run_seconds=args.hard_stop_seconds,
         required_save_reserve_seconds=args.save_reserve_seconds)
+    if contract["precision_profile"] not in {"eval_bf16_native", "eval_fp16_native_v1"}:
+        raise ValueError("An evaluation claim must declare an evaluation precision profile")
     if args.checkpoint_kind == "parent" and contract["arm"] != "parent":
         raise ValueError("The parent diagnostic requires its own Root claim")
     if args.checkpoint_kind == "hybrid_250" and contract["arm"] not in ("control", "python"):
@@ -65,7 +70,8 @@ def launch(args) -> dict:
         try:
             partial = seal_interrupted_partial(output_dir=args.output_dir,
                 checkpoint=args.checkpoint, arm=contract["arm"],
-                overlay_source=args.overlay_source, v43_zip=args.v43_zip)
+                overlay_source=args.overlay_source, v43_zip=args.v43_zip,
+                precision_profile=contract["precision_profile"])
             record["partial_sealed"] = True
             record["partial_sha256"] = file_sha(args.output_dir / "PARTIAL.json")
             record["completed_generations"] = partial["completed_generations"]

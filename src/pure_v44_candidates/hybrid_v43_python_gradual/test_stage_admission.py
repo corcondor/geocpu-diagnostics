@@ -42,6 +42,7 @@ class StageAdmissionTests(unittest.TestCase):
                                  "v43_zip_sha256":PINNED_V43_ZIP_SHA,
                                  "cases_sha256":PINNED_INTERIM_CASES_SHA,
                                  "source_sha256":PINNED_INTERIM_EVALUATOR_SHA,
+                                 "precision_profile":"eval_bf16_native",
                                  "overlay_sha256":overlay_sha,
                                  "ended_with_eos": True})
             raw_path = root / "raw_answers_44_profiles.jsonl"
@@ -51,6 +52,7 @@ class StageAdmissionTests(unittest.TestCase):
                         "checkpoint_sha256":PARENT_CHECKPOINT_SHA, "v43_zip_sha256":PINNED_V43_ZIP_SHA,
                         "cases_sha256":PINNED_INTERIM_CASES_SHA,
                         "source_sha256":PINNED_INTERIM_EVALUATOR_SHA,
+                        "precision_profile":"eval_bf16_native",
                         "overlay_sha256":overlay_sha,
                         "raw_answers_sha256":file_sha(raw_path),
                         "profile_counts":{"native":44,"python_cued":20,"python_uncued":20},

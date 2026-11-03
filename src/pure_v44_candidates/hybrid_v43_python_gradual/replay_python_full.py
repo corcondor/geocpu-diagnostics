@@ -20,6 +20,21 @@ from source_pools import (CONVERTED_ROWS, ORIGINAL_TRAIN_MEMBER, PINNED_CONVERTE
 
 PINNED_CONVERTER_SHA = "82119783a01cfbac8a39f27e49458ce478434ecebce0043787b17091fcc44a41"
 PINNED_PURE_SOURCE_MANIFEST_SHA = "7c072451921710d7a43ee3172957def3c279e40a21ae03ec6c416d07a84baebf"
+IMPORTABLE_SUFFIXES = {".py", ".pyc", ".pyd", ".so", ".dll", ".pth"}
+
+
+def _verify_importable_tree(root: Path, pinned: dict[str, str]) -> None:
+    """Reject unpinned modules before adding the source directory to sys.path."""
+    if root.is_symlink():
+        raise ValueError("Replay source root is a symbolic link")
+    for candidate in root.rglob("*"):
+        if candidate.is_symlink():
+            raise ValueError("Replay source contains a symbolic link")
+        if not candidate.is_file() or candidate.suffix.lower() not in IMPORTABLE_SUFFIXES:
+            continue
+        relative = candidate.relative_to(root).as_posix()
+        if relative not in pinned or file_sha(candidate) != pinned[relative]:
+            raise ValueError("Replay source contains an unpinned importable module: " + relative)
 
 
 def _load_module(path: Path, name: str):
@@ -40,18 +55,28 @@ def replay(*, v43_zip: Path, converted: Path, v43_code_dir: Path,
             or file_sha(converted) != PINNED_CONVERTED_SHA
             or file_sha(converter_path) != PINNED_CONVERTER_SHA):
         raise ValueError("Pinned v43, conversion, or converter source differs")
-    # Source manifest closure is implemented in the independently reviewed
-    # bounded-adapter admission module, not asserted by caller text.
-    bounded_dir = Path(__file__).parents[1] / "bounded_adapter"
-    sys.path.insert(0, str(bounded_dir))
-    from admission import verify_source_manifest
-    verify_source_manifest(python_code_dir, PINNED_PURE_SOURCE_MANIFEST_SHA)
-    pure_manifest = json.loads((python_code_dir / "hotfix_manifest.json").read_text(encoding="utf-8"))
+    manifest_path = python_code_dir / "hotfix_manifest.json"
+    if file_sha(manifest_path) != PINNED_PURE_SOURCE_MANIFEST_SHA:
+        raise ValueError("Pinned public Python source manifest differs")
+    pure_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(pure_manifest.get("files"), dict):
+        raise ValueError("Pinned public Python source file list is missing")
+    for name, item in pure_manifest["files"].items():
+        relative = Path(name)
+        if (relative.is_absolute() or ".." in relative.parts
+                or not isinstance(item, dict) or file_sha(python_code_dir / relative) != item.get("sha256")):
+            raise ValueError("Pinned public Python source file changed: " + name)
+    pure_pins = {name: item["sha256"] for name, item in pure_manifest["files"].items()}
+    _verify_importable_tree(python_code_dir, pure_pins)
     for name in ("tir_engine_v44r1.py", "training_data_v44.py",
                  "executor_worker_v44r1.py", "resource_limited_worker_v44r1.py"):
         if file_sha(python_code_dir / name) != pure_manifest["files"][name]["sha256"]:
             raise ValueError("Python execution source differs from pinned pure-v44 bundle: " + name)
     with zipfile.ZipFile(v43_zip) as archive:
+        v43_pins = {member.filename: sha256(archive.read(member)).hexdigest()
+                    for member in archive.infolist() if not member.is_dir()
+                    and Path(member.filename).suffix.lower() in IMPORTABLE_SUFFIXES}
+        _verify_importable_tree(v43_code_dir, v43_pins)
         for name in ("qwenputer_controller_v30.py", "cpu_circuit_v30.py"):
             if archive.read(name) != (v43_code_dir / name).read_bytes():
                 raise ValueError("Runtime CPU source differs from original v43 ZIP: " + name)
@@ -68,6 +93,7 @@ def replay(*, v43_zip: Path, converted: Path, v43_code_dir: Path,
                     originals[line_no] = (raw, json.loads(raw))
         if len(originals) != len(required_lines) or len(required_lines) != CONVERTED_ROWS:
             raise ValueError("Converted source lines are missing or duplicated")
+    sys.dont_write_bytecode = True
     sys.path.insert(0, str(v43_code_dir))
     sys.path.insert(0, str(python_code_dir))
     import torch
