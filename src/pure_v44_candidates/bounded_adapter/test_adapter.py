@@ -12,6 +12,7 @@ from torch import nn
 
 from adapter import (AdapterSpec, adapter_parameters, adapter_state, file_sha256,
                      install_adapters, resume_adapter_checkpoint, save_adapter_checkpoint)
+from train_stage import _relative_adapter_norms
 
 
 class Block(nn.Module):
@@ -94,6 +95,19 @@ class AdapterTests(unittest.TestCase):
             self.assertTrue(torch.equal(trained(self.x), restored(self.x)))
             self.assertEqual(len(resumed_optimizer.state_dict()["state"]),
                              len(optimizer.state_dict()["state"]))
+
+    def test_effective_weight_norm_matches_explicit_product(self):
+        names = install_adapters(self.parent, self.spec)
+        norms = {name: self.parent.get_submodule(name).parent.weight.detach().float().norm()
+                 for name in names}
+        with torch.no_grad():
+            for name in names:
+                self.parent.get_submodule(name).up.weight.fill_(0.05)
+        compact = _relative_adapter_norms(self.parent, names, norms)
+        for name in names:
+            module = self.parent.get_submodule(name)
+            explicit = (module.scale * (module.up.weight @ module.down.weight)).float().norm() / norms[name]
+            self.assertAlmostEqual(compact[name], explicit.item(), places=6)
 
 
 if __name__ == "__main__":
