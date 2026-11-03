@@ -1,0 +1,18 @@
+{
+  "converted_sha256": "53387b2987df02d91b51b4afc8ab2369cc0e53b9e4bdd0cfd480c3586de7f3db",
+  "counts": {
+    "assistant_plus_eos_active_positions": 7198505,
+    "family:Algebraic_Composite_Aligned": 9828,
+    "family:Comparative_Conditional_Aligned": 15000,
+    "family:swe_alu_accumulate_sum": 8,
+    "first_answer_token_active_rows": 24836,
+    "rows": 24836,
+    "tool_observation_masked_positions": 1768840,
+    "true_eos_active_rows": 24836
+  },
+  "maximum_sequence_length": 667,
+  "mode_cue": "Pythonで計算し、実行結果を根拠に日本語で説明してください。\n",
+  "schema": "geocpu_hybrid_converted_mask_readonly_v1",
+  "training_updates": 0,
+  "v43_zip_sha256": "0102dc9b01b4b795c3123b18cefc7a8734e47a06dd85292af464d3232704d198"
+}
