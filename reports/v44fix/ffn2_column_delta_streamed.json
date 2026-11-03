@@ -1,0 +1,1479 @@
+{
+  "schema": "geocpu_ffn2_column_delta_readonly_v1",
+  "parent": {
+    "path": "G:\\マイドライブ\\GeoCPU_Frontier_CoTraining_v43\\checkpoints\\checkpoint_step_15000.pt",
+    "sha256": "a4b95d7d0f486146196271b3b1fbc6a1b6b3342d8fadd590320fc3842c1e80e5",
+    "bytes": 990545719
+  },
+  "child": {
+    "path": "G:\\マイドライブ\\GeoCPU_v44fix_20261103\\run_1\\gate_checkpoints\\checkpoint_step_16000.pt",
+    "sha256": "1ce6f21ecd7283f880af284cb98fe526e741ad454718cee01baedb70b6135f19",
+    "bytes": 990547682
+  },
+  "tensor_count": 34,
+  "ranking_is_causal_evidence": false,
+  "layers": [
+    {
+      "key": "base.decoder.2.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 2.5231873778200224,
+      "top64_fraction": 0.05241457390333582,
+      "top_columns": [
+        {
+          "column": 2203,
+          "squared_delta": 0.002473282560324762
+        },
+        {
+          "column": 155,
+          "squared_delta": 0.002473282560324762
+        },
+        {
+          "column": 1179,
+          "squared_delta": 0.002473282560324762
+        },
+        {
+          "column": 877,
+          "squared_delta": 0.0023750601932549845
+        },
+        {
+          "column": 2925,
+          "squared_delta": 0.0023750601932549845
+        },
+        {
+          "column": 1901,
+          "squared_delta": 0.0023750601932549845
+        },
+        {
+          "column": 2015,
+          "squared_delta": 0.0022894584473533595
+        },
+        {
+          "column": 3039,
+          "squared_delta": 0.0022894584473533595
+        }
+      ]
+    },
+    {
+      "key": "base.decoder.1.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 2.4720807063455044,
+      "top64_fraction": 0.05698755640078352,
+      "top_columns": [
+        {
+          "column": 2591,
+          "squared_delta": 0.0030795163639503677
+        },
+        {
+          "column": 1567,
+          "squared_delta": 0.0030795163639503677
+        },
+        {
+          "column": 543,
+          "squared_delta": 0.0030795163639503677
+        },
+        {
+          "column": 1451,
+          "squared_delta": 0.002939558133490166
+        },
+        {
+          "column": 2475,
+          "squared_delta": 0.002939558133490166
+        },
+        {
+          "column": 427,
+          "squared_delta": 0.002939558133490166
+        },
+        {
+          "column": 1860,
+          "squared_delta": 0.002862053394097662
+        },
+        {
+          "column": 836,
+          "squared_delta": 0.002862053394097662
+        }
+      ]
+    },
+    {
+      "key": "base.decoder.3.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 2.412453811897276,
+      "top64_fraction": 0.05364844866838638,
+      "top_columns": [
+        {
+          "column": 2018,
+          "squared_delta": 0.002831186098200964
+        },
+        {
+          "column": 3042,
+          "squared_delta": 0.002831186098200964
+        },
+        {
+          "column": 994,
+          "squared_delta": 0.002831186098200964
+        },
+        {
+          "column": 1167,
+          "squared_delta": 0.0024219241602712067
+        },
+        {
+          "column": 143,
+          "squared_delta": 0.0024219241602712067
+        },
+        {
+          "column": 2191,
+          "squared_delta": 0.0024219241602712067
+        },
+        {
+          "column": 286,
+          "squared_delta": 0.002329772733251827
+        },
+        {
+          "column": 2334,
+          "squared_delta": 0.002329772733251827
+        }
+      ]
+    },
+    {
+      "key": "base.decoder.4.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 2.3580179645516277,
+      "top64_fraction": 0.05589569467821762,
+      "top_columns": [
+        {
+          "column": 2868,
+          "squared_delta": 0.0027904194380724535
+        },
+        {
+          "column": 1844,
+          "squared_delta": 0.0027904194380724535
+        },
+        {
+          "column": 820,
+          "squared_delta": 0.0027904194380724535
+        },
+        {
+          "column": 2007,
+          "squared_delta": 0.0024846359708687806
+        },
+        {
+          "column": 983,
+          "squared_delta": 0.0024846359708687806
+        },
+        {
+          "column": 3031,
+          "squared_delta": 0.0024846359708687806
+        },
+        {
+          "column": 1416,
+          "squared_delta": 0.002410859070825565
+        },
+        {
+          "column": 392,
+          "squared_delta": 0.002410859070825565
+        }
+      ]
+    },
+    {
+      "key": "base.decoder.0.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 2.256600252978044,
+      "top64_fraction": 0.05925763162976834,
+      "top_columns": [
+        {
+          "column": 2139,
+          "squared_delta": 0.0034459773167022176
+        },
+        {
+          "column": 91,
+          "squared_delta": 0.0034459773167022176
+        },
+        {
+          "column": 1115,
+          "squared_delta": 0.0034459773167022176
+        },
+        {
+          "column": 962,
+          "squared_delta": 0.0024894882013108033
+        },
+        {
+          "column": 3010,
+          "squared_delta": 0.0024894882013108033
+        },
+        {
+          "column": 1986,
+          "squared_delta": 0.0024894882013108033
+        },
+        {
+          "column": 2195,
+          "squared_delta": 0.0024755701587895413
+        },
+        {
+          "column": 147,
+          "squared_delta": 0.0024755701587895413
+        }
+      ]
+    },
+    {
+      "key": "base.encoder.3.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 2.0476318163357607,
+      "top64_fraction": 0.06594445020894765,
+      "top_columns": [
+        {
+          "column": 1162,
+          "squared_delta": 0.003196162477690182
+        },
+        {
+          "column": 2186,
+          "squared_delta": 0.003196162477690182
+        },
+        {
+          "column": 138,
+          "squared_delta": 0.003196162477690182
+        },
+        {
+          "column": 966,
+          "squared_delta": 0.0027915115189975455
+        },
+        {
+          "column": 1990,
+          "squared_delta": 0.0027915115189975455
+        },
+        {
+          "column": 3014,
+          "squared_delta": 0.0027915115189975455
+        },
+        {
+          "column": 696,
+          "squared_delta": 0.0025854142042522985
+        },
+        {
+          "column": 2744,
+          "squared_delta": 0.0025854142042522985
+        }
+      ]
+    },
+    {
+      "key": "base.encoder.2.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 1.935631165128021,
+      "top64_fraction": 0.07904676482499806,
+      "top_columns": [
+        {
+          "column": 2663,
+          "squared_delta": 0.003668613167396545
+        },
+        {
+          "column": 1639,
+          "squared_delta": 0.003668613167396545
+        },
+        {
+          "column": 615,
+          "squared_delta": 0.003668613167396545
+        },
+        {
+          "column": 55,
+          "squared_delta": 0.0028104557322567725
+        },
+        {
+          "column": 1079,
+          "squared_delta": 0.0028104557322567725
+        },
+        {
+          "column": 2103,
+          "squared_delta": 0.0028104557322567725
+        },
+        {
+          "column": 2174,
+          "squared_delta": 0.0027750099606430336
+        },
+        {
+          "column": 1150,
+          "squared_delta": 0.0027750099606430336
+        }
+      ]
+    },
+    {
+      "key": "base.decoder.5.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 1.7206643144275362,
+      "top64_fraction": 0.06973961822173222,
+      "top_columns": [
+        {
+          "column": 2050,
+          "squared_delta": 0.003060864607604336
+        },
+        {
+          "column": 1026,
+          "squared_delta": 0.003060864607604336
+        },
+        {
+          "column": 2,
+          "squared_delta": 0.003060864607604336
+        },
+        {
+          "column": 1992,
+          "squared_delta": 0.002257589829827769
+        },
+        {
+          "column": 968,
+          "squared_delta": 0.002257589829827769
+        },
+        {
+          "column": 3016,
+          "squared_delta": 0.002257589829827769
+        },
+        {
+          "column": 2285,
+          "squared_delta": 0.002161960817844921
+        },
+        {
+          "column": 1261,
+          "squared_delta": 0.002161960817844921
+        }
+      ]
+    },
+    {
+      "key": "base.encoder.1.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 1.4148872081073893,
+      "top64_fraction": 0.09771993331868177,
+      "top_columns": [
+        {
+          "column": 2730,
+          "squared_delta": 0.0032098079047956345
+        },
+        {
+          "column": 682,
+          "squared_delta": 0.0032098079047956345
+        },
+        {
+          "column": 1706,
+          "squared_delta": 0.0032098079047956345
+        },
+        {
+          "column": 2243,
+          "squared_delta": 0.0028008096000474536
+        },
+        {
+          "column": 1219,
+          "squared_delta": 0.0028008096000474536
+        },
+        {
+          "column": 195,
+          "squared_delta": 0.0028008096000474536
+        },
+        {
+          "column": 1292,
+          "squared_delta": 0.002771747157617681
+        },
+        {
+          "column": 2316,
+          "squared_delta": 0.002771747157617681
+        }
+      ]
+    },
+    {
+      "key": "fine_decoder.6.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 1.096562310283844,
+      "top64_fraction": 0.047256841024132766,
+      "top_columns": [
+        {
+          "column": 1249,
+          "squared_delta": 0.0010529210661746708
+        },
+        {
+          "column": 1701,
+          "squared_delta": 0.0010029547366728151
+        },
+        {
+          "column": 1457,
+          "squared_delta": 0.0010010931025300866
+        },
+        {
+          "column": 2868,
+          "squared_delta": 0.0009684688535145313
+        },
+        {
+          "column": 2918,
+          "squared_delta": 0.0009666043997450613
+        },
+        {
+          "column": 1269,
+          "squared_delta": 0.0009548899292296005
+        },
+        {
+          "column": 933,
+          "squared_delta": 0.000943562487468694
+        },
+        {
+          "column": 785,
+          "squared_delta": 0.0009143691658840078
+        }
+      ]
+    },
+    {
+      "key": "base.encoder.0.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 1.0939892002028988,
+      "top64_fraction": 0.0940835434436049,
+      "top_columns": [
+        {
+          "column": 2297,
+          "squared_delta": 0.0028056946125400314
+        },
+        {
+          "column": 249,
+          "squared_delta": 0.0028056946125400314
+        },
+        {
+          "column": 1273,
+          "squared_delta": 0.0028056946125400314
+        },
+        {
+          "column": 1771,
+          "squared_delta": 0.0022436493191699443
+        },
+        {
+          "column": 747,
+          "squared_delta": 0.0022436493191699443
+        },
+        {
+          "column": 2795,
+          "squared_delta": 0.0022436493191699443
+        },
+        {
+          "column": 1280,
+          "squared_delta": 0.002009944936593225
+        },
+        {
+          "column": 2304,
+          "squared_delta": 0.002009944936593225
+        }
+      ]
+    },
+    {
+      "key": "fine_decoder.5.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 1.0901419192301072,
+      "top64_fraction": 0.04536380848601704,
+      "top_columns": [
+        {
+          "column": 1049,
+          "squared_delta": 0.0009504051371071789
+        },
+        {
+          "column": 2934,
+          "squared_delta": 0.0009288386454455869
+        },
+        {
+          "column": 1638,
+          "squared_delta": 0.0009162797068500813
+        },
+        {
+          "column": 2833,
+          "squared_delta": 0.0009143078845437137
+        },
+        {
+          "column": 683,
+          "squared_delta": 0.000899332787239264
+        },
+        {
+          "column": 2360,
+          "squared_delta": 0.0008968260173397102
+        },
+        {
+          "column": 2717,
+          "squared_delta": 0.000890365438611204
+        },
+        {
+          "column": 1135,
+          "squared_delta": 0.0008699800008435168
+        }
+      ]
+    },
+    {
+      "key": "fine_decoder.7.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 1.086289662617655,
+      "top64_fraction": 0.04795013679628525,
+      "top_columns": [
+        {
+          "column": 1896,
+          "squared_delta": 0.0013727595271798606
+        },
+        {
+          "column": 1464,
+          "squared_delta": 0.0010757216682035222
+        },
+        {
+          "column": 726,
+          "squared_delta": 0.001031801510414276
+        },
+        {
+          "column": 201,
+          "squared_delta": 0.0010186637654808757
+        },
+        {
+          "column": 2347,
+          "squared_delta": 0.0009988741347765413
+        },
+        {
+          "column": 837,
+          "squared_delta": 0.0009906495091072446
+        },
+        {
+          "column": 1935,
+          "squared_delta": 0.0009615511803743303
+        },
+        {
+          "column": 1735,
+          "squared_delta": 0.0009455329427739294
+        }
+      ]
+    },
+    {
+      "key": "fine_decoder.4.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 1.0841596167481908,
+      "top64_fraction": 0.04727102558720894,
+      "top_columns": [
+        {
+          "column": 1118,
+          "squared_delta": 0.0011644014584192008
+        },
+        {
+          "column": 2691,
+          "squared_delta": 0.0010185353440783796
+        },
+        {
+          "column": 408,
+          "squared_delta": 0.0009809836279364003
+        },
+        {
+          "column": 2787,
+          "squared_delta": 0.0009717266330501851
+        },
+        {
+          "column": 1418,
+          "squared_delta": 0.000953435400753009
+        },
+        {
+          "column": 704,
+          "squared_delta": 0.0009490411944100519
+        },
+        {
+          "column": 2439,
+          "squared_delta": 0.0009445714799877829
+        },
+        {
+          "column": 2543,
+          "squared_delta": 0.0009315362904058323
+        }
+      ]
+    },
+    {
+      "key": "fine_decoder.8.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 1.075850024725926,
+      "top64_fraction": 0.04789467967962615,
+      "top_columns": [
+        {
+          "column": 859,
+          "squared_delta": 0.0010268292200403884
+        },
+        {
+          "column": 237,
+          "squared_delta": 0.000995198744406202
+        },
+        {
+          "column": 263,
+          "squared_delta": 0.0009478030417975188
+        },
+        {
+          "column": 1213,
+          "squared_delta": 0.0009385218786893792
+        },
+        {
+          "column": 783,
+          "squared_delta": 0.0009167842195548186
+        },
+        {
+          "column": 35,
+          "squared_delta": 0.0009137969058822586
+        },
+        {
+          "column": 1877,
+          "squared_delta": 0.0009025318029068748
+        },
+        {
+          "column": 1022,
+          "squared_delta": 0.0008924104250930414
+        }
+      ]
+    },
+    {
+      "key": "fine_decoder.9.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 1.0705736139478392,
+      "top64_fraction": 0.047551042666759885,
+      "top_columns": [
+        {
+          "column": 2875,
+          "squared_delta": 0.001020927554600003
+        },
+        {
+          "column": 2435,
+          "squared_delta": 0.0010135797739242308
+        },
+        {
+          "column": 6,
+          "squared_delta": 0.0009725666406932209
+        },
+        {
+          "column": 1915,
+          "squared_delta": 0.000944594673660307
+        },
+        {
+          "column": 2910,
+          "squared_delta": 0.0009327784146970206
+        },
+        {
+          "column": 2345,
+          "squared_delta": 0.0009000058736238936
+        },
+        {
+          "column": 2294,
+          "squared_delta": 0.0008997192398753689
+        },
+        {
+          "column": 2198,
+          "squared_delta": 0.0008806870671289311
+        }
+      ]
+    },
+    {
+      "key": "fine_decoder.3.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 1.0114769350436854,
+      "top64_fraction": 0.055568659138809796,
+      "top_columns": [
+        {
+          "column": 2069,
+          "squared_delta": 0.0012584267132774239
+        },
+        {
+          "column": 21,
+          "squared_delta": 0.0012584267132774239
+        },
+        {
+          "column": 1045,
+          "squared_delta": 0.0012584267132774239
+        },
+        {
+          "column": 1798,
+          "squared_delta": 0.0011714833680052004
+        },
+        {
+          "column": 2822,
+          "squared_delta": 0.0011714833680052004
+        },
+        {
+          "column": 774,
+          "squared_delta": 0.0011714833680052004
+        },
+        {
+          "column": 1895,
+          "squared_delta": 0.0010207906954440734
+        },
+        {
+          "column": 2919,
+          "squared_delta": 0.0010207906954440734
+        }
+      ]
+    },
+    {
+      "key": "fine_decoder.2.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 0.9770825823389246,
+      "top64_fraction": 0.05746018956967181,
+      "top_columns": [
+        {
+          "column": 2217,
+          "squared_delta": 0.0010336794293011908
+        },
+        {
+          "column": 169,
+          "squared_delta": 0.0010336794293011908
+        },
+        {
+          "column": 1193,
+          "squared_delta": 0.0010336794293011908
+        },
+        {
+          "column": 1768,
+          "squared_delta": 0.001032875665150413
+        },
+        {
+          "column": 2792,
+          "squared_delta": 0.001032875665150413
+        },
+        {
+          "column": 744,
+          "squared_delta": 0.001032875665150413
+        },
+        {
+          "column": 2305,
+          "squared_delta": 0.0010283020096003642
+        },
+        {
+          "column": 257,
+          "squared_delta": 0.0010283020096003642
+        }
+      ]
+    },
+    {
+      "key": "fine_decoder.1.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 0.9148687079384946,
+      "top64_fraction": 0.06792216216714801,
+      "top_columns": [
+        {
+          "column": 244,
+          "squared_delta": 0.0013564299175309192
+        },
+        {
+          "column": 2292,
+          "squared_delta": 0.0013564299175309192
+        },
+        {
+          "column": 1268,
+          "squared_delta": 0.0013564299175309192
+        },
+        {
+          "column": 2316,
+          "squared_delta": 0.0011883605662235837
+        },
+        {
+          "column": 1292,
+          "squared_delta": 0.0011883605662235837
+        },
+        {
+          "column": 268,
+          "squared_delta": 0.0011883605662235837
+        },
+        {
+          "column": 2773,
+          "squared_delta": 0.0011226048207359247
+        },
+        {
+          "column": 1749,
+          "squared_delta": 0.0011226048207359247
+        }
+      ]
+    },
+    {
+      "key": "fine_decoder.0.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 0.8273681109531641,
+      "top64_fraction": 0.07174613874574491,
+      "top_columns": [
+        {
+          "column": 26,
+          "squared_delta": 0.0012633832040123685
+        },
+        {
+          "column": 1050,
+          "squared_delta": 0.0012633832040123685
+        },
+        {
+          "column": 2074,
+          "squared_delta": 0.0012633832040123685
+        },
+        {
+          "column": 1766,
+          "squared_delta": 0.0012102588161910428
+        },
+        {
+          "column": 742,
+          "squared_delta": 0.0012102588161910428
+        },
+        {
+          "column": 2790,
+          "squared_delta": 0.0012102588161910428
+        },
+        {
+          "column": 285,
+          "squared_delta": 0.001105494436997639
+        },
+        {
+          "column": 1309,
+          "squared_delta": 0.001105494436997639
+        }
+      ]
+    },
+    {
+      "key": "base.decoder.10.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 0.0,
+      "top64_fraction": 0.0,
+      "top_columns": [
+        {
+          "column": 3071,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 3070,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1029,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1028,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1027,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1026,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1025,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1024,
+          "squared_delta": 0.0
+        }
+      ]
+    },
+    {
+      "key": "base.decoder.11.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 0.0,
+      "top64_fraction": 0.0,
+      "top_columns": [
+        {
+          "column": 3071,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 3070,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1029,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1028,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1027,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1026,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1025,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1024,
+          "squared_delta": 0.0
+        }
+      ]
+    },
+    {
+      "key": "base.decoder.12.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 0.0,
+      "top64_fraction": 0.0,
+      "top_columns": [
+        {
+          "column": 3071,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 3070,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1029,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1028,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1027,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1026,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1025,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1024,
+          "squared_delta": 0.0
+        }
+      ]
+    },
+    {
+      "key": "base.decoder.13.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 0.0,
+      "top64_fraction": 0.0,
+      "top_columns": [
+        {
+          "column": 3071,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 3070,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1029,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1028,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1027,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1026,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1025,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1024,
+          "squared_delta": 0.0
+        }
+      ]
+    },
+    {
+      "key": "base.decoder.6.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 0.0,
+      "top64_fraction": 0.0,
+      "top_columns": [
+        {
+          "column": 3071,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 3070,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1029,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1028,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1027,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1026,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1025,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1024,
+          "squared_delta": 0.0
+        }
+      ]
+    },
+    {
+      "key": "base.decoder.7.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 0.0,
+      "top64_fraction": 0.0,
+      "top_columns": [
+        {
+          "column": 3071,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 3070,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1029,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1028,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1027,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1026,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1025,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1024,
+          "squared_delta": 0.0
+        }
+      ]
+    },
+    {
+      "key": "base.decoder.8.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 0.0,
+      "top64_fraction": 0.0,
+      "top_columns": [
+        {
+          "column": 3071,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 3070,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1029,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1028,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1027,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1026,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1025,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1024,
+          "squared_delta": 0.0
+        }
+      ]
+    },
+    {
+      "key": "base.decoder.9.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 0.0,
+      "top64_fraction": 0.0,
+      "top_columns": [
+        {
+          "column": 3071,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 3070,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1029,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1028,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1027,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1026,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1025,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1024,
+          "squared_delta": 0.0
+        }
+      ]
+    },
+    {
+      "key": "base.encoder.4.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 0.0,
+      "top64_fraction": 0.0,
+      "top_columns": [
+        {
+          "column": 3071,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 3070,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1029,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1028,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1027,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1026,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1025,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1024,
+          "squared_delta": 0.0
+        }
+      ]
+    },
+    {
+      "key": "base.encoder.5.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 0.0,
+      "top64_fraction": 0.0,
+      "top_columns": [
+        {
+          "column": 3071,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 3070,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1029,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1028,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1027,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1026,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1025,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1024,
+          "squared_delta": 0.0
+        }
+      ]
+    },
+    {
+      "key": "base.encoder.6.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 0.0,
+      "top64_fraction": 0.0,
+      "top_columns": [
+        {
+          "column": 3071,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 3070,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1029,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1028,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1027,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1026,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1025,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1024,
+          "squared_delta": 0.0
+        }
+      ]
+    },
+    {
+      "key": "base.encoder.7.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 0.0,
+      "top64_fraction": 0.0,
+      "top_columns": [
+        {
+          "column": 3071,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 3070,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1029,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1028,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1027,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1026,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1025,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1024,
+          "squared_delta": 0.0
+        }
+      ]
+    },
+    {
+      "key": "base.encoder.8.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 0.0,
+      "top64_fraction": 0.0,
+      "top_columns": [
+        {
+          "column": 3071,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 3070,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1029,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1028,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1027,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1026,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1025,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1024,
+          "squared_delta": 0.0
+        }
+      ]
+    },
+    {
+      "key": "base.encoder.9.ffn.2.weight",
+      "shape": [
+        768,
+        3072
+      ],
+      "squared_delta_total": 0.0,
+      "top64_fraction": 0.0,
+      "top_columns": [
+        {
+          "column": 3071,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 3070,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1029,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1028,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1027,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1026,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1025,
+          "squared_delta": 0.0
+        },
+        {
+          "column": 1024,
+          "squared_delta": 0.0
+        }
+      ]
+    }
+  ]
+}
