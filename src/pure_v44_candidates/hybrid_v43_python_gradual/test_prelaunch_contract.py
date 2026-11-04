@@ -29,7 +29,7 @@ class PrelaunchContractTests(unittest.TestCase):
                  "official_quota_observed_at_utc":observed,
                  "active_jobs_observed_at_utc":observed,
                  "root_claim_created_at_utc":observed,
-                 "hard_stop_at_utc":(now+timedelta(minutes=30)).isoformat(),
+                 "hard_stop_at_utc":(now+timedelta(minutes=90)).isoformat(),
                  "official_minimum_free_device_seconds":5000,
                  "root_reserved_device_seconds":reserve,
                  "bounded_run_seconds":1800,"save_reserve_seconds":180,
@@ -47,8 +47,11 @@ class PrelaunchContractTests(unittest.TestCase):
             self.assertEqual(verify_prelaunch_contract(valid,now=now,
                 expected_arm="python",required_run_seconds=1800,
                 required_save_reserve_seconds=180)["root_reserved_device_seconds"],3960)
+            self.assertEqual(verify_prelaunch_contract(
+                valid,now=now+timedelta(minutes=11),expected_arm="python")["claim_id"],
+                "claim_0123456789abcdef")
             with self.assertRaises(ValueError):
-                verify_prelaunch_contract(valid,now=now+timedelta(minutes=11),expected_arm="python")
+                verify_prelaunch_contract(valid,now=now+timedelta(minutes=61),expected_arm="python")
             self.make(root,now,reserve=1800)
             with self.assertRaises(ValueError):
                 verify_prelaunch_contract(valid,now=now,expected_arm="python")

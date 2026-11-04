@@ -19,6 +19,7 @@ from source_pools import file_sha
 
 SCHEMA = "geocpu_hybrid_private_kaggle_prelaunch_v1"
 MAX_AGE_SECONDS = 600
+MAX_PROVIDER_QUEUE_SECONDS = 3600
 
 
 def _utc(value: str) -> datetime:
@@ -50,10 +51,14 @@ def verify_prelaunch_contract(path: str | Path, *, now: datetime | None = None,
             or any(not isinstance(name, str) or not name.strip() for name in record["gpu_names"])):
         raise ValueError("Root claim lacks a fixed precision and GPU model profile")
     observed = _utc(record["official_quota_observed_at_utc"])
-    if not 0 <= (now - observed).total_seconds() <= MAX_AGE_SECONDS:
-        raise ValueError("Official fresh free quota observation is stale")
-    if not 0 < (now - _utc(record["root_claim_created_at_utc"])).total_seconds() <= MAX_AGE_SECONDS:
-        raise ValueError("Root one-use claim is stale or future dated")
+    created = _utc(record["root_claim_created_at_utc"])
+    # Kaggle may queue a submitted run. Freshness is established when Root
+    # reserves and submits the one-use claim, while the immutable in-job copy
+    # remains valid through a bounded provider queue until the hard stop.
+    if not 0 <= (created - observed).total_seconds() <= MAX_AGE_SECONDS:
+        raise ValueError("Official free quota was not fresh at Root claim creation")
+    if not 0 < (now - created).total_seconds() <= MAX_PROVIDER_QUEUE_SECONDS:
+        raise ValueError("Root claim exceeded its bounded provider queue window")
     if _utc(record["hard_stop_at_utc"]) <= now:
         raise ValueError("The predeclared hard stop has already passed")
     required_files = ("official_quota_evidence", "root_hold_ledger", "active_jobs_snapshot")
@@ -98,7 +103,7 @@ def verify_prelaunch_contract(path: str | Path, *, now: datetime | None = None,
             or any(not isinstance(item, dict) or item.get("status") not in
                    {"COMPLETE", "CANCELLED", "ERROR", "FAILED"} for item in jobs["jobs"])):
         raise ValueError("Another Kaggle job is active or its status is unknown")
-    jobs_age = (now - _utc(jobs["observed_at_utc"])).total_seconds()
+    jobs_age = (created - _utc(jobs["observed_at_utc"])).total_seconds()
     if not 0 <= jobs_age <= MAX_AGE_SECONDS:
         raise ValueError("Active-job snapshot is stale")
     return record

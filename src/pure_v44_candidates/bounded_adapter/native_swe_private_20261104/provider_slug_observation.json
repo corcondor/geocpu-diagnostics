@@ -1,0 +1,8 @@
+{
+  "observed_at_utc": "2026-11-04T00:02:35.376116+00:00",
+  "provider_returned_slug": "geocpuresearch/geocpu-v43-native-swe200-read-only-proof-20261104",
+  "provider_version": 1,
+  "status": "RUNNING",
+  "submission_retried": false,
+  "submitted_metadata_id": "geocpuresearch/geocpu-v43-native-swe200-proof-20261104-v1"
+}
