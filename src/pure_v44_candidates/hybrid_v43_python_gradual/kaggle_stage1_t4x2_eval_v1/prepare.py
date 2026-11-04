@@ -23,10 +23,10 @@ from train_hybrid_stage_v2 import (  # noqa: E402
     _verify_original_swe_baseline, _verify_pretrain_raw_diagnostic,
 )
 
-KERNEL_ID = "geocpuresearch/geocpu-v43-python-stage1-fixed44-eval-t4x2-20261104"
+KERNEL_ID = "geocpuresearch/geocpu-v43py-fixed44-eval-20261104"
 ORIGINAL_DATASET = "geocpuresearch/geocpu-v43-v44fix-paired-eval-20261103"
-PAIRED_DATASET_DEFAULT = "geocpuresearch/geocpu-v43-python-stage1-paired-t4x2-output-20261104"
-PAIRED_ROOT_REL = "geocpu_hybrid_stage1_fp16_paired_20261104"
+PAIRED_KERNEL_ID = "geocpuresearch/geocpu-v43py-stage1-m4096-20261104"
+PAIRED_ROOT_REL = "geocpu_hybrid_stage1_fp16_paired_m4096_20261104_v3"
 RUN_SECONDS = 1800
 SAVE_RESERVE_SECONDS = 180
 PROFILE = "eval_fp16_native_v1"
@@ -51,8 +51,9 @@ SWE_PROOF_FILES = (
 )
 FIXED44_PROOF_FILES = ("COMPLETE.json", "raw_answers_44_profiles.jsonl")
 PRIOR_TERMINAL_JOBS = (
+    "geocpuresearch/geocpu-v43-native-swe200-read-only-proof-20261104",
     "geocpuresearch/geocpu-v43-parent-fixed44-fp16-20261104",
-    "geocpuresearch/geocpu-v43-python-stage1-paired-t4x2-20261104",
+    PAIRED_KERNEL_ID,
 )
 
 
@@ -76,6 +77,8 @@ def _claim(path: Path, arm: str, now: datetime) -> tuple[dict, dict[str, Path]]:
         relative = _safe_relative(item["file"])
         key = relative.as_posix()
         candidate = path.parent / relative
+        if file_sha(candidate) != item["sha256"]:
+            raise ValueError("Claim evidence SHA differs: " + key)
         if key in files and files[key] != candidate:
             raise ValueError("Claim evidence filenames collide")
         files[key] = candidate
@@ -149,11 +152,20 @@ def _pair_checkpoints(paired_dir: Path, *, swe_sha: str, fixed44_sha: str) -> di
         receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
         plan = json.loads(plan_path.read_text(encoding="utf-8"))
         binding = plan.get("binding", {})
-        digest = file_sha(checkpoint)
+        declared_sha = receipt.get("sha256")
+        declared_bytes = receipt.get("bytes")
+        if (not isinstance(declared_sha, str) or re.fullmatch(r"[0-9a-f]{64}", declared_sha) is None
+                or type(declared_bytes) is not int or declared_bytes <= 0):
+            raise ValueError("Sealed checkpoint receipt lacks a SHA-256 digest and byte count")
+        # A small Kaggle output proof bundle is enough to stage the direct
+        # kernel-source mount. If local weights are present, check them too.
+        if checkpoint.exists() and (checkpoint.stat().st_size != declared_bytes
+                                    or file_sha(checkpoint) != declared_sha):
+            raise ValueError("Local stage-1 checkpoint differs from its sealed receipt: " + arm)
+        digest = declared_sha
         if (receipt.get("schema") != "geocpu_v43_python_gradual_checkpoint_receipt_v1"
                 or receipt.get("status") != "BLOCK1_NEEDS_PAIRED_EVALUATION"
                 or receipt.get("accepted_updates") != 250
-                or receipt.get("bytes") != checkpoint.stat().st_size
                 or receipt.get("sha256") != digest
                 or receipt.get("binding_sha256") != sha256(json.dumps(binding, sort_keys=True).encode()).hexdigest()
                 or pair.get("arm_results", {}).get(arm, {}).get("accepted_updates") != 250
@@ -177,6 +189,7 @@ def _pair_checkpoints(paired_dir: Path, *, swe_sha: str, fixed44_sha: str) -> di
                 or binding.get("prelaunch_verifier_sha256") != SOURCE_SHA["prelaunch_contract.py"]
                 or binding.get("overlay_sha256") != SOURCE_OVERLAY_SHA
                 or binding.get("precision_profile") != "train_fp16_gradscaler_v1"
+                or binding.get("max_micro_tokens") != 4096
                 or binding.get("python_actual_target_cap") != (0.0 if arm == "control" else 0.01)
                 or binding.get("original_swe200_baseline_complete_sha256") != swe_sha
                 or binding.get("original_swe200_baseline_precision_profile") != "eval_bf16_native_historical_only"
@@ -189,7 +202,7 @@ def _pair_checkpoints(paired_dir: Path, *, swe_sha: str, fixed44_sha: str) -> di
                 or "T4" not in binding["gpu_names"][0].upper()):
             raise ValueError("Stage-1 plan is not bound to the pinned v2 sources and parent: " + arm)
         bindings[arm] = binding
-        files[checkpoint_rel] = {"sha256": digest, "bytes": checkpoint.stat().st_size}
+        files[checkpoint_rel] = {"sha256": digest, "bytes": declared_bytes}
         files[receipt_rel] = {"sha256": file_sha(receipt_path)}
         files[plan_rel] = {"sha256": file_sha(plan_path)}
     common = ("common_boundary_plan_sha256", "seed", "lr", "batch_size",
@@ -212,14 +225,14 @@ def _embedded(path: Path, expected: str | None = None) -> dict:
             "zlib_base64": base64.b64encode(zlib.compress(raw, 9)).decode("ascii")}
 
 
-def package(*, paired_dir: Path, paired_dataset: str, v43_zip: Path,
+def package(*, paired_dir: Path, v43_zip: Path,
             parent_checkpoint: Path, swe_proof_dir: Path, fixed44_proof_dir: Path,
             control_claim: Path, python_claim: Path, staged: Path,
             now: datetime | None = None) -> dict:
     if staged.exists():
         raise FileExistsError("Use a new private, one-use evaluation staging directory")
-    if re.fullmatch(r"[A-Za-z0-9_-]+/[A-Za-z0-9_-]+", paired_dataset) is None:
-        raise ValueError("Paired checkpoint dataset must be an exact owner/slug")
+    if len(KERNEL_ID.split("/", 1)[1]) > 50:
+        raise ValueError("Kaggle evaluation kernel slug/title exceeds 50 characters")
     if (file_sha(v43_zip) != PINNED_V43_ZIP_SHA
             or parent_checkpoint.stat().st_size != PARENT_CHECKPOINT_BYTES
             or file_sha(parent_checkpoint) != PARENT_CHECKPOINT_SHA):
@@ -250,7 +263,7 @@ def package(*, paired_dir: Path, paired_dataset: str, v43_zip: Path,
     files.update({"claims/python/" + name: (path, None)
                   for name, path in python_files.items()})
     embedded = {name: _embedded(path, expected) for name, (path, expected) in files.items()}
-    expected = {"paired_files": paired_files, "paired_dataset": paired_dataset,
+    expected = {"paired_files": paired_files, "paired_kernel_id": PAIRED_KERNEL_ID,
                 "swe_complete_sha256": swe_sha, "fixed44_complete_sha256": fixed44_sha,
                 "claim_sha256": {"control": file_sha(control_claim),
                                  "python": file_sha(python_claim)}}
@@ -264,14 +277,14 @@ def package(*, paired_dir: Path, paired_dataset: str, v43_zip: Path,
         "code_file": "bootstrap.py", "language": "python", "kernel_type": "script",
         "is_private": True, "enable_gpu": True, "enable_tpu": False,
         "enable_internet": False, "keywords": [],
-        "dataset_sources": [ORIGINAL_DATASET, paired_dataset],
-        "kernel_sources": [], "competition_sources": [], "model_sources": [],
+        "dataset_sources": [ORIGINAL_DATASET],
+        "kernel_sources": [PAIRED_KERNEL_ID], "competition_sources": [], "model_sources": [],
         "machine_shape": "NvidiaTeslaT4", "session_timeout_seconds": 2400,
     }
     metadata_raw = (json.dumps(metadata, sort_keys=True, indent=2) + "\n").encode()
     manifest = {
         "schema": "geocpu_stage1_paired_fixed44_eval_package_v1",
-        "kernel_id": KERNEL_ID, "paired_dataset": paired_dataset,
+        "kernel_id": KERNEL_ID, "paired_kernel_id": PAIRED_KERNEL_ID,
         "parent_checkpoint_sha256": PARENT_CHECKPOINT_SHA,
         "source_zip_sha256": PINNED_V43_ZIP_SHA,
         "stage1_files": paired_files,
@@ -300,7 +313,6 @@ def main() -> None:
     for name in ("paired_dir", "v43_zip", "parent_checkpoint", "swe_proof_dir",
                  "fixed44_proof_dir", "control_claim", "python_claim", "staged"):
         parser.add_argument("--" + name.replace("_", "-"), type=Path, required=True)
-    parser.add_argument("--paired-dataset", default=PAIRED_DATASET_DEFAULT)
     print(json.dumps(package(**vars(parser.parse_args())), sort_keys=True))
 
 

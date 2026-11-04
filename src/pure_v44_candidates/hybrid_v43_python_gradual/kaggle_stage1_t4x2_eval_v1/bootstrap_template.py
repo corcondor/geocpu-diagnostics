@@ -14,8 +14,9 @@ import zlib
 
 EMBEDDED = __EMBEDDED__
 EXPECTED = __EXPECTED__
-ROOT = Path("/kaggle/working/geocpu_stage1_paired_fixed44_eval_20261104")
-PAIRED_ROOT_REL = "geocpu_hybrid_stage1_fp16_paired_20261104"
+ROOT = Path("/kaggle/working/geocpu_v43py_fixed44_eval_20261104")
+PAIRED_KERNEL_ID = "geocpuresearch/geocpu-v43py-stage1-m4096-20261104"
+PAIRED_ROOT_REL = "geocpu_hybrid_stage1_fp16_paired_m4096_20261104_v3"
 V43_ZIP_SHA = "0102dc9b01b4b795c3123b18cefc7a8734e47a06dd85292af464d3232704d198"
 PARENT_SHA = "a4b95d7d0f486146196271b3b1fbc6a1b6b3342d8fadd590320fc3842c1e80e5"
 
@@ -38,6 +39,18 @@ def mounted(identifier: str) -> Path:
     return found[0]
 
 
+def find_paired_mount(input_root: Path, expected_files: dict) -> Path:
+    """The Kaggle provider chooses a mount slug for kernel_sources."""
+    candidates = []
+    for status_file in input_root.rglob("pair_status.json"):
+        if (status_file.parent.name == PAIRED_ROOT_REL and status_file.is_file()
+                and digest(status_file) == expected_files["pair_status.json"]["sha256"]):
+            candidates.append(status_file.parent)
+    if len(candidates) != 1:
+        raise FileNotFoundError("Expected exactly one SHA-pinned v3 paired notebook output mount")
+    return candidates[0]
+
+
 def unpack(code: Path) -> None:
     for name, item in EMBEDDED.items():
         relative = Path(name)
@@ -53,7 +66,9 @@ def unpack(code: Path) -> None:
 
 def verify_inputs(code: Path) -> tuple[Path, Path, Path, dict]:
     original = mounted("geocpuresearch/geocpu-v43-v44fix-paired-eval-20261103")
-    paired = mounted(EXPECTED["paired_dataset"]) / PAIRED_ROOT_REL
+    if EXPECTED["paired_kernel_id"] != PAIRED_KERNEL_ID:
+        raise ValueError("Attached paired notebook ID differs")
+    paired = find_paired_mount(Path("/kaggle/input"), EXPECTED["paired_files"])
     source_zip = original / "v43_source.zip.bin"
     parent = original / "v43_step15000.pt"
     if (digest(source_zip) != V43_ZIP_SHA or parent.stat().st_size != 990_545_719

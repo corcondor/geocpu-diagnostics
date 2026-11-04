@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import prepare
 import compare_fixed44
@@ -23,6 +24,9 @@ class PackageTests(unittest.TestCase):
                          compare_fixed44.EVALUATOR_SHA)
         self.assertEqual(prepare.SOURCE_SHA["fixed_interim_diagnostic_44_v2.jsonl"],
                          compare_fixed44.CASES_SHA)
+        self.assertEqual(prepare.PAIRED_KERNEL_ID,
+                         "geocpuresearch/geocpu-v43py-stage1-m4096-20261104")
+        self.assertLessEqual(len(prepare.KERNEL_ID.split("/", 1)[1]), 50)
 
     def test_bootstrap_is_syntactic_and_uses_both_gpus_and_bounded_evaluator(self):
         template = (prepare.HERE / "bootstrap_template.py").read_text(encoding="utf-8")
@@ -35,8 +39,93 @@ class PackageTests(unittest.TestCase):
         self.assertIn('"--hard-stop-seconds", "1800"', template)
         self.assertIn('"--save-reserve-seconds", "180"', template)
         self.assertIn('"stage_promotion": False', template)
+        self.assertIn('find_paired_mount(Path("/kaggle/input")', template)
+        self.assertIn('"kernel_sources": [PAIRED_KERNEL_ID]',
+                      (prepare.HERE / "prepare.py").read_text(encoding="utf-8"))
         ast.parse((prepare.HERE / "prepare.py").read_text(encoding="utf-8"))
         ast.parse((prepare.HERE / "compare_fixed44.py").read_text(encoding="utf-8"))
+
+    def test_direct_kernel_source_mount_requires_one_matching_status_hash(self):
+        template = (prepare.HERE / "bootstrap_template.py").read_text(encoding="utf-8")
+        code = template.replace("__EMBEDDED__", "{}").replace("__EXPECTED__", "{}")
+        namespace = {"__name__": "bootstrap_test"}
+        exec(compile(code, "bootstrap_template.py", "exec"), namespace)
+        with tempfile.TemporaryDirectory() as directory:
+            input_root = Path(directory)
+            candidate = input_root / "provider-chosen-slug" / prepare.PAIRED_ROOT_REL
+            candidate.mkdir(parents=True)
+            status = candidate / "pair_status.json"
+            status.write_bytes(b"sealed status\n")
+            expected = {"pair_status.json": {"sha256": file_sha(status)}}
+            self.assertEqual(namespace["find_paired_mount"](input_root, expected), candidate)
+            second = input_root / "second-provider-slug" / prepare.PAIRED_ROOT_REL
+            second.mkdir(parents=True)
+            (second / "pair_status.json").write_bytes(status.read_bytes())
+            with self.assertRaises(FileNotFoundError):
+                namespace["find_paired_mount"](input_root, expected)
+            (second / "pair_status.json").write_bytes(b"different status\n")
+            status.write_bytes(b"tampered status\n")
+            with self.assertRaises(FileNotFoundError):
+                namespace["find_paired_mount"](input_root, expected)
+
+    def test_staged_metadata_attaches_v3_notebook_without_checkpoint_upload(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            v43 = root / "original.zip"
+            parent = root / "parent.pt"
+            v43.write_bytes(b"synthetic original")
+            parent.write_bytes(b"synthetic parent")
+            swe = root / "swe"
+            fixed44 = root / "fixed44"
+            swe.mkdir()
+            fixed44.mkdir()
+            for name in prepare.SWE_PROOF_FILES:
+                (swe / name).write_bytes(b"synthetic SWE proof\n")
+            for name in prepare.FIXED44_PROOF_FILES:
+                (fixed44 / name).write_bytes(b"synthetic fixed44 proof\n")
+            claims = {}
+            for arm in ("control", "python"):
+                path = root / arm / "prelaunch_contract_once.json"
+                path.parent.mkdir()
+                path.write_bytes(arm.encode())
+                claims[arm] = path
+            paired_files = {"pair_status.json": {"sha256": "e" * 64}}
+            for arm in ("control", "python"):
+                paired_files[f"{arm}/hybrid_stage1_{arm}_update_0250.pt"] = {
+                    "sha256": ("c" if arm == "control" else "d") * 64, "bytes": 10}
+            true_file_sha = prepare.file_sha
+            def local_sha(path):
+                if Path(path) == v43:
+                    return prepare.PINNED_V43_ZIP_SHA
+                if Path(path) == parent:
+                    return prepare.PARENT_CHECKPOINT_SHA
+                return true_file_sha(path)
+            def claim(_, arm, __):
+                return ({"claim_id": arm + "_0123456789abcdef"},
+                        {"prelaunch_contract_once.json": claims[arm]})
+            staged = root / "new-eval-stage"
+            with (patch.object(prepare, "file_sha", side_effect=local_sha),
+                  patch.object(prepare, "PARENT_CHECKPOINT_BYTES", parent.stat().st_size),
+                  patch.object(prepare, "_verify_original_swe_baseline", return_value="a" * 64),
+                  patch.object(prepare, "_verify_pretrain_raw_diagnostic", return_value="b" * 64),
+                  patch.object(prepare, "_pair_checkpoints", return_value=paired_files),
+                  patch.object(prepare, "_claim", side_effect=claim),
+                  patch.object(prepare, "_pair_claims")):
+                prepare.package(
+                    paired_dir=root / "paired-small-proofs", v43_zip=v43,
+                    parent_checkpoint=parent, swe_proof_dir=swe,
+                    fixed44_proof_dir=fixed44,
+                    control_claim=claims["control"], python_claim=claims["python"],
+                    staged=staged)
+            metadata = json.loads((staged / "kernel-metadata.json").read_text())
+            manifest = json.loads((staged / "package-manifest.json").read_text())
+            self.assertEqual(metadata["kernel_sources"], [prepare.PAIRED_KERNEL_ID])
+            self.assertEqual(metadata["dataset_sources"], [prepare.ORIGINAL_DATASET])
+            self.assertEqual(metadata["title"], prepare.KERNEL_ID.split("/", 1)[1])
+            self.assertTrue(metadata["is_private"])
+            self.assertTrue(metadata["enable_gpu"])
+            self.assertEqual(manifest["stage1_files"], paired_files)
+            ast.parse((staged / "bootstrap.py").read_text(encoding="utf-8"))
 
     def test_pair_status_receipt_and_plan_are_all_required(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -73,7 +162,7 @@ class PackageTests(unittest.TestCase):
                     "parent_fixed44_raw_diagnostic_complete_sha256": fixed44,
                     "common_boundary_plan_sha256": "e" * 64,
                     "seed": 20261103, "lr": 0.00001, "batch_size": 64,
-                    "max_micro_tokens": 24576,
+                    "max_micro_tokens": 4096,
                     "ce_normalization": "sum_all_active_labels_per_update",
                     "compression_loss": "0.2_times_sum_per_example_over_64",
                     "microbatch_boundary": "paired_old_or_python_max_tokens",
@@ -102,6 +191,12 @@ class PackageTests(unittest.TestCase):
             (root / "pair_status.json").write_text(json.dumps(pair), encoding="utf-8")
             files = prepare._pair_checkpoints(root, swe_sha=swe, fixed44_sha=fixed44)
             self.assertEqual(len(files), 7)
+            for arm in ("control", "python"):
+                (root / arm / f"hybrid_stage1_{arm}_update_0250.pt").unlink()
+            # The local proof bundle can omit the multi-GB weights. The
+            # Kaggle mount will hash both actual checkpoints at runtime.
+            self.assertEqual(prepare._pair_checkpoints(root, swe_sha=swe,
+                                                       fixed44_sha=fixed44), files)
             receipt_path = root / "python" / "hybrid_stage1_python_update_0250.pt.receipt.json"
             receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
             receipt["accepted_updates"] = 249
