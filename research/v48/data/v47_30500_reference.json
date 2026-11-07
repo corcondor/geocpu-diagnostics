@@ -1,0 +1,21 @@
+{
+  "run_id": "v47_step_30500_reported_2026-11-07",
+  "status": "historical_log_only_not_protocol_frozen",
+  "source": "Google Drive: GeoCPU_v47_fullmodel_20261106/v47_train_eval_suite_step_30500/original_tiers",
+  "source_urls": {
+    "tier1_7_log": "https://drive.google.com/file/d/1hUsmrN5iXiIoXqyvSiKlFWnVfN8ySM18/view",
+    "tier6_log": "https://drive.google.com/file/d/1AtRYj0I4qye3U0u6kHVNvmQSB6bD9gE1/view"
+  },
+  "note": "Values below are copied from existing logs. Strict comparison requires matching frozen cohort/scorer/decoding hashes: tiers.* left empty deliberately.",
+  "historical_reported": {
+    "T1": {"numeric_exact": {"correct": 172, "total": 200}, "step_termination": {"correct": 158, "total": 200}},
+    "T2": {"state_tracking": {"correct": 175, "total": 200}},
+    "T3": {"jamc_qa_logit": {"accuracy_percent": 26.16, "total": 2309}},
+    "T4": {"jmmlu": {"accuracy_percent": 23.41, "total": 7536}, "swe_trace": {"accuracy_percent": 96.34, "total": 164}},
+    "T5": {"logical_contrast": {"correct": 218, "total": 400}},
+    "T6": {"final_correct": {"correct": 0, "total": 200}, "search_invocation": {"correct": 55, "total": 200}, "two_step_execution": {"correct": 50, "total": 200}},
+    "T7": {"closed_book": {"correct": 15, "total": 200}, "open_book": {"correct": 16, "total": 200}},
+    "T8": {"note": "different labeled modes: original_v44 vs aligned_v43; avoid treating as v47-only head-to-head"}
+  },
+  "tiers": {"T1": {}, "T2": {}, "T3": {}, "T4": {}, "T5": {}, "T6": {}, "T7": {}, "T8": {}}
+}
