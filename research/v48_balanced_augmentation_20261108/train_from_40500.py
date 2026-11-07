@@ -379,7 +379,7 @@ def main():
         raise
     finally:
         backup.request_stop()
-        backup.join()
+        backup.close()
         (output/"training_active.json").unlink(missing_ok=True)
 
 if __name__=="__main__":
