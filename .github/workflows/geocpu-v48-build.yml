@@ -47,6 +47,18 @@ jobs:
           assert not f(old,current)["passed"]
           print("40500 launcher import, syntax, exposure checks passed; GPU not executed")
           PY
+      - name: Validate Colab notebook code is syntactically correct
+        run: |
+          python - <<'PY'
+          import ast,json
+          nb=json.load(open("research/v48_balanced_augmentation_20261108/GeoCPU_v48_Colab_40500_to_balanced.ipynb",encoding="utf-8"))
+          assert nb["nbformat"]==4
+          for cell in nb["cells"]:
+              if cell["cell_type"]=="code":
+                  assert not cell.get("outputs")
+                  ast.parse("".join(cell["source"]))
+          print("Colab bootstrap cell passed static validation; GPU not executed")
+          PY
       - name: Test no-reduction exposure gate
         run: python -m unittest discover -s research/v48_balanced_augmentation_20261108 -p 'test_exposure_gate.py' -v
       - name: Commit generated licensed selfauthored data
