@@ -28,6 +28,8 @@ jobs:
           diff -rq /tmp/geocpu_v48_build /tmp/geocpu_v48_verify
           cmp research/v48_balanced_augmentation_20261108/data/manifest.json /tmp/geocpu_v48_build/manifest.json
           cp /tmp/geocpu_v48_build/*.jsonl research/v48_balanced_augmentation_20261108/data/
+      - name: Test no-reduction exposure gate
+        run: python -m unittest discover -s research/v48_balanced_augmentation_20261108 -p 'test_exposure_gate.py' -v
       - name: Commit generated licensed selfauthored data
         if: github.event_name == 'pull_request'
         run: |
