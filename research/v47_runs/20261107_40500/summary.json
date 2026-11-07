@@ -1,0 +1,167 @@
+{
+  "verified_utc": "2026-11-07T07:03:14.901160+00:00",
+  "scope": "Read-only audit of user-executed Colab training; no model executed by the assistant",
+  "package_code_commit": "f2f048a5cc09a96f180c69773a5dd2ff12b08621",
+  "run": "practical_20261107_10k_multistep_40500",
+  "parent_step": 30500,
+  "final_step": 40500,
+  "additional_updates": 10000,
+  "training_saved": {
+    "step": 40500,
+    "branch_from": 30500,
+    "full_model": true,
+    "parent_sha256": "cc38411e66aab0ed309d0fa6e0b268d04317da17ffa47f730383e6ad0e2d0391",
+    "variant": "multistep",
+    "training_data_sha256": "ba59c14bdd9e12a222b13aa725cd4e039b286b728ba9d1c53ff8900902e9839a",
+    "evaluation": "pending",
+    "new_curriculum_presentations": 17046
+  },
+  "final_receipt": {
+    "step": 40500,
+    "branch_from": 30500,
+    "training_data_sha256": "ba59c14bdd9e12a222b13aa725cd4e039b286b728ba9d1c53ff8900902e9839a",
+    "parent_sha256": "cc38411e66aab0ed309d0fa6e0b268d04317da17ffa47f730383e6ad0e2d0391",
+    "source_receipt_sha256": "5066381a3dfdf941371adfff87df6226e4e9a2dcc8b527e17bcf0e8d366c7fcd",
+    "variant": "multistep",
+    "new_group": "practical_multistep_v1",
+    "new_curriculum_presentations": 17046,
+    "teacher_sha256": "cc38411e66aab0ed309d0fa6e0b268d04317da17ffa47f730383e6ad0e2d0391",
+    "runtime_sha256": "fc196cf9b7d22fae7f0128b5b0b1bd1e8b7630d6f9e27ba0fd310d0db49605c2",
+    "replay_supervised_share": 0.939704777682821,
+    "phase_source_presentations": {
+      "original_parent": 362598,
+      "python_docs_ja": 37299,
+      "tldr_terminal": 38519,
+      "public_overlay": 31722,
+      "numina_tir": 12914,
+      "practical_python_multistep_v1": 10265,
+      "python_cad_code_pairs": 1421,
+      "japanese_math_python": 2120,
+      "plos_science": 3016,
+      "python_cad_docs": 16958,
+      "practical_knowledge_multistep_v1": 6781,
+      "new_source": 128,
+      "search_post_result": 21820,
+      "python_tir_30500": 472,
+      "python_tir_next": 492,
+      "science_code_examples": 42,
+      "science_engineering_verified": 13
+    },
+    "checkpoint_sha256": "4ab047ea92b2a0c8863c0174c18e5769847b4433102a8eb12752a42a68da9b79",
+    "optimizer_sha256": "6e7e61c20decc12affa7a023eea4d8e11cc372d80bbd6fb6bbd4ac5841234bf8",
+    "state_sha256": "d1cba39e3eb8e8722e5a666100617f8364f8bcfe4f34e7a34fff2711b7e86a73"
+  },
+  "backup_status": {
+    "active_step": null,
+    "automatic_resume_supported": false,
+    "errors": [],
+    "final_checkpoint_saved_by": "main launcher after child success",
+    "final_step": 40500,
+    "pending_steps": [],
+    "planned_intermediate_steps": [
+      33000,
+      35500,
+      38000
+    ],
+    "purpose": "intermediate recovery artifacts",
+    "saved_steps": [
+      33000,
+      35500,
+      38000
+    ],
+    "state": "complete",
+    "updated_utc": "2026-11-07T05:27:24+00:00"
+  },
+  "train_telemetry": {
+    "record_count": 1001,
+    "train_step_records": 1000,
+    "first_logged_step": 30510,
+    "last_logged_step": 40500,
+    "interval": 10,
+    "missing_periodic_records": 0,
+    "training_elapsed_seconds": 7764.789086818695,
+    "final_loss": 0.3463576875627041,
+    "final_kl": 0.00415485751715279,
+    "first_100_logged_loss_mean": 0.4477192300660499,
+    "first_100_logged_step_range": [
+      30510,
+      31500
+    ],
+    "last_100_logged_loss_mean": 0.399030729884631,
+    "last_100_logged_step_range": [
+      39510,
+      40500
+    ],
+    "loss_mean_interpretation": "Different sampled training batches; descriptive averages, not a fixed validation score.",
+    "oom_retries_values": [
+      3
+    ],
+    "oom_interpretation": "Cumulative counter is restored from parent state. It remains 3 at every logged step; this does not prove 3 new OOMs occurred in this run.",
+    "input_tokens": 186259112,
+    "padded_tokens": 204133888,
+    "supervised_tokens": 86624210,
+    "replay_supervised_tokens": 81401184,
+    "replay_supervised_share": 0.939704777682821,
+    "peak_vram_bytes": 38305632768
+  },
+  "dataset": {
+    "preserved_parent_rows": 422500,
+    "new_rows": 848,
+    "new_sources": {
+      "practical_python_multistep_v1": 512,
+      "practical_knowledge_multistep_v1": 336
+    },
+    "total_rows": 423348,
+    "training_sha256": "ba59c14bdd9e12a222b13aa725cd4e039b286b728ba9d1c53ff8900902e9839a"
+  },
+  "preflight": {
+    "actual_parent_full_dataset_preflight_observed": true,
+    "passed": true,
+    "new_presentations_equal_final": true,
+    "source_presentations_equal_final": true,
+    "input_and_supervised_tokens_equal_final": true
+  },
+  "checkpoint_metadata_observed": {
+    "checkpoint_bytes": 990547682,
+    "optimizer_bytes": 1981026811,
+    "state_bytes": 2138819,
+    "large_checkpoint_bytes_downloaded_or_rehashed_by_assistant": false
+  },
+  "assessment": {
+    "training_completed_and_save_receipts_read": true,
+    "candidate_model_performance_evaluated_in_evidence": false,
+    "base_capability_retention_evaluated": false,
+    "next_action": "Evaluate unchanged T1-T8 and supplemental Python/knowledge suites at 40500 and compare with30500; use full-knowledge for complete local-search enabled/disabled knowledge generation."
+  },
+  "source_urls": {
+    "run_folder": "https://drive.google.com/drive/folders/1b4Y4xUFKRc59e7ltMQbYB0zhAy-OWY-M",
+    "training_saved.json": "https://drive.google.com/file/d/1jY8-kYwrBzKV2NjjnpXVRjzEO2OWbzRZ/view?usp=drivesdk",
+    "receipt_step_40500.json": "https://drive.google.com/file/d/12NShCMcq1BjTZbOdcdbbgOzn6q-54wIE/view?usp=drivesdk",
+    "training_events.jsonl": "https://drive.google.com/file/d/1IxgWYGeWFfoP_GVwdKt9gY92DYlanUq3/view?usp=drivesdk",
+    "preflight.json": "https://drive.google.com/file/d/1AInYnvOOkSkqnJwI2W4vIW1eaAzNd6Rh/view?usp=drivesdk",
+    "backup_status.json": "https://drive.google.com/file/d/12b8kwk_nH5KpaX9c2dPgbnWnNPaS5J8g/view?usp=drivesdk",
+    "input_manifest.json": "https://drive.google.com/file/d/1IaUrbOBXt-Q_GHzu84P4b2kEx4LHUOMa/view?usp=drivesdk",
+    "native_baseline_folder": "https://drive.google.com/drive/folders/1A1a4Dm5TMEezFBW4qdwKPqDlKUPjvYkd"
+  },
+  "source_sha256": {
+    "backup_status.json": "ba18d07001911c912b73c865efec149aeaaa5771fdad378a0193b03e97d026bd",
+    "complete.json": "14d31f683eaaf649e2b430aaad7e6d6959aa0f6595ea51eaef5f8c60f849ec52",
+    "input_binding.json": "21361e3d394215da980229acf09faab7e70647ad0d337a3f981fcca04a6800c0",
+    "input_manifest.json": "8aa266ce33fd27070e470ad2dc1d13b1dcbcfe71a1d4bff6cfbc17a77f965c2f",
+    "preflight.json": "3a67845dea359156a6ac764194fe19d00d7868f6d611cba2571b581bdb0f51f1",
+    "receipt_step_40500.json": "edc92c22a228c71f88fb44763cdccbe27e6829738429dfa9357d3351b34574f7",
+    "training_events.jsonl": "7f054bb0ced5011ffdde9a065b4f705cf6501a0a408387763efdb3e50ed952aa",
+    "training_saved.json": "50814c293d114fd2c1bb6e3c9f3db817e0dc97c94af344eed65bd8408a352225"
+  },
+  "uploaded_console": {
+    "sha256": "d54bdb4029eabcb656f92234cbdc7b7b0d95e7af6b817655b69471df50c7b026",
+    "display_truncated_to_last_5000_lines": true,
+    "full_persistent_training_jsonl_verified": true
+  },
+  "limits": [
+    "Training was performed by the user on Colab; this audit does not claim the assistant ran GPU training.",
+    "Checkpoint identity comes from the saved receipt and file metadata; the audit did not download and independently rehash the 0.99GB model or 1.98GB optimizer.",
+    "Training loss and parent KL do not establish benchmark improvement or retention.",
+    "Completed native baseline markers were read; reuse_original_stage will verify original raw/log hashes on Colab before reuse."
+  ]
+}

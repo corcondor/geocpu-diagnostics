@@ -1,0 +1,255 @@
+{
+  "version": "practical_python_multistep_v1",
+  "seed": 20261107,
+  "runtime_r6_sha256": "d3bbc47da537c9073c0fb113c3073d19a6ad2990201688943141aaba41391263",
+  "vocab_size": 3898,
+  "max_context_including_eos": 2048,
+  "files": {
+    "train": {
+      "file": "practical_train.jsonl",
+      "rows": 512,
+      "sha256": "42c018ca01218ec2dbafdc15d92720be4454416e50c37206815ed7888f42bbf2",
+      "size_bytes": 1775535
+    },
+    "dev": {
+      "file": "practical_dev.jsonl",
+      "rows": 128,
+      "sha256": "e0b5ce1aed441bf0145bc7d88e6682fa7f532cd0e1a77f67994b4ce7759ba30c",
+      "size_bytes": 443716
+    },
+    "expanded_eval": {
+      "file": "practical_expanded_eval.jsonl",
+      "rows": 240,
+      "sha256": "0cfbe6f085f4e30e8e672bfbb7ea21556c76d3c7359eb39fc804d1182bdd3d24",
+      "size_bytes": 831852
+    }
+  },
+  "train_families": [
+    "invoice_filter",
+    "weighted_unit_cost",
+    "inventory_reorder",
+    "mixed_length_units",
+    "overnight_duration",
+    "request_log_dedup",
+    "sales_returns_group",
+    "nearest_rank_percentile",
+    "sensor_missing_median",
+    "shipping_boxes",
+    "repair_inclusive_boundary",
+    "repair_group_accumulation",
+    "repair_numeric_sort",
+    "schedule_conflicts",
+    "priority_job_selection",
+    "negative_condition_filter"
+  ],
+  "unseen_eval_families": [
+    "heldout_interval_union",
+    "heldout_rolling_window",
+    "heldout_dependency_schedule",
+    "heldout_text_edit_distance"
+  ],
+  "generated_rows": 880,
+  "unique_normalized_prompts": 880,
+  "target_python_calls_executed": 1760,
+  "prompt_diagnostic_calls_executed": 156,
+  "max_observed_context_including_eos": 1019,
+  "generation_counts": {
+    "train_per_family": 32,
+    "dev_per_family": 8,
+    "eval_per_family": 12
+  },
+  "unknown_characters": [],
+  "normalized_prompt_overlap_with_checked_heldouts": 0,
+  "checked_heldouts": {
+    "geocpu_delivery/frozen/base/data/dev_numina_tir_strict_numeric.jsonl": {
+      "sha256": "5bff154e8d7b13dfae55d59700391d2b5d1201210cd26a1c53b6e4f976bb3dbf",
+      "prompt_fields": 1179
+    },
+    "geocpu_delivery/frozen/base/data/dev_tldr_terminal.jsonl": {
+      "sha256": "18a5b283aee55e723d4c30d1ef85d14cfbbc5647d3253589bbc5689e093eb4e1",
+      "prompt_fields": 3438
+    },
+    "geocpu_delivery/frozen/base/data/japanese_math_python_dev.jsonl": {
+      "sha256": "c28ddea0a6fc38dfde07772616e7dc4ecc058f701132d4753380b3a2c87ceeeb",
+      "prompt_fields": 199
+    },
+    "geocpu_delivery/frozen/base/data/plos_science_dev.jsonl": {
+      "sha256": "e60a98f8c0b983b206b6f41d79179b0e1ff343520aeca51491061fc3a3049ed0",
+      "prompt_fields": 672
+    },
+    "geocpu_delivery/frozen/base/data/python_docs_ja_core_dev.jsonl": {
+      "sha256": "96165d0a526e4b9613a2f1ee970f7f85d09a4b7f0f6fadb6b8b33e4a88a6178f",
+      "prompt_fields": 3315
+    },
+    "geocpu_delivery/frozen/base/data/python_reference_dev.jsonl": {
+      "sha256": "5976ed0043629cc68e5aff13021aa707f300ac186cf1eaca7bf28d3987021714",
+      "prompt_fields": 86
+    },
+    "geocpu_delivery/frozen/base/data/science_code_complete_dev.jsonl": {
+      "sha256": "af6e3ad6ee37f953cb84f00621c40ff8f7f35b12608bd0956d40c16db3e6597e",
+      "prompt_fields": 3
+    },
+    "geocpu_delivery/frozen/base/data/science_engineering_verified_dev.jsonl": {
+      "sha256": "da5a523f443bbbd587857edac6cf2550ce83ced6aa987bf8496e40a0945b726e",
+      "prompt_fields": 3
+    },
+    "geocpu_delivery/frozen/base/data/search_post_result_dev.jsonl": {
+      "sha256": "098adeefdae2259a5c107504feb0000ae7b9745c35c3ba0f228c1747fc0b2420",
+      "prompt_fields": 3831
+    },
+    "geocpu_delivery/frozen/public/data/dev_overlay.jsonl": {
+      "sha256": "682536df54306a0137549f9b7f81492e04e7f0dee5a5c132b0a21913be0c0d8f",
+      "prompt_fields": 5962
+    },
+    "geocpu_delivery/frozen/continue/engineering/engineering_heldout.jsonl": {
+      "sha256": "9cc9a59bf6a7ec81812204e8470c9c82c2c84c76f05ffc7931e3e5e7d4021b09",
+      "prompt_fields": 128
+    },
+    "geocpu_delivery/frozen/continue/visual/visual_heldout.jsonl": {
+      "sha256": "0431a9c1f2dc28e82ea1fb48d86e89d4b92205c6e6ae6b67278d886ae3884f2b",
+      "prompt_fields": 10
+    },
+    "geocpu_delivery/frozen/continue/eval_python/selection_120.json": {
+      "sha256": "fbab8012d6a03dffa01a223dbc2b796d712a453cf9d2b150e19dd53bf1008182",
+      "prompt_fields": 120
+    },
+    "geocpu_delivery/frozen/searchprobe/dev_after_final_result_198.jsonl": {
+      "sha256": "cf09fc5fbb838e4603e5f2eb93fac2df3a5c7bac4849425faffa03a67e2ce128",
+      "prompt_fields": 198
+    },
+    "frozen_evaluation_registry": {
+      "sha256": "527f0f1cb4b97ce83fdc79e247f64ec20653befa9b6964d3e2ce65f589e99928",
+      "prompt_fields": 33822,
+      "includes_T8_profiles": true,
+      "source_inventory_sha256": "1a579f01d6269084bc428e7e67d139fa4bdd6a3aff142d5e1912f944489bbb88"
+    },
+    "r6_bundle.zip:data/benchmark_8100_manifest.jsonl": {
+      "sha256": "33723d78aaa1595b1ed7dbc3382ecb165ce788246f6f70a63470f5fa107de78e",
+      "prompt_fields": 8100
+    },
+    "r6_bundle.zip:data/eval_swe_step_control_heldout.jsonl": {
+      "sha256": "41aeb8d90752091cfc8cbccfe3e9874b578299fe3533eca41e1fd9509769c435",
+      "prompt_fields": 200
+    },
+    "r6_bundle.zip:data/eval_swe_step_control_heldout_v43labels.jsonl": {
+      "sha256": "0bf62099ea2a41c8eb35c1ebdc2584f2c164ae3c82f741ab3eca44113f70f8cd",
+      "prompt_fields": 200
+    },
+    "r6_bundle.zip:data/eval_v33_state_tracking_heldout.jsonl": {
+      "sha256": "6406c92c106512d2046368d6acba2dfb2ff24181301a14e975d76700ab7ab7b5",
+      "prompt_fields": 188
+    },
+    "r6_bundle.zip:data/eval_v38_decomposed_state_bench200.jsonl": {
+      "sha256": "e96db14ba2b6ec620d42bcaf598199da814d93cef971c334889bd88147567cd1",
+      "prompt_fields": 200
+    },
+    "r6_bundle.zip:data/eval_v41_logical_instruction_operators_heldout.jsonl": {
+      "sha256": "b887aade00323a7241088a4e84dfcb166430f554209a09668ad204ea564e9989",
+      "prompt_fields": 400
+    },
+    "r6_bundle.zip:data/eval_v42_search_retrieval_aligned.jsonl": {
+      "sha256": "c07d962d4fa59196d74b8223353a5f52d60cabe3d58bfe604c9d83b708e45ab6",
+      "prompt_fields": 200
+    },
+    "r6_bundle.zip:data/eval_v42_search_retrieval_heldout.jsonl": {
+      "sha256": "805d4b91ef9128095191cdeb1180e95b0759196f3d471204d2e47c6f77e6ef53",
+      "prompt_fields": 200
+    },
+    "r6_bundle.zip:data/jamcqa_manifest_test.jsonl": {
+      "sha256": "f7590adbce3d8f444b089d102a7f79be091c942c7c132d7090fd4e3d0710543e",
+      "prompt_fields": 4618
+    }
+  },
+  "split_unit": "scenario/input-table/test-case group",
+  "family_counts": {
+    "train": {
+      "invoice_filter": 32,
+      "weighted_unit_cost": 32,
+      "inventory_reorder": 32,
+      "mixed_length_units": 32,
+      "overnight_duration": 32,
+      "request_log_dedup": 32,
+      "sales_returns_group": 32,
+      "nearest_rank_percentile": 32,
+      "sensor_missing_median": 32,
+      "shipping_boxes": 32,
+      "repair_inclusive_boundary": 32,
+      "repair_group_accumulation": 32,
+      "repair_numeric_sort": 32,
+      "schedule_conflicts": 32,
+      "priority_job_selection": 32,
+      "negative_condition_filter": 32
+    },
+    "dev": {
+      "invoice_filter": 8,
+      "weighted_unit_cost": 8,
+      "inventory_reorder": 8,
+      "mixed_length_units": 8,
+      "overnight_duration": 8,
+      "request_log_dedup": 8,
+      "sales_returns_group": 8,
+      "nearest_rank_percentile": 8,
+      "sensor_missing_median": 8,
+      "shipping_boxes": 8,
+      "repair_inclusive_boundary": 8,
+      "repair_group_accumulation": 8,
+      "repair_numeric_sort": 8,
+      "schedule_conflicts": 8,
+      "priority_job_selection": 8,
+      "negative_condition_filter": 8
+    },
+    "expanded_eval": {
+      "invoice_filter": 12,
+      "weighted_unit_cost": 12,
+      "inventory_reorder": 12,
+      "mixed_length_units": 12,
+      "overnight_duration": 12,
+      "request_log_dedup": 12,
+      "sales_returns_group": 12,
+      "nearest_rank_percentile": 12,
+      "sensor_missing_median": 12,
+      "shipping_boxes": 12,
+      "repair_inclusive_boundary": 12,
+      "repair_group_accumulation": 12,
+      "repair_numeric_sort": 12,
+      "schedule_conflicts": 12,
+      "priority_job_selection": 12,
+      "negative_condition_filter": 12,
+      "heldout_interval_union": 12,
+      "heldout_rolling_window": 12,
+      "heldout_dependency_schedule": 12,
+      "heldout_text_edit_distance": 12
+    }
+  },
+  "eval_partition_counts": {
+    "known_family": 192,
+    "unseen_family": 48
+  },
+  "model_training_updates": 0,
+  "gpu_model_evaluations": 0,
+  "limitations": [
+    "Known-family dev/eval share the algorithm template with training; they are input-disjoint, not template-disjoint.",
+    "Only the four unseen_eval_families are absent from this new training/development curriculum; previous training is not audited for those concepts.",
+    "Parameterized table/code variants are not independent real-world tasks or independent knowledge facts.",
+    "All observations and numeric references are CPU verified. This does not measure the model's answers or guarantee improvement.",
+    "Exact normalized prompt checks do not prove absence of semantic overlap or paraphrases.",
+    "No original T1-T8 items or scores are changed by this generator."
+  ],
+  "token_accounting": {
+    "train": {
+      "context_tokens_including_eos": 366154,
+      "masked_observation_tokens": 20027,
+      "supervised_target_tokens_including_eos": 220935
+    },
+    "dev": {
+      "context_tokens_including_eos": 91559,
+      "masked_observation_tokens": 5006,
+      "supervised_target_tokens_including_eos": 55244
+    },
+    "expanded_eval": {
+      "context_tokens_including_eos": 169077,
+      "masked_observation_tokens": 9225,
+      "supervised_target_tokens_including_eos": 105128
+    }
+  }
+}

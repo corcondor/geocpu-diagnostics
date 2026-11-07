@@ -1,0 +1,65 @@
+name: GeoCPU practical CPU contracts
+
+on:
+  push:
+    paths:
+      - 'research/v47_practical_20261107/**'
+      - '.github/workflows/geocpu-practical-cpu.yml'
+  pull_request:
+    paths:
+      - 'research/v47_practical_20261107/**'
+      - '.github/workflows/geocpu-practical-cpu.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: geocpu-practical-cpu-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cpu-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: research/v47_practical_20261107
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Log accounting and read-only monitoring
+        run: python -m unittest discover -s tests -p test_live_logging.py -v
+      - name: Evaluation, raw recovery, and fail-fast contracts
+        run: python -m unittest discover -s tests -p test_eval_candidate.py -v
+      - name: Exact artifact restoration without overwrite
+        run: python -m unittest discover -s tests -p test_hydrate_artifact.py -v
+      - name: Ten thousand update CLI and retention contracts
+        env:
+          PYTHONPATH: tests:.
+        run: |
+          python -m unittest -v \
+            test_training.TrainingPreparationTests.test_cli_default_is_ten_thousand_additional_updates_without_side_effects \
+            test_training.TrainingPreparationTests.test_cli_accepts_additional_update_boundaries_and_short_controls \
+            test_training.TrainingPreparationTests.test_cli_rejects_out_of_range_updates_before_any_file_access \
+            test_training.TrainingPreparationTests.test_ten_thousand_update_cli_keeps_repeat_limit \
+            test_training.TrainingPreparationTests.test_ten_thousand_update_command_targets_40500_and_keeps_protection
+      - name: Intermediate checkpoint backup contracts
+        run: python -m unittest discover -s tests -p test_checkpoint_backup.py -v
+      - name: Parse code and notebook cells
+        run: |
+          python - <<'PY'
+          import ast, json
+          from pathlib import Path
+          for p in Path('.').rglob('*.py'):
+              ast.parse(p.read_text(), filename=str(p))
+          for p in Path('.').glob('*.ipynb'):
+              n=json.loads(p.read_text())
+              for i,c in enumerate(n['cells']):
+                  if c['cell_type']=='code':
+                      ast.parse(''.join(c['source']), filename=f'{p}:cell{i}')
+          print('CPU syntax checks passed. No model or GPU was loaded.')
+          PY
+

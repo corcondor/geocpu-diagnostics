@@ -1,0 +1,2288 @@
+{
+  "schema_version": 1,
+  "state": "source_registry_not_model_results",
+  "model_evaluation_executed": false,
+  "source_inventory": "source_files.json",
+  "context": {
+    "max_positions": 2048,
+    "vocab_size": 3898,
+    "metadata": "r6/base_metadata.json"
+  },
+  "preservation_rule": "Original question order, duplicates, prompts, labels, scorer source and native mode are retained. Expanded evaluation belongs in a separate registry.",
+  "family_fields": [
+    "family",
+    "problem_family_sha256",
+    "problem_group",
+    "problem_template_sha256",
+    "group_id",
+    "parent_chain_id",
+    "formula_family",
+    "source_family"
+  ],
+  "uniqueness_note": "unique_prompts counts exact text strings; it is not a statistical-independence guarantee. A missing family key is reported as absent, not inferred from task names.",
+  "suites": [
+    {
+      "id": "T1",
+      "title": "Held-Out SWE Step Control (synthetic arithmetic/state execution)",
+      "availability": "frozen",
+      "family": "existing_tier",
+      "selection": {
+        "kind": "jsonl_all",
+        "source": "r6/data/eval_swe_step_control_heldout.jsonl"
+      },
+      "scorer_source": "r6/eval_step_control_heldout.py",
+      "formal_modes": [
+        {
+          "mode": "formal",
+          "n": 200,
+          "metrics": [
+            "numeric_match",
+            "exact_step_termination"
+          ],
+          "counts": {
+            "rows": 200,
+            "unique_ids": 200,
+            "unique_prompts": 200,
+            "family_counts": {},
+            "breakdown": {
+              "task_type": {
+                "code_trace": 200
+              }
+            }
+          },
+          "ordered_ids_sha256": "dd33ddcabfefcf416bed22c84bcefcbc462a0c1fc32998ea10988f89cb693458",
+          "ordered_prompts_sha256": "b4c88265aa2783ea204dbc6f699a019450ff5b5fea18bd62e5944f3aca6dcdc8"
+        }
+      ],
+      "native_generation": {
+        "entry_point": "generate_with_qwenputer",
+        "max_tokens": null,
+        "arm": "learned",
+        "repetition_penalty": 1.0
+      },
+      "notes": [
+        "Original labels and prompts are retained. This is not SWE-bench."
+      ],
+      "selected_counts": {
+        "rows": 200,
+        "unique_ids": 200,
+        "unique_prompts": 200,
+        "family_counts": {},
+        "breakdown": {
+          "task_type": {
+            "code_trace": 200
+          }
+        }
+      },
+      "source_sha256": "41aeb8d90752091cfc8cbccfe3e9874b578299fe3533eca41e1fd9509769c435",
+      "scorer_sha256": "c3589b97f531b6460a95907e56284df5f20be990eff1a4d2e56a921b4c705899",
+      "source_counts": {
+        "rows": 200,
+        "unique_ids": 200,
+        "unique_prompts": 200,
+        "family_counts": {},
+        "breakdown": {
+          "task_type": {
+            "code_trace": 200
+          }
+        }
+      }
+    },
+    {
+      "id": "T2",
+      "title": "Decomposed State Tracking",
+      "availability": "frozen",
+      "family": "existing_tier",
+      "selection": {
+        "kind": "jsonl_all",
+        "source": "r6/data/eval_v38_decomposed_state_bench200.jsonl"
+      },
+      "scorer_source": "r6/runtime_cotraining_v41_247M.py",
+      "formal_modes": [
+        {
+          "mode": "formal",
+          "n": 200,
+          "metrics": [
+            "end_to_end_match",
+            "four_intermediate_stages"
+          ],
+          "counts": {
+            "rows": 200,
+            "unique_ids": 200,
+            "unique_prompts": 193,
+            "family_counts": {},
+            "breakdown": {
+              "pillar": {
+                "Generalized_State": 200
+              },
+              "task_type": {
+                "babi_dual_object": 50,
+                "procedural_undo_status": 50,
+                "synthetic_dst": 50,
+                "babi_spatial_movement": 50
+              }
+            }
+          },
+          "ordered_ids_sha256": "2425c5f5dd618b1f6369598bd0257234e51de5c238a02f626e1bdba052aa3d95",
+          "ordered_prompts_sha256": "8af6265984483cb07ad4d46e8f6701cc0778e6c4f5264eaac62423b04ad9ebd2"
+        }
+      ],
+      "notes": [
+        "Per-row decomposition scorer: r6/eval_v38_decomposed_state_bench.py"
+      ],
+      "selected_counts": {
+        "rows": 200,
+        "unique_ids": 200,
+        "unique_prompts": 193,
+        "family_counts": {},
+        "breakdown": {
+          "pillar": {
+            "Generalized_State": 200
+          },
+          "task_type": {
+            "babi_dual_object": 50,
+            "procedural_undo_status": 50,
+            "synthetic_dst": 50,
+            "babi_spatial_movement": 50
+          }
+        }
+      },
+      "source_sha256": "e96db14ba2b6ec620d42bcaf598199da814d93cef971c334889bd88147567cd1",
+      "scorer_sha256": "05004c957cb63e57acde88eae410f2d0d2e42df36e6e7de758659c5b5133c22f",
+      "source_counts": {
+        "rows": 200,
+        "unique_ids": 200,
+        "unique_prompts": 193,
+        "family_counts": {},
+        "breakdown": {
+          "pillar": {
+            "Generalized_State": 200
+          },
+          "task_type": {
+            "babi_dual_object": 50,
+            "procedural_undo_status": 50,
+            "synthetic_dst": 50,
+            "babi_spatial_movement": 50
+          }
+        }
+      }
+    },
+    {
+      "id": "T3",
+      "title": "SoftBank JamC-QA original manifest",
+      "availability": "frozen",
+      "family": "existing_tier",
+      "selection": {
+        "kind": "jsonl_all",
+        "source": "r6/data/jamcqa_manifest_test.jsonl"
+      },
+      "scorer_source": "r6/eval_jamcqa_official.py",
+      "formal_modes": [
+        {
+          "mode": "logit",
+          "n": 2309,
+          "batch_size": 64,
+          "metrics": [
+            "logit_argmax_accuracy"
+          ],
+          "counts": {
+            "rows": 2309,
+            "unique_ids": 2309,
+            "unique_prompts": 2309,
+            "family_counts": {},
+            "breakdown": {
+              "pillar": {
+                "SoftBank_JamC_QA": 2309
+              }
+            }
+          },
+          "ordered_ids_sha256": "1fa0a0c4cd52718e2ab44a6886862c2732e8493bd6a079ed0724c55c373a469d",
+          "ordered_prompts_sha256": "1579bc1a4ae91624f6e3237ecf40bc647cd5718bb9ca000ab05bb9aff97341d5"
+        },
+        {
+          "mode": "generative",
+          "n": 100,
+          "selection": "first 100 original rows",
+          "repetition_penalty": 1.12,
+          "max_tokens": null,
+          "metrics": [
+            "official_exact_match",
+            "substring_match",
+            "natural_eos"
+          ],
+          "counts": {
+            "rows": 100,
+            "unique_ids": 100,
+            "unique_prompts": 100,
+            "family_counts": {},
+            "breakdown": {
+              "pillar": {
+                "SoftBank_JamC_QA": 100
+              }
+            }
+          },
+          "ordered_ids_sha256": "711d2b1d404c51082c1fe49eb4941fa0b830deb419763f35e3a5eae763651140",
+          "ordered_prompts_sha256": "9b360dc636c2dd1aa359eed23f404111293297d02d98fc93921ca69a7a0160df"
+        }
+      ],
+      "notes": [
+        "2309-question logit score and 100-question generative score must not share a denominator. Official generative prompt is reconstructed by the unchanged source."
+      ],
+      "selected_counts": {
+        "rows": 2309,
+        "unique_ids": 2309,
+        "unique_prompts": 2309,
+        "family_counts": {},
+        "breakdown": {
+          "pillar": {
+            "SoftBank_JamC_QA": 2309
+          }
+        }
+      },
+      "source_sha256": "f7590adbce3d8f444b089d102a7f79be091c942c7c132d7090fd4e3d0710543e",
+      "scorer_sha256": "3563979400837d86a72bae9c48ec1083c6345afa97c7e740f9a74e40e2ec8b75",
+      "source_counts": {
+        "rows": 2309,
+        "unique_ids": 2309,
+        "unique_prompts": 2309,
+        "family_counts": {},
+        "breakdown": {
+          "pillar": {
+            "SoftBank_JamC_QA": 2309
+          }
+        }
+      }
+    },
+    {
+      "id": "T4",
+      "title": "Canonical Broad 8100",
+      "availability": "frozen",
+      "family": "existing_tier",
+      "selection": {
+        "kind": "jsonl_all",
+        "source": "r6/data/benchmark_8100_manifest.jsonl"
+      },
+      "scorer_source": "r6/eval_benchmark_full_8100.py",
+      "formal_modes": [
+        {
+          "mode": "formal",
+          "n": 8100,
+          "components": {
+            "JMMLU_Academic": 7536,
+            "SWE_Software": 164,
+            "ARC_Reasoning": 400
+          },
+          "batch_size": 64,
+          "metrics": [
+            "strict_accuracy",
+            "per_pillar_accuracy"
+          ],
+          "counts": {
+            "rows": 8100,
+            "unique_ids": 8100,
+            "unique_prompts": 8079,
+            "family_counts": {},
+            "breakdown": {
+              "pillar": {
+                "JMMLU_Academic": 7536,
+                "ARC_Reasoning": 400,
+                "SWE_Software": 164
+              },
+              "task_type": {
+                "multiple_choice": 7536,
+                "grid_transform": 400,
+                "code_trace": 164
+              }
+            }
+          },
+          "ordered_ids_sha256": "04eb19795e5b60e0e7a47b52c921a77801bd13cb52fcd69275685141bfd04e6e",
+          "ordered_prompts_sha256": "6231fee37cf63f4eeb34ad2bef85ab159ba4883ce9f4449a9de6c1c77f3c2895"
+        }
+      ],
+      "notes": [
+        "JMMLU multiple choice uses the original logit scoring; 164 code-trace and 400 grid-transform items use generation. Raw Tier4 output is preserved by the unchanged stage."
+      ],
+      "selected_counts": {
+        "rows": 8100,
+        "unique_ids": 8100,
+        "unique_prompts": 8079,
+        "family_counts": {},
+        "breakdown": {
+          "pillar": {
+            "JMMLU_Academic": 7536,
+            "ARC_Reasoning": 400,
+            "SWE_Software": 164
+          },
+          "task_type": {
+            "multiple_choice": 7536,
+            "grid_transform": 400,
+            "code_trace": 164
+          }
+        }
+      },
+      "source_sha256": "33723d78aaa1595b1ed7dbc3382ecb165ce788246f6f70a63470f5fa107de78e",
+      "scorer_sha256": "a570ca0640519a15ab3df8174a08ed36c7b73d78260bdfc1dbf7b3ce5dcdbb14",
+      "source_counts": {
+        "rows": 8100,
+        "unique_ids": 8100,
+        "unique_prompts": 8079,
+        "family_counts": {},
+        "breakdown": {
+          "pillar": {
+            "JMMLU_Academic": 7536,
+            "ARC_Reasoning": 400,
+            "SWE_Software": 164
+          },
+          "task_type": {
+            "multiple_choice": 7536,
+            "grid_transform": 400,
+            "code_trace": 164
+          }
+        }
+      }
+    },
+    {
+      "id": "T5",
+      "title": "Logical Instruction Contrast",
+      "availability": "frozen",
+      "family": "existing_tier",
+      "selection": {
+        "kind": "jsonl_all",
+        "source": "r6/data/eval_v41_logical_instruction_operators_heldout.jsonl"
+      },
+      "scorer_source": "r6/eval_logical_instruction_operators.py",
+      "formal_modes": [
+        {
+          "mode": "formal",
+          "n": 400,
+          "metrics": [
+            "choice_accuracy",
+            "operator_accuracy",
+            "context_consistency"
+          ],
+          "counts": {
+            "rows": 400,
+            "unique_ids": 400,
+            "unique_prompts": 400,
+            "family_counts": {
+              "group_id": {
+                "unique": 100,
+                "rows_with_key": 400
+              }
+            },
+            "breakdown": {
+              "operator_type": {
+                "positive_entailment": 100,
+                "negation_contradiction": 100,
+                "non_entailment_undeducible": 100,
+                "not_necessarily_true": 100
+              }
+            }
+          },
+          "ordered_ids_sha256": "48e737ab1abe9c6e3b8f390d34030f5d0ed8f3c26ef9c5557fb16c1013fb797c",
+          "ordered_prompts_sha256": "704b5f9eefcd6d1fecac63bfb0d995135f67682dc95fdfe14c98948f817e3a56"
+        }
+      ],
+      "notes": [
+        "Original display label says 6-Operator; actual manifest has four operator_type values and 100 group_id contexts. No relabeling or reweighting applied."
+      ],
+      "selected_counts": {
+        "rows": 400,
+        "unique_ids": 400,
+        "unique_prompts": 400,
+        "family_counts": {
+          "group_id": {
+            "unique": 100,
+            "rows_with_key": 400
+          }
+        },
+        "breakdown": {
+          "operator_type": {
+            "positive_entailment": 100,
+            "negation_contradiction": 100,
+            "non_entailment_undeducible": 100,
+            "not_necessarily_true": 100
+          }
+        }
+      },
+      "source_sha256": "b887aade00323a7241088a4e84dfcb166430f554209a09668ad204ea564e9989",
+      "scorer_sha256": "0f70a0a4896a9e8f04319137027f01fe6318272ffbe7e439f623813b4d14a8f6",
+      "source_counts": {
+        "rows": 400,
+        "unique_ids": 400,
+        "unique_prompts": 400,
+        "family_counts": {
+          "group_id": {
+            "unique": 100,
+            "rows_with_key": 400
+          }
+        },
+        "breakdown": {
+          "operator_type": {
+            "positive_entailment": 100,
+            "negation_contradiction": 100,
+            "non_entailment_undeducible": 100,
+            "not_necessarily_true": 100
+          }
+        }
+      }
+    },
+    {
+      "id": "T6",
+      "title": "Search retrieval aligned original",
+      "availability": "frozen",
+      "family": "existing_tier",
+      "selection": {
+        "kind": "jsonl_all",
+        "source": "r6/data/eval_v42_search_retrieval_aligned.jsonl"
+      },
+      "scorer_source": "r6/eval_v42_search_retrieval.py",
+      "formal_modes": [
+        {
+          "mode": "formal",
+          "n": 200,
+          "metrics": [
+            "accuracy",
+            "search_invocation_rate"
+          ],
+          "counts": {
+            "rows": 200,
+            "unique_ids": 200,
+            "unique_prompts": 21,
+            "family_counts": {},
+            "breakdown": {
+              "hop_type": {
+                "1_hop": 100,
+                "2_hop": 100
+              }
+            }
+          },
+          "ordered_ids_sha256": "a2fbf189e6b221622507c35cc75f75ab29cab7c7ae6a86e39bf27d588279d718",
+          "ordered_prompts_sha256": "709f3f5843eff8b5831c7cb28659c5e665075a9d91fa38e55a75f69a2ff2c37e"
+        }
+      ],
+      "notes": [
+        "200 rows, including repeated prompts. Row counts and prompt uniqueness are reported separately; hop labels are not proof of required sequential search."
+      ],
+      "selected_counts": {
+        "rows": 200,
+        "unique_ids": 200,
+        "unique_prompts": 21,
+        "family_counts": {},
+        "breakdown": {
+          "hop_type": {
+            "1_hop": 100,
+            "2_hop": 100
+          }
+        }
+      },
+      "source_sha256": "c07d962d4fa59196d74b8223353a5f52d60cabe3d58bfe604c9d83b708e45ab6",
+      "scorer_sha256": "7c43049ef386c9c14aeff9c31c0b1132f69b1ab07735e4305ecba4eef7adb983",
+      "source_counts": {
+        "rows": 200,
+        "unique_ids": 200,
+        "unique_prompts": 21,
+        "family_counts": {},
+        "breakdown": {
+          "hop_type": {
+            "1_hop": 100,
+            "2_hop": 100
+          }
+        }
+      },
+      "hop_prompt_counts": {
+        "1_hop": 17,
+        "2_hop": 4
+      }
+    },
+    {
+      "id": "T7",
+      "title": "Original Closed/Open-Book A/B",
+      "availability": "frozen",
+      "family": "existing_tier",
+      "selection": {
+        "kind": "tier7_first_mc",
+        "source": "r6/data/benchmark_8100_manifest.jsonl"
+      },
+      "scorer_source": "r6/eval_v43_ab_benchmark.py",
+      "formal_modes": [
+        {
+          "mode": "closed",
+          "n": 200,
+          "max_tokens": 60,
+          "enable_search": false,
+          "counts": {
+            "rows": 200,
+            "unique_ids": 200,
+            "unique_prompts": 200,
+            "family_counts": {},
+            "breakdown": {
+              "pillar": {
+                "JMMLU_Academic": 200
+              },
+              "task_type": {
+                "multiple_choice": 200
+              }
+            }
+          },
+          "ordered_ids_sha256": "3d60a2b3544e2bdd1bb971f27c8e56bca548c107f1f8b4a425a63e5ed87ccae0",
+          "ordered_prompts_sha256": "afc82ffcfdf063fbf4d5e8ccc3a89a076722b6ac2161eee42cac29d6fe3accca"
+        },
+        {
+          "mode": "open",
+          "n": 200,
+          "max_tokens": 120,
+          "enable_search": true,
+          "counts": {
+            "rows": 200,
+            "unique_ids": 200,
+            "unique_prompts": 200,
+            "family_counts": {},
+            "breakdown": {
+              "pillar": {
+                "JMMLU_Academic": 200
+              },
+              "task_type": {
+                "multiple_choice": 200
+              }
+            }
+          },
+          "ordered_ids_sha256": "3d60a2b3544e2bdd1bb971f27c8e56bca548c107f1f8b4a425a63e5ed87ccae0",
+          "ordered_prompts_sha256": "afc82ffcfdf063fbf4d5e8ccc3a89a076722b6ac2161eee42cac29d6fe3accca"
+        }
+      ],
+      "notes": [
+        "Same first 200 MC-selected rows in both arms; 400 generations, 200 underlying selected rows. Original budgets differ between arms and are preserved."
+      ],
+      "selected_counts": {
+        "rows": 200,
+        "unique_ids": 200,
+        "unique_prompts": 200,
+        "family_counts": {},
+        "breakdown": {
+          "pillar": {
+            "JMMLU_Academic": 200
+          },
+          "task_type": {
+            "multiple_choice": 200
+          }
+        }
+      },
+      "source_sha256": "33723d78aaa1595b1ed7dbc3382ecb165ce788246f6f70a63470f5fa107de78e",
+      "scorer_sha256": "03bd7dc20bec44cf8006d9b021b1b76c5aa2b4bf88d5c917e0835b494ecf2721",
+      "source_counts": {
+        "rows": 8100,
+        "unique_ids": 8100,
+        "unique_prompts": 8079,
+        "family_counts": {},
+        "breakdown": {
+          "pillar": {
+            "JMMLU_Academic": 7536,
+            "ARC_Reasoning": 400,
+            "SWE_Software": 164
+          },
+          "task_type": {
+            "multiple_choice": 7536,
+            "grid_transform": 400,
+            "code_trace": 164
+          }
+        }
+      }
+    },
+    {
+      "id": "T8",
+      "title": "Code/explanation form probe",
+      "availability": "frozen",
+      "family": "existing_tier",
+      "selection": {
+        "kind": "tier8_profiles",
+        "source": "base/code/tier8_readonly_v44fix.py"
+      },
+      "scorer_source": "base/code/tier8_readonly_v44fix.py",
+      "formal_modes": [
+        {
+          "mode": "original_v44",
+          "n": 4,
+          "counts": {
+            "rows": 4,
+            "unique_ids": 4,
+            "unique_prompts": 4,
+            "family_counts": {},
+            "breakdown": {
+              "profile": {
+                "original_v44": 4
+              }
+            }
+          },
+          "ordered_ids_sha256": "8d7ad281be0a7cc09c89c36f835ea656e1e3817682fd8b8929e581a243048822",
+          "ordered_prompts_sha256": "47e0d0e0fbf877e1d15f3b9d921bedad04574ed03aa26bb8f954de81b019cfdc"
+        },
+        {
+          "mode": "aligned_v43",
+          "n": 4,
+          "counts": {
+            "rows": 4,
+            "unique_ids": 4,
+            "unique_prompts": 4,
+            "family_counts": {},
+            "breakdown": {
+              "profile": {
+                "aligned_v43": 4
+              }
+            }
+          },
+          "ordered_ids_sha256": "8d7ad281be0a7cc09c89c36f835ea656e1e3817682fd8b8929e581a243048822",
+          "ordered_prompts_sha256": "53183522fdc6e41e54dcd5104392a4d8179c14dae27a3375cc0831b962b56b2c"
+        }
+      ],
+      "generation_kwargs": {
+        "max_tokens": 2048,
+        "enable_python": true,
+        "loop_guard": false,
+        "repetition_penalty": 1.0
+      },
+      "notes": [
+        "Four source questions with two prompt formats. Report profiles separately. Formatting heuristics and Python invocation counts are not mathematical correctness or C++/Rust execution."
+      ],
+      "selected_counts": {
+        "rows": 8,
+        "unique_ids": 4,
+        "unique_prompts": 8,
+        "family_counts": {},
+        "breakdown": {
+          "profile": {
+            "original_v44": 4,
+            "aligned_v43": 4
+          }
+        }
+      },
+      "source_sha256": "f85b4e3b51f8fc476eaf976970f3dcccb0945c80c3ac119dfc71c68d07dd041d",
+      "scorer_sha256": "f85b4e3b51f8fc476eaf976970f3dcccb0945c80c3ac119dfc71c68d07dd041d"
+    },
+    {
+      "id": "python120",
+      "title": "Fixed public Python reasoning 80 Japanese + 40 Numina",
+      "availability": "frozen",
+      "family": "existing_auxiliary",
+      "selection": {
+        "kind": "json_cases",
+        "source": "continue/eval_python/selection_120.json",
+        "key": "cases"
+      },
+      "scorer_source": "continue/eval_python/eval_python_tir_30500.py",
+      "formal_modes": [
+        {
+          "mode": "formal",
+          "n": 120,
+          "metrics": [
+            "python_execution_success",
+            "explicit_final_numeric_exact",
+            "terminal_explicit_exact",
+            "python_only_tool_and_terminal_exact"
+          ],
+          "counts": {
+            "rows": 120,
+            "unique_ids": 120,
+            "unique_prompts": 120,
+            "family_counts": {
+              "family": {
+                "unique": 120,
+                "rows_with_key": 120
+              }
+            },
+            "breakdown": {
+              "group": {
+                "japanese": 80,
+                "numina": 40
+              }
+            }
+          },
+          "ordered_ids_sha256": "501141ef6883ed9f5b16d608a66b8470f2729616336fd0cc0f8e031250e2d136",
+          "ordered_prompts_sha256": "75fce38f5cbb6ee90d3d7228d5659e8c3672808fac0a36679f9083f9cd12670b"
+        }
+      ],
+      "generation_kwargs": {
+        "max_tokens": 2048,
+        "enable_search": false,
+        "enable_python": true,
+        "loop_guard": false,
+        "repetition_penalty": 1.0
+      },
+      "selected_counts": {
+        "rows": 120,
+        "unique_ids": 120,
+        "unique_prompts": 120,
+        "family_counts": {
+          "family": {
+            "unique": 120,
+            "rows_with_key": 120
+          }
+        },
+        "breakdown": {
+          "group": {
+            "japanese": 80,
+            "numina": 40
+          }
+        }
+      },
+      "source_sha256": "fbab8012d6a03dffa01a223dbc2b796d712a453cf9d2b150e19dd53bf1008182",
+      "scorer_sha256": "4714cfa5f1c5605f312bb29e1c76aa013cae731761a5d061ee255ee0d510fe3a"
+    },
+    {
+      "id": "engineering64",
+      "title": "Engineering held-out (part of extended 74)",
+      "availability": "frozen",
+      "family": "existing_auxiliary",
+      "selection": {
+        "kind": "jsonl_all",
+        "source": "continue/engineering/engineering_heldout.jsonl"
+      },
+      "scorer_source": "continue/engineering/scorer.py",
+      "formal_modes": [
+        {
+          "mode": "formal",
+          "n": 64,
+          "metrics": [
+            "correct",
+            "python_runtime_success"
+          ],
+          "counts": {
+            "rows": 64,
+            "unique_ids": 64,
+            "unique_prompts": 64,
+            "family_counts": {
+              "formula_family": {
+                "unique": 32,
+                "rows_with_key": 64
+              }
+            },
+            "breakdown": {
+              "domain": {
+                "materials": 16,
+                "circuits": 16,
+                "thermal_fluid": 16,
+                "manufacturing": 16
+              }
+            }
+          },
+          "ordered_ids_sha256": "f236110a601ed654c1446c1e04d7c711a44a09f278b5d52908c4fe5518a457e7",
+          "ordered_prompts_sha256": "5b363d69130ceb1dc904e5ad169cb02069e226e3e2cc4af3483d2076ba8d1af8"
+        }
+      ],
+      "generation_kwargs": {
+        "max_tokens": 2048,
+        "enable_search": false,
+        "enable_python": true,
+        "loop_guard": false,
+        "repetition_penalty": 1.0
+      },
+      "notes": [
+        "Scorer exceptions remain unmeasured and must not be silently mapped to correctness."
+      ],
+      "selected_counts": {
+        "rows": 64,
+        "unique_ids": 64,
+        "unique_prompts": 64,
+        "family_counts": {
+          "formula_family": {
+            "unique": 32,
+            "rows_with_key": 64
+          }
+        },
+        "breakdown": {
+          "domain": {
+            "materials": 16,
+            "circuits": 16,
+            "thermal_fluid": 16,
+            "manufacturing": 16
+          }
+        }
+      },
+      "source_sha256": "9cc9a59bf6a7ec81812204e8470c9c82c2c84c76f05ffc7931e3e5e7d4021b09",
+      "scorer_sha256": "56e98ae4367bca30f1637db62b54770fe350987bfc35720a10c0a844cc027af8",
+      "source_counts": {
+        "rows": 64,
+        "unique_ids": 64,
+        "unique_prompts": 64,
+        "family_counts": {
+          "formula_family": {
+            "unique": 32,
+            "rows_with_key": 64
+          }
+        },
+        "breakdown": {
+          "domain": {
+            "materials": 16,
+            "circuits": 16,
+            "thermal_fluid": 16,
+            "manufacturing": 16
+          }
+        }
+      }
+    },
+    {
+      "id": "visual10",
+      "title": "Matplotlib and CAD held-out (part of extended 74)",
+      "availability": "frozen",
+      "family": "existing_auxiliary",
+      "selection": {
+        "kind": "jsonl_all",
+        "source": "continue/visual/visual_heldout.jsonl"
+      },
+      "scorer_source": "continue/visual/eval_visual.py",
+      "formal_modes": [
+        {
+          "mode": "formal",
+          "n": 10,
+          "metrics": [
+            "artifact_pass",
+            "artifact_fail",
+            "unmeasured"
+          ],
+          "counts": {
+            "rows": 10,
+            "unique_ids": 10,
+            "unique_prompts": 10,
+            "family_counts": {},
+            "breakdown": {
+              "kind": {
+                "plot": 4,
+                "animation": 2,
+                "cad": 4
+              }
+            }
+          },
+          "ordered_ids_sha256": "ba07cf91d00937ffe2b71743087d2a45b8924abb7f75b9a68a6181ccd6c3a2a5",
+          "ordered_prompts_sha256": "7a25c6d05aca61ab3bb471916df67134bfed04219844c9ac8225c4bb8c2378c9"
+        }
+      ],
+      "generation_kwargs": {
+        "max_tokens": 2048,
+        "enable_search": false,
+        "enable_python": false,
+        "loop_guard": false,
+        "repetition_penalty": 1.0
+      },
+      "notes": [
+        "Original visual scorer executes generated code through its validator/worker. Missing dependencies are unmeasured, not model failures."
+      ],
+      "selected_counts": {
+        "rows": 10,
+        "unique_ids": 10,
+        "unique_prompts": 10,
+        "family_counts": {},
+        "breakdown": {
+          "kind": {
+            "plot": 4,
+            "animation": 2,
+            "cad": 4
+          }
+        }
+      },
+      "source_sha256": "0431a9c1f2dc28e82ea1fb48d86e89d4b92205c6e6ae6b67278d886ae3884f2b",
+      "scorer_sha256": "a283cc9593612197597c49e08a98dbee0525c0f11b42628e63620b1233d803b5",
+      "source_counts": {
+        "rows": 10,
+        "unique_ids": 10,
+        "unique_prompts": 10,
+        "family_counts": {},
+        "breakdown": {
+          "kind": {
+            "plot": 4,
+            "animation": 2,
+            "cad": 4
+          }
+        }
+      }
+    },
+    {
+      "id": "search_decision200",
+      "title": "Next-query decision after an intermediate search result",
+      "availability": "frozen",
+      "family": "existing_auxiliary",
+      "selection": {
+        "kind": "sha_id_first",
+        "source": "base/data/search_post_result_dev.jsonl",
+        "count": 200
+      },
+      "scorer_source": "base/code/eval_search_decision_v46.py",
+      "formal_modes": [
+        {
+          "mode": "formal",
+          "n": 200,
+          "metrics": [
+            "next_search_invocation_rate",
+            "next_query_exact_rate"
+          ],
+          "counts": {
+            "rows": 200,
+            "unique_ids": 200,
+            "unique_prompts": 200,
+            "family_counts": {
+              "parent_chain_id": {
+                "unique": 198,
+                "rows_with_key": 200
+              }
+            },
+            "breakdown": {
+              "domain": {
+                "search_post_result_ja": 200
+              }
+            }
+          },
+          "ordered_ids_sha256": "3442502fc30ceea34939f29b46570d6c05153f9f7720cc4ef3c961eb6146ae22",
+          "ordered_prompts_sha256": "fb3e5c274f9b396f37c4b54da2fdb86fd2234b6914c5ac48566536b41e3abab3"
+        }
+      ],
+      "generation_kwargs": {
+        "max_tokens": 256,
+        "enable_search": true,
+        "enable_python": true,
+        "loop_guard": false,
+        "repetition_penalty": 1.0
+      },
+      "selected_counts": {
+        "rows": 200,
+        "unique_ids": 200,
+        "unique_prompts": 200,
+        "family_counts": {
+          "parent_chain_id": {
+            "unique": 198,
+            "rows_with_key": 200
+          }
+        },
+        "breakdown": {
+          "domain": {
+            "search_post_result_ja": 200
+          }
+        }
+      },
+      "source_sha256": "098adeefdae2259a5c107504feb0000ae7b9745c35c3ba0f228c1747fc0b2420",
+      "scorer_sha256": "2d4fd2bb6deca5b0a6c10ad180fd12002c145ed04c27902b79e4c7ed4938f806",
+      "source_counts": {
+        "rows": 3831,
+        "unique_ids": 3831,
+        "unique_prompts": 3831,
+        "family_counts": {
+          "parent_chain_id": {
+            "unique": 2538,
+            "rows_with_key": 3831
+          }
+        },
+        "breakdown": {
+          "domain": {
+            "search_post_result_ja": 3831
+          }
+        }
+      }
+    },
+    {
+      "id": "search_final198",
+      "title": "Answer/stop after final authentic search result",
+      "availability": "frozen",
+      "family": "existing_auxiliary",
+      "selection": {
+        "kind": "jsonl_all",
+        "source": "searchprobe/dev_after_final_result_198.jsonl"
+      },
+      "scorer_source": "searchprobe/eval_final_result_probe.py",
+      "formal_modes": [
+        {
+          "mode": "formal",
+          "n": 198,
+          "metrics": [
+            "no_new_search",
+            "terminal_explicit_exact",
+            "no_search_and_terminal_exact",
+            "natural_eos"
+          ],
+          "counts": {
+            "rows": 198,
+            "unique_ids": 198,
+            "unique_prompts": 198,
+            "family_counts": {
+              "parent_chain_id": {
+                "unique": 198,
+                "rows_with_key": 198
+              }
+            }
+          },
+          "ordered_ids_sha256": "a49fe073c5a4caf6b158aeadd6814feb2ed400bfd3301ad825c3e0883abc7e1e",
+          "ordered_prompts_sha256": "ad5f1b9aaf44814c3f21c8da4edf1e20db2f75b1813e448c7fb691085f9efe88"
+        }
+      ],
+      "generation_kwargs": {
+        "max_tokens": 256,
+        "enable_search": true,
+        "enable_python": true,
+        "loop_guard": false,
+        "repetition_penalty": 1.0
+      },
+      "notes": [
+        "Diagnostic with final evidence supplied; not an end-to-end multihop score."
+      ],
+      "selected_counts": {
+        "rows": 198,
+        "unique_ids": 198,
+        "unique_prompts": 198,
+        "family_counts": {
+          "parent_chain_id": {
+            "unique": 198,
+            "rows_with_key": 198
+          }
+        }
+      },
+      "source_sha256": "cf09fc5fbb838e4603e5f2eb93fac2df3a5c7bac4849425faffa03a67e2ce128",
+      "scorer_sha256": "2ea9abe913828c77b918745697c05791913ca5586b168ee340d89c435fd7d571",
+      "source_counts": {
+        "rows": 198,
+        "unique_ids": 198,
+        "unique_prompts": 198,
+        "family_counts": {
+          "parent_chain_id": {
+            "unique": 198,
+            "rows_with_key": 198
+          }
+        }
+      }
+    },
+    {
+      "id": "public_dev80",
+      "title": "Public search depth0..3 (20 per depth)",
+      "availability": "frozen",
+      "family": "existing_auxiliary",
+      "selection": {
+        "kind": "public_depth",
+        "source": "public/data/dev_overlay.jsonl",
+        "per_depth": 20
+      },
+      "scorer_source": "r6/eval_public_r6.py",
+      "formal_modes": [
+        {
+          "mode": "formal",
+          "n": 80,
+          "metrics": [
+            "answer_score",
+            "query_order_match",
+            "search_count_match",
+            "natural_eos"
+          ],
+          "counts": {
+            "rows": 80,
+            "unique_ids": 80,
+            "unique_prompts": 80,
+            "family_counts": {
+              "parent_chain_id": {
+                "unique": 40,
+                "rows_with_key": 40
+              }
+            },
+            "breakdown": {
+              "kind": {
+                "wikidata_evidence_sufficiency": 40,
+                "wikidata_truthy_chain": 40
+              },
+              "tool_search_count": {
+                "0": 20,
+                "1": 20,
+                "2": 20,
+                "3": 20
+              }
+            }
+          },
+          "ordered_ids_sha256": "d197fa6dccdea99897721000f87c46cd6281f08092340662f3f597d06e420b0c",
+          "ordered_prompts_sha256": "cb7f4e54d3a77ea80254a950c96f87b7ae24fa240cfab66c94f7de51be26e7cd"
+        }
+      ],
+      "generation_kwargs": {
+        "max_tokens": null,
+        "enable_search": true,
+        "enable_python": false,
+        "loop_guard": false
+      },
+      "selected_counts": {
+        "rows": 80,
+        "unique_ids": 80,
+        "unique_prompts": 80,
+        "family_counts": {
+          "parent_chain_id": {
+            "unique": 40,
+            "rows_with_key": 40
+          }
+        },
+        "breakdown": {
+          "kind": {
+            "wikidata_evidence_sufficiency": 40,
+            "wikidata_truthy_chain": 40
+          },
+          "tool_search_count": {
+            "0": 20,
+            "1": 20,
+            "2": 20,
+            "3": 20
+          }
+        }
+      },
+      "source_sha256": "682536df54306a0137549f9b7f81492e04e7f0dee5a5c132b0a21913be0c0d8f",
+      "scorer_sha256": "a3f8ff460fbd4ab59a1cc1314b263c996fef595c3a05057836fd8d5cafac014f",
+      "source_counts": {
+        "rows": 5962,
+        "unique_ids": 5709,
+        "unique_prompts": 5962,
+        "family_counts": {
+          "family": {
+            "unique": 3,
+            "rows_with_key": 96
+          },
+          "parent_chain_id": {
+            "unique": 1303,
+            "rows_with_key": 3074
+          }
+        },
+        "breakdown": {
+          "task_type": {
+            "literal_source_continuation": 176
+          },
+          "domain": {
+            "physics": 19,
+            "biology": 34,
+            "chemistry": 25
+          },
+          "kind": {
+            "wikidata_evidence_sufficiency": 3074,
+            "wikidata_truthy_chain": 2538
+          },
+          "tool_search_count": {
+            "0": 1627,
+            "1": 1511,
+            "2": 1277,
+            "3": 1293
+          }
+        }
+      }
+    },
+    {
+      "id": "new_public:math_python",
+      "title": "Public development math_python",
+      "availability": "frozen",
+      "family": "existing_auxiliary",
+      "selection": {
+        "kind": "new_public",
+        "source": "base/data/dev_numina_tir_strict_numeric.jsonl",
+        "group": "math_python"
+      },
+      "scorer_source": "base/code/eval_new_public_v46.py",
+      "formal_modes": [
+        {
+          "mode": "raw",
+          "cap": 12,
+          "metrics": [
+            "raw_generation",
+            "tool_invocations",
+            "natural_eos"
+          ],
+          "n": 12,
+          "counts": {
+            "rows": 12,
+            "unique_ids": 12,
+            "unique_prompts": 12,
+            "family_counts": {
+              "problem_family_sha256": {
+                "unique": 12,
+                "rows_with_key": 12
+              }
+            },
+            "breakdown": {
+              "domain": {
+                "math_python_tir_en": 12
+              }
+            }
+          },
+          "ordered_ids_sha256": "7972ec40d31c7ab2cb4207c239077c36ce314c873c1eade74be22c5cc1906c0c",
+          "ordered_prompts_sha256": "722dea390d7cda2f4b7892a004680c6d6c2f6b3c96bf3ccdea54b1915c496515"
+        },
+        {
+          "mode": "nll",
+          "cap": 64,
+          "metrics": [
+            "conditional_cross_entropy",
+            "supervised_positions"
+          ],
+          "n": 64,
+          "counts": {
+            "rows": 64,
+            "unique_ids": 64,
+            "unique_prompts": 64,
+            "family_counts": {
+              "problem_family_sha256": {
+                "unique": 63,
+                "rows_with_key": 64
+              }
+            },
+            "breakdown": {
+              "domain": {
+                "math_python_tir_en": 64
+              }
+            }
+          },
+          "ordered_ids_sha256": "d62c27e64f5f1fc37c19fd20504df4318be336acd5b72aeeea27af45835a96f6",
+          "ordered_prompts_sha256": "e5987de2b16040479944c7afc1fa12e59d42f6d88bb861e452f67270ce731355"
+        }
+      ],
+      "generation_kwargs": {
+        "max_tokens": 2048,
+        "enable_search": false,
+        "enable_python": true,
+        "loop_guard": false,
+        "repetition_penalty": 1.0
+      },
+      "notes": [
+        "Conditional cross-entropy on reference prefixes is not answer accuracy."
+      ],
+      "selected_counts": {
+        "rows": 12,
+        "unique_ids": 12,
+        "unique_prompts": 12,
+        "family_counts": {
+          "problem_family_sha256": {
+            "unique": 12,
+            "rows_with_key": 12
+          }
+        },
+        "breakdown": {
+          "domain": {
+            "math_python_tir_en": 12
+          }
+        }
+      },
+      "source_sha256": "5bff154e8d7b13dfae55d59700391d2b5d1201210cd26a1c53b6e4f976bb3dbf",
+      "scorer_sha256": "21b1af29c8e271f793196204ef954866a635f53fe7300ac36811e458b15c034c",
+      "source_counts": {
+        "rows": 1179,
+        "unique_ids": 1179,
+        "unique_prompts": 1179,
+        "family_counts": {
+          "problem_family_sha256": {
+            "unique": 1141,
+            "rows_with_key": 1179
+          }
+        },
+        "breakdown": {
+          "domain": {
+            "math_python_tir_en": 1179
+          }
+        }
+      }
+    },
+    {
+      "id": "new_public:terminal",
+      "title": "Public development terminal",
+      "availability": "frozen",
+      "family": "existing_auxiliary",
+      "selection": {
+        "kind": "new_public",
+        "source": "base/data/dev_tldr_terminal.jsonl",
+        "group": "terminal"
+      },
+      "scorer_source": "base/code/eval_new_public_v46.py",
+      "formal_modes": [
+        {
+          "mode": "raw",
+          "cap": 12,
+          "metrics": [
+            "raw_generation",
+            "tool_invocations",
+            "natural_eos"
+          ],
+          "n": 12,
+          "counts": {
+            "rows": 12,
+            "unique_ids": 12,
+            "unique_prompts": 12,
+            "family_counts": {},
+            "breakdown": {
+              "domain": {
+                "terminal_en": 11,
+                "terminal_ja": 1
+              }
+            }
+          },
+          "ordered_ids_sha256": "1428994eb5438a3fcb18ef51b195917266fdfe413a9e21b0a2641eba0a86c502",
+          "ordered_prompts_sha256": "636b0ab1c494991bc2cb2666afaee64e42550a483585d74fd117c6929e4573b7"
+        },
+        {
+          "mode": "nll",
+          "cap": 64,
+          "metrics": [
+            "conditional_cross_entropy",
+            "supervised_positions"
+          ],
+          "n": 64,
+          "counts": {
+            "rows": 64,
+            "unique_ids": 64,
+            "unique_prompts": 64,
+            "family_counts": {},
+            "breakdown": {
+              "domain": {
+                "terminal_en": 62,
+                "terminal_ja": 2
+              }
+            }
+          },
+          "ordered_ids_sha256": "6a33fb55ea7c462939b4b47b7d808fdbacd052bf5133e6e85633c18d67de1583",
+          "ordered_prompts_sha256": "2d21b44bcd55d30e0c2e511c89502dbdbf59a39f6c2ddb3da0c16d9c52a53614"
+        }
+      ],
+      "generation_kwargs": {
+        "max_tokens": 2048,
+        "enable_search": false,
+        "enable_python": false,
+        "loop_guard": false,
+        "repetition_penalty": 1.0
+      },
+      "notes": [
+        "Conditional cross-entropy on reference prefixes is not answer accuracy."
+      ],
+      "selected_counts": {
+        "rows": 12,
+        "unique_ids": 12,
+        "unique_prompts": 12,
+        "family_counts": {},
+        "breakdown": {
+          "domain": {
+            "terminal_en": 11,
+            "terminal_ja": 1
+          }
+        }
+      },
+      "source_sha256": "18a5b283aee55e723d4c30d1ef85d14cfbbc5647d3253589bbc5689e093eb4e1",
+      "scorer_sha256": "21b1af29c8e271f793196204ef954866a635f53fe7300ac36811e458b15c034c",
+      "source_counts": {
+        "rows": 3438,
+        "unique_ids": 3438,
+        "unique_prompts": 3438,
+        "family_counts": {},
+        "breakdown": {
+          "domain": {
+            "terminal_ja": 144,
+            "terminal_en": 3294
+          }
+        }
+      }
+    },
+    {
+      "id": "new_public:python_ja",
+      "title": "Public development python_ja",
+      "availability": "frozen",
+      "family": "existing_auxiliary",
+      "selection": {
+        "kind": "new_public",
+        "source": "base/data/python_docs_ja_core_dev.jsonl",
+        "group": "python_ja"
+      },
+      "scorer_source": "base/code/eval_new_public_v46.py",
+      "formal_modes": [
+        {
+          "mode": "raw",
+          "cap": 12,
+          "metrics": [
+            "raw_generation",
+            "tool_invocations",
+            "natural_eos"
+          ],
+          "n": 12,
+          "counts": {
+            "rows": 12,
+            "unique_ids": 12,
+            "unique_prompts": 12,
+            "family_counts": {
+              "source_family": {
+                "unique": 1,
+                "rows_with_key": 12
+              }
+            },
+            "breakdown": {
+              "domain": {
+                "python_docs_ja_translation": 12
+              }
+            }
+          },
+          "ordered_ids_sha256": "870a6706400bdf384caa78c9fd54d72466d1d83f66c2154670eb89c77f88e819",
+          "ordered_prompts_sha256": "80b552512cd6b857f4a8649701ebe0ac31b5ac7b5fa9f940752504210675e558"
+        },
+        {
+          "mode": "nll",
+          "cap": 64,
+          "metrics": [
+            "conditional_cross_entropy",
+            "supervised_positions"
+          ],
+          "n": 64,
+          "counts": {
+            "rows": 64,
+            "unique_ids": 64,
+            "unique_prompts": 64,
+            "family_counts": {
+              "source_family": {
+                "unique": 5,
+                "rows_with_key": 64
+              }
+            },
+            "breakdown": {
+              "domain": {
+                "python_docs_ja_translation": 64
+              }
+            }
+          },
+          "ordered_ids_sha256": "568cabae1d093564604274fe87768df1cc629e4cda2d58a7761509265d5d7a85",
+          "ordered_prompts_sha256": "e050219d32733118fe133f39d81bcbfcd80896948d2ba8e5802d0797c66e6c34"
+        }
+      ],
+      "generation_kwargs": {
+        "max_tokens": 2048,
+        "enable_search": false,
+        "enable_python": false,
+        "loop_guard": false,
+        "repetition_penalty": 1.0
+      },
+      "notes": [
+        "Conditional cross-entropy on reference prefixes is not answer accuracy."
+      ],
+      "selected_counts": {
+        "rows": 12,
+        "unique_ids": 12,
+        "unique_prompts": 12,
+        "family_counts": {
+          "source_family": {
+            "unique": 1,
+            "rows_with_key": 12
+          }
+        },
+        "breakdown": {
+          "domain": {
+            "python_docs_ja_translation": 12
+          }
+        }
+      },
+      "source_sha256": "96165d0a526e4b9613a2f1ee970f7f85d09a4b7f0f6fadb6b8b33e4a88a6178f",
+      "scorer_sha256": "21b1af29c8e271f793196204ef954866a635f53fe7300ac36811e458b15c034c",
+      "source_counts": {
+        "rows": 3315,
+        "unique_ids": 3315,
+        "unique_prompts": 3315,
+        "family_counts": {
+          "source_family": {
+            "unique": 7,
+            "rows_with_key": 3315
+          }
+        },
+        "breakdown": {
+          "domain": {
+            "python_docs_ja_translation": 3315
+          }
+        }
+      }
+    },
+    {
+      "id": "new_public:python_reference",
+      "title": "Public development python_reference",
+      "availability": "frozen",
+      "family": "existing_auxiliary",
+      "selection": {
+        "kind": "new_public",
+        "source": "base/data/python_reference_dev.jsonl",
+        "group": "python_reference"
+      },
+      "scorer_source": "base/code/eval_new_public_v46.py",
+      "formal_modes": [
+        {
+          "mode": "raw",
+          "cap": 12,
+          "metrics": [
+            "raw_generation",
+            "tool_invocations",
+            "natural_eos"
+          ],
+          "n": 12,
+          "counts": {
+            "rows": 12,
+            "unique_ids": 12,
+            "unique_prompts": 12,
+            "family_counts": {},
+            "breakdown": {
+              "domain": {
+                "python_reference_heldout": 12
+              }
+            }
+          },
+          "ordered_ids_sha256": "acce17bf047e7cfda9950fc584ad6972b3b0bdc837386c4f23b10ed439476f31",
+          "ordered_prompts_sha256": "8885b1c43a79a4bf5c83595eca75b197dfbe0b641848ecd58ca9e77d6f13f957"
+        },
+        {
+          "mode": "nll",
+          "cap": 64,
+          "metrics": [
+            "conditional_cross_entropy",
+            "supervised_positions"
+          ],
+          "n": 64,
+          "counts": {
+            "rows": 64,
+            "unique_ids": 64,
+            "unique_prompts": 64,
+            "family_counts": {},
+            "breakdown": {
+              "domain": {
+                "python_reference_heldout": 64
+              }
+            }
+          },
+          "ordered_ids_sha256": "9bc246db241422a170dbc0f7af19381b843e331a0b95ffa1b9852d259ec06eb3",
+          "ordered_prompts_sha256": "e187941d3fedc8caf7a875a421a948d31ef5fb4a58e47bfbab958313aa21b010"
+        }
+      ],
+      "generation_kwargs": {
+        "max_tokens": 2048,
+        "enable_search": false,
+        "enable_python": false,
+        "loop_guard": false,
+        "repetition_penalty": 1.0
+      },
+      "notes": [
+        "Conditional cross-entropy on reference prefixes is not answer accuracy."
+      ],
+      "selected_counts": {
+        "rows": 12,
+        "unique_ids": 12,
+        "unique_prompts": 12,
+        "family_counts": {},
+        "breakdown": {
+          "domain": {
+            "python_reference_heldout": 12
+          }
+        }
+      },
+      "source_sha256": "5976ed0043629cc68e5aff13021aa707f300ac186cf1eaca7bf28d3987021714",
+      "scorer_sha256": "21b1af29c8e271f793196204ef954866a635f53fe7300ac36811e458b15c034c",
+      "source_counts": {
+        "rows": 86,
+        "unique_ids": 86,
+        "unique_prompts": 86,
+        "family_counts": {},
+        "breakdown": {
+          "domain": {
+            "python_reference_heldout": 86
+          }
+        }
+      }
+    },
+    {
+      "id": "new_public:science_code",
+      "title": "Public development science_code",
+      "availability": "frozen",
+      "family": "existing_auxiliary",
+      "selection": {
+        "kind": "new_public",
+        "source": "base/data/science_code_complete_dev.jsonl",
+        "group": "science_code"
+      },
+      "scorer_source": "base/code/eval_new_public_v46.py",
+      "formal_modes": [
+        {
+          "mode": "raw",
+          "cap": 12,
+          "metrics": [
+            "raw_generation",
+            "tool_invocations",
+            "natural_eos"
+          ],
+          "n": 3,
+          "counts": {
+            "rows": 3,
+            "unique_ids": 3,
+            "unique_prompts": 3,
+            "family_counts": {},
+            "breakdown": {
+              "domain": {
+                "official_plotting_python_code_en": 1,
+                "official_numerical_python_code_en": 2
+              }
+            }
+          },
+          "ordered_ids_sha256": "8976bd31bde0324bc5cae0d7bdca95a4726e75c41705499571e37867a1d09da8",
+          "ordered_prompts_sha256": "d6d54fd81160e856b8676dc0007b43244badec70b22a71ff009dedc8f6fa5d5a"
+        },
+        {
+          "mode": "nll",
+          "cap": 64,
+          "metrics": [
+            "conditional_cross_entropy",
+            "supervised_positions"
+          ],
+          "n": 3,
+          "counts": {
+            "rows": 3,
+            "unique_ids": 3,
+            "unique_prompts": 3,
+            "family_counts": {},
+            "breakdown": {
+              "domain": {
+                "official_plotting_python_code_en": 1,
+                "official_numerical_python_code_en": 2
+              }
+            }
+          },
+          "ordered_ids_sha256": "8976bd31bde0324bc5cae0d7bdca95a4726e75c41705499571e37867a1d09da8",
+          "ordered_prompts_sha256": "d6d54fd81160e856b8676dc0007b43244badec70b22a71ff009dedc8f6fa5d5a"
+        }
+      ],
+      "generation_kwargs": {
+        "max_tokens": 2048,
+        "enable_search": false,
+        "enable_python": false,
+        "loop_guard": false,
+        "repetition_penalty": 1.0
+      },
+      "notes": [
+        "Conditional cross-entropy on reference prefixes is not answer accuracy."
+      ],
+      "selected_counts": {
+        "rows": 3,
+        "unique_ids": 3,
+        "unique_prompts": 3,
+        "family_counts": {},
+        "breakdown": {
+          "domain": {
+            "official_plotting_python_code_en": 1,
+            "official_numerical_python_code_en": 2
+          }
+        }
+      },
+      "source_sha256": "af6e3ad6ee37f953cb84f00621c40ff8f7f35b12608bd0956d40c16db3e6597e",
+      "scorer_sha256": "21b1af29c8e271f793196204ef954866a635f53fe7300ac36811e458b15c034c",
+      "source_counts": {
+        "rows": 3,
+        "unique_ids": 3,
+        "unique_prompts": 3,
+        "family_counts": {},
+        "breakdown": {
+          "domain": {
+            "official_plotting_python_code_en": 1,
+            "official_numerical_python_code_en": 2
+          }
+        }
+      }
+    },
+    {
+      "id": "new_public:plos_science",
+      "title": "Public development plos_science",
+      "availability": "frozen",
+      "family": "existing_auxiliary",
+      "selection": {
+        "kind": "new_public",
+        "source": "base/data/plos_science_dev.jsonl",
+        "group": "plos_science"
+      },
+      "scorer_source": "base/code/eval_new_public_v46.py",
+      "formal_modes": [
+        {
+          "mode": "raw",
+          "cap": 12,
+          "metrics": [
+            "raw_generation",
+            "tool_invocations",
+            "natural_eos"
+          ],
+          "n": 12,
+          "counts": {
+            "rows": 12,
+            "unique_ids": 12,
+            "unique_prompts": 12,
+            "family_counts": {},
+            "breakdown": {
+              "domain": {
+                "science_physics_en": 5,
+                "science_chemistry_en": 6,
+                "science_biology_en": 1
+              }
+            }
+          },
+          "ordered_ids_sha256": "7d814b6cbb3672d54ef3953eb6d2d96e58c66f8bae465b66d4ae6f96cf693831",
+          "ordered_prompts_sha256": "8408e55fba276b136e775026d6699019ff4ab9a82b5040d08b5d7abe931090cb"
+        },
+        {
+          "mode": "nll",
+          "cap": 64,
+          "metrics": [
+            "conditional_cross_entropy",
+            "supervised_positions"
+          ],
+          "n": 64,
+          "counts": {
+            "rows": 64,
+            "unique_ids": 64,
+            "unique_prompts": 64,
+            "family_counts": {},
+            "breakdown": {
+              "domain": {
+                "science_physics_en": 31,
+                "science_chemistry_en": 24,
+                "science_biology_en": 9
+              }
+            }
+          },
+          "ordered_ids_sha256": "02b01186555790aa1b67f7588196240eb5897bff63db3e0635aadd89d2ed231f",
+          "ordered_prompts_sha256": "9fc7ff1a218aa8242e3a7e5adbe58d0d4df31b4da2766a8f7e24102e0421e600"
+        }
+      ],
+      "generation_kwargs": {
+        "max_tokens": 2048,
+        "enable_search": false,
+        "enable_python": false,
+        "loop_guard": false,
+        "repetition_penalty": 1.0
+      },
+      "notes": [
+        "Conditional cross-entropy on reference prefixes is not answer accuracy."
+      ],
+      "selected_counts": {
+        "rows": 12,
+        "unique_ids": 12,
+        "unique_prompts": 12,
+        "family_counts": {},
+        "breakdown": {
+          "domain": {
+            "science_physics_en": 5,
+            "science_chemistry_en": 6,
+            "science_biology_en": 1
+          }
+        }
+      },
+      "source_sha256": "e60a98f8c0b983b206b6f41d79179b0e1ff343520aeca51491061fc3a3049ed0",
+      "scorer_sha256": "21b1af29c8e271f793196204ef954866a635f53fe7300ac36811e458b15c034c",
+      "source_counts": {
+        "rows": 672,
+        "unique_ids": 672,
+        "unique_prompts": 672,
+        "family_counts": {},
+        "breakdown": {
+          "domain": {
+            "science_physics_en": 308,
+            "science_chemistry_en": 225,
+            "science_biology_en": 139
+          }
+        }
+      }
+    },
+    {
+      "id": "new_public:search_next",
+      "title": "Public development search_next",
+      "availability": "frozen",
+      "family": "existing_auxiliary",
+      "selection": {
+        "kind": "new_public",
+        "source": "base/data/search_post_result_dev.jsonl",
+        "group": "search_next"
+      },
+      "scorer_source": "base/code/eval_new_public_v46.py",
+      "formal_modes": [
+        {
+          "mode": "raw",
+          "cap": 12,
+          "metrics": [
+            "raw_generation",
+            "tool_invocations",
+            "natural_eos"
+          ],
+          "n": 12,
+          "counts": {
+            "rows": 12,
+            "unique_ids": 12,
+            "unique_prompts": 12,
+            "family_counts": {
+              "parent_chain_id": {
+                "unique": 12,
+                "rows_with_key": 12
+              }
+            },
+            "breakdown": {
+              "domain": {
+                "search_post_result_ja": 12
+              }
+            }
+          },
+          "ordered_ids_sha256": "b39ca2a3fd18e86558e36a0ed4c091db658f36ee91f43bc1db41a45bb0528d30",
+          "ordered_prompts_sha256": "90cc274c051decd0808258b86df1ea2a9c047c34ffd0268c3a847fbce4af7c78"
+        },
+        {
+          "mode": "nll",
+          "cap": 64,
+          "metrics": [
+            "conditional_cross_entropy",
+            "supervised_positions"
+          ],
+          "n": 64,
+          "counts": {
+            "rows": 64,
+            "unique_ids": 64,
+            "unique_prompts": 64,
+            "family_counts": {
+              "parent_chain_id": {
+                "unique": 64,
+                "rows_with_key": 64
+              }
+            },
+            "breakdown": {
+              "domain": {
+                "search_post_result_ja": 64
+              }
+            }
+          },
+          "ordered_ids_sha256": "f4570841656132b71c9205a715b7593dfc5488412ba2e39274c3bcba80860dda",
+          "ordered_prompts_sha256": "ee8381e9740b2a28bbd38d257e49eb4762f09581a8b5de86a6422a579a003902"
+        }
+      ],
+      "generation_kwargs": {
+        "max_tokens": 2048,
+        "enable_search": true,
+        "enable_python": false,
+        "loop_guard": false,
+        "repetition_penalty": 1.0
+      },
+      "notes": [
+        "Conditional cross-entropy on reference prefixes is not answer accuracy."
+      ],
+      "selected_counts": {
+        "rows": 12,
+        "unique_ids": 12,
+        "unique_prompts": 12,
+        "family_counts": {
+          "parent_chain_id": {
+            "unique": 12,
+            "rows_with_key": 12
+          }
+        },
+        "breakdown": {
+          "domain": {
+            "search_post_result_ja": 12
+          }
+        }
+      },
+      "source_sha256": "098adeefdae2259a5c107504feb0000ae7b9745c35c3ba0f228c1747fc0b2420",
+      "scorer_sha256": "21b1af29c8e271f793196204ef954866a635f53fe7300ac36811e458b15c034c",
+      "source_counts": {
+        "rows": 3831,
+        "unique_ids": 3831,
+        "unique_prompts": 3831,
+        "family_counts": {
+          "parent_chain_id": {
+            "unique": 2538,
+            "rows_with_key": 3831
+          }
+        },
+        "breakdown": {
+          "domain": {
+            "search_post_result_ja": 3831
+          }
+        }
+      }
+    },
+    {
+      "id": "new_public:japanese_math_python",
+      "title": "Public development japanese_math_python",
+      "availability": "frozen",
+      "family": "existing_auxiliary",
+      "selection": {
+        "kind": "new_public",
+        "source": "base/data/japanese_math_python_dev.jsonl",
+        "group": "japanese_math_python"
+      },
+      "scorer_source": "base/code/eval_new_public_v46.py",
+      "formal_modes": [
+        {
+          "mode": "raw",
+          "cap": 12,
+          "metrics": [
+            "raw_generation",
+            "tool_invocations",
+            "natural_eos"
+          ],
+          "n": 12,
+          "counts": {
+            "rows": 12,
+            "unique_ids": 12,
+            "unique_prompts": 12,
+            "family_counts": {
+              "problem_group": {
+                "unique": 12,
+                "rows_with_key": 12
+              },
+              "problem_template_sha256": {
+                "unique": 12,
+                "rows_with_key": 12
+              }
+            },
+            "breakdown": {
+              "domain": {
+                "japanese_math_python": 12
+              }
+            }
+          },
+          "ordered_ids_sha256": "29102e0a8d1048151130307296b592ef588360ea3afe9dff4b4e25e9ce7b6929",
+          "ordered_prompts_sha256": "aa9ab897b43ae18ffcc13eef2500d380aa471ad6ef95cea8940921d9e16e2de4"
+        },
+        {
+          "mode": "nll",
+          "cap": 64,
+          "metrics": [
+            "conditional_cross_entropy",
+            "supervised_positions"
+          ],
+          "n": 64,
+          "counts": {
+            "rows": 64,
+            "unique_ids": 64,
+            "unique_prompts": 64,
+            "family_counts": {
+              "problem_group": {
+                "unique": 59,
+                "rows_with_key": 64
+              },
+              "problem_template_sha256": {
+                "unique": 60,
+                "rows_with_key": 64
+              }
+            },
+            "breakdown": {
+              "domain": {
+                "japanese_math_python": 64
+              }
+            }
+          },
+          "ordered_ids_sha256": "26bebebf3a40c0b8abb74551f0533d991b8f3afd81cc2b9ad494ed63d35a2607",
+          "ordered_prompts_sha256": "0162352ef548d7feb371729b0cb46d9d7ec06279367c85e22d7c0ccb8a0b01fc"
+        }
+      ],
+      "generation_kwargs": {
+        "max_tokens": 2048,
+        "enable_search": false,
+        "enable_python": true,
+        "loop_guard": false,
+        "repetition_penalty": 1.0
+      },
+      "notes": [
+        "Conditional cross-entropy on reference prefixes is not answer accuracy."
+      ],
+      "selected_counts": {
+        "rows": 12,
+        "unique_ids": 12,
+        "unique_prompts": 12,
+        "family_counts": {
+          "problem_group": {
+            "unique": 12,
+            "rows_with_key": 12
+          },
+          "problem_template_sha256": {
+            "unique": 12,
+            "rows_with_key": 12
+          }
+        },
+        "breakdown": {
+          "domain": {
+            "japanese_math_python": 12
+          }
+        }
+      },
+      "source_sha256": "c28ddea0a6fc38dfde07772616e7dc4ecc058f701132d4753380b3a2c87ceeeb",
+      "scorer_sha256": "21b1af29c8e271f793196204ef954866a635f53fe7300ac36811e458b15c034c",
+      "source_counts": {
+        "rows": 199,
+        "unique_ids": 199,
+        "unique_prompts": 197,
+        "family_counts": {
+          "problem_group": {
+            "unique": 180,
+            "rows_with_key": 199
+          },
+          "problem_template_sha256": {
+            "unique": 182,
+            "rows_with_key": 199
+          }
+        },
+        "breakdown": {
+          "domain": {
+            "japanese_math_python": 199
+          }
+        }
+      }
+    },
+    {
+      "id": "new_public:science_engineering_verified",
+      "title": "Public development science_engineering_verified",
+      "availability": "frozen",
+      "family": "existing_auxiliary",
+      "selection": {
+        "kind": "new_public",
+        "source": "base/data/science_engineering_verified_dev.jsonl",
+        "group": "science_engineering_verified"
+      },
+      "scorer_source": "base/code/eval_new_public_v46.py",
+      "formal_modes": [
+        {
+          "mode": "raw",
+          "cap": 12,
+          "metrics": [
+            "raw_generation",
+            "tool_invocations",
+            "natural_eos"
+          ],
+          "n": 3,
+          "counts": {
+            "rows": 3,
+            "unique_ids": 3,
+            "unique_prompts": 3,
+            "family_counts": {},
+            "breakdown": {
+              "domain": {
+                "engineering_sympy_source_answer": 3
+              }
+            }
+          },
+          "ordered_ids_sha256": "555709060ab1b9a33292856ebb308432a80740c7fe7b95d481a92e0bdb388de5",
+          "ordered_prompts_sha256": "f23cce8369927becc426c0249a8989a5fce5a13c4752d380547a310a6ba214f1"
+        },
+        {
+          "mode": "nll",
+          "cap": 64,
+          "metrics": [
+            "conditional_cross_entropy",
+            "supervised_positions"
+          ],
+          "n": 3,
+          "counts": {
+            "rows": 3,
+            "unique_ids": 3,
+            "unique_prompts": 3,
+            "family_counts": {},
+            "breakdown": {
+              "domain": {
+                "engineering_sympy_source_answer": 3
+              }
+            }
+          },
+          "ordered_ids_sha256": "555709060ab1b9a33292856ebb308432a80740c7fe7b95d481a92e0bdb388de5",
+          "ordered_prompts_sha256": "f23cce8369927becc426c0249a8989a5fce5a13c4752d380547a310a6ba214f1"
+        }
+      ],
+      "generation_kwargs": {
+        "max_tokens": 2048,
+        "enable_search": false,
+        "enable_python": true,
+        "loop_guard": false,
+        "repetition_penalty": 1.0
+      },
+      "notes": [
+        "Conditional cross-entropy on reference prefixes is not answer accuracy."
+      ],
+      "selected_counts": {
+        "rows": 3,
+        "unique_ids": 3,
+        "unique_prompts": 3,
+        "family_counts": {},
+        "breakdown": {
+          "domain": {
+            "engineering_sympy_source_answer": 3
+          }
+        }
+      },
+      "source_sha256": "da5a523f443bbbd587857edac6cf2550ce83ced6aa987bf8496e40a0945b726e",
+      "scorer_sha256": "21b1af29c8e271f793196204ef954866a635f53fe7300ac36811e458b15c034c",
+      "source_counts": {
+        "rows": 3,
+        "unique_ids": 3,
+        "unique_prompts": 3,
+        "family_counts": {},
+        "breakdown": {
+          "domain": {
+            "engineering_sympy_source_answer": 3
+          }
+        }
+      }
+    },
+    {
+      "id": "gate_v44b",
+      "title": "Historical retention diagnostic",
+      "availability": "external_inputs_missing",
+      "family": "historical_diagnostic",
+      "scorer_source": "r6/gate_eval_v44b.py",
+      "missing_inputs": [
+        "data/train_v43_knowledge_unified.jsonl",
+        "bridge_heldout.jsonl"
+      ],
+      "notes": [
+        "Evaluator source frozen; full input manifest not present in supplied source bundles. Do not report complete reproduction or a measured gate score."
+      ]
+    },
+    {
+      "id": "sentinel_v46",
+      "title": "Historical retention diagnostic",
+      "availability": "external_inputs_missing",
+      "family": "historical_diagnostic",
+      "scorer_source": "base/code/eval_sentinel_v46.py",
+      "missing_inputs": [
+        "data/train_v43_knowledge_unified.jsonl"
+      ],
+      "notes": [
+        "Evaluator source frozen; full input manifest not present in supplied source bundles. Do not report complete reproduction or a measured gate score."
+      ]
+    }
+  ],
+  "leakage_sources": [
+    {
+      "path": "r6/data/benchmark_8100_manifest.jsonl",
+      "format": "jsonl"
+    },
+    {
+      "path": "r6/data/eval_swe_step_control_heldout.jsonl",
+      "format": "jsonl"
+    },
+    {
+      "path": "r6/data/eval_swe_step_control_heldout_v43labels.jsonl",
+      "format": "jsonl"
+    },
+    {
+      "path": "r6/data/eval_v33_state_tracking_heldout.jsonl",
+      "format": "jsonl"
+    },
+    {
+      "path": "r6/data/eval_v38_decomposed_state_bench200.jsonl",
+      "format": "jsonl"
+    },
+    {
+      "path": "r6/data/eval_v41_logical_instruction_operators_heldout.jsonl",
+      "format": "jsonl"
+    },
+    {
+      "path": "r6/data/eval_v42_search_retrieval_aligned.jsonl",
+      "format": "jsonl"
+    },
+    {
+      "path": "r6/data/eval_v42_search_retrieval_heldout.jsonl",
+      "format": "jsonl"
+    },
+    {
+      "path": "r6/data/jamcqa_manifest_test.jsonl",
+      "format": "jsonl"
+    },
+    {
+      "path": "public/data/dev_overlay.jsonl",
+      "format": "jsonl"
+    },
+    {
+      "path": "base/data/dev_numina_tir_strict_numeric.jsonl",
+      "format": "jsonl"
+    },
+    {
+      "path": "base/data/dev_tldr_terminal.jsonl",
+      "format": "jsonl"
+    },
+    {
+      "path": "base/data/japanese_math_python_dev.jsonl",
+      "format": "jsonl"
+    },
+    {
+      "path": "base/data/plos_science_dev.jsonl",
+      "format": "jsonl"
+    },
+    {
+      "path": "base/data/python_docs_ja_core_dev.jsonl",
+      "format": "jsonl"
+    },
+    {
+      "path": "base/data/python_reference_dev.jsonl",
+      "format": "jsonl"
+    },
+    {
+      "path": "base/data/science_code_complete_dev.jsonl",
+      "format": "jsonl"
+    },
+    {
+      "path": "base/data/science_engineering_verified_dev.jsonl",
+      "format": "jsonl"
+    },
+    {
+      "path": "base/data/search_post_result_dev.jsonl",
+      "format": "jsonl"
+    },
+    {
+      "path": "continue/engineering/engineering_heldout.jsonl",
+      "format": "jsonl"
+    },
+    {
+      "path": "continue/visual/visual_heldout.jsonl",
+      "format": "jsonl"
+    },
+    {
+      "path": "searchprobe/dev_after_final_result_198.jsonl",
+      "format": "jsonl"
+    },
+    {
+      "path": "continue/eval_python/selection_120.json",
+      "format": "selection_json",
+      "suite": "python120"
+    }
+  ],
+  "original_stage": {
+    "path": "continue/tier_stage/stage_official_tier_v47.py",
+    "architecture": "IntegratedModelV42 for T1-7; IntegratedModelV44Fix for T8",
+    "required_study_files": {
+      "GeoCPU_v47_fullmodel_bundle_v1_READY.zip": "a25d312429d5b2ee43ec4b812e7a1fb948d0625fbfdfbe9cdf7fac54c075fb70",
+      "v47_continue25500_training_v1.zip": "6237fc5c4f321737553de4d36043c8e807ec3edcbb00dbf960298ca0212666a3"
+    },
+    "required_checkpoint_files": [
+      "<run>/checkpoints/checkpoint_step_<step>.pt",
+      "<run>/checkpoints/receipt_step_<step>.json",
+      "<run>/training_saved.json",
+      "<run>/input_manifest.json"
+    ],
+    "checks": "Saved step, full_model, checkpoint SHA and training data SHA must agree. For the historical 28000 branch, original parent fork checks also apply. Interrupted Tier logs require inspection before rerun.",
+    "command_template": [
+      "python",
+      "-u",
+      "frozen/continue/tier_stage/stage_official_tier_v47.py",
+      "--study",
+      "<study>",
+      "--run",
+      "<run>",
+      "--step",
+      "<step>",
+      "--checkpoint-sha",
+      "<actual_checkpoint_sha256>",
+      "--output",
+      "<new_output>"
+    ],
+    "known_source_baseline": {
+      "run": "v47_python_science_from25500_to28000_trial1",
+      "step": 28000,
+      "checkpoint_sha256": "24c11316d9c7e36921d6aadbfce6e0a939021adfe8cbb51233263108025e3339",
+      "verification": "value pinned by source; checkpoint bytes not read in this registry task"
+    },
+    "future_checkpoints": "Stage supports explicit --run --step --checkpoint-sha; no training launcher is invoked. Python/extended original 30500 CLI is step/branch-specific; use original scorer APIs under independently verified checkpoint bindings.",
+    "tier1_7_corpus": "public/retrieval/combined_train_wikidata_first.jsonl",
+    "tier8_corpus": "r6/data/knowledge_corpus_v43.jsonl",
+    "auxiliary_search_corpus": "public/retrieval/combined_dev_wikidata_first.jsonl"
+  },
+  "scoring_apis": {
+    "python120": "load_original_scorer(\"python120\").score_generation(case,generation)",
+    "engineering64": "load_original_scorer(\"engineering64\").score_case(case,generation)",
+    "visual10": "load_original_scorer(\"visual10\").evaluate(case,model_generated_text,artifact_dir)",
+    "search_decision200": "score_search_decision(case,generation): unchanged original scoring AST",
+    "search_final198": "score_search_final(case,generation): unchanged original scoring AST"
+  },
+  "limitations": [
+    "No model checkpoint or GPU generation was executed while preparing this registry.",
+    "Historical gate/sentinel full inputs are absent; source code alone does not constitute a complete suite.",
+    "All training/dev source overlap by semantic paraphrase cannot be ruled out by exact prompt hashes alone."
+  ]
+}

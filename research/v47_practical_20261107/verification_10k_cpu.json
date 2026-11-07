@@ -1,0 +1,68 @@
+{
+  "checked_utc": "2026-11-07T02:56:06.224534+00:00",
+  "scope": "10k launcher extension, intermediate checkpoint backup and existing CPU integration contracts; no model capability measurement",
+  "integration_tests": {
+    "command": "python -m unittest discover -s tests -v",
+    "tests_run": 116,
+    "passed": 116,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "duration_seconds": 14.462
+  },
+  "requested_additional_updates": 10000,
+  "parent_step": 30500,
+  "target_step": 40500,
+  "modules": {
+    "build_curriculum.py": "c02efd4db1aed1248ec54d87d1a471e4517c6765a7c28fb9f95ee38075771fb8",
+    "build_knowledge.py": "5e1a79ef476fd27a6fcf70c6e6a98d72ac9a9f15b91e1115bf9bd69871d8251b",
+    "compare_results.py": "945e5f6bc6e5a30c54a14829c091785d87ef6b555e82a8d1241778e2d24db032",
+    "eval_candidate.py": "daf0ae8ffeb41315e9c44ac9300312687ef4ca515547bfd701ad236a21389632",
+    "frozen_eval.py": "ddedd2f48c3d15f508bb1e47a51d52ca087864ef43b00329aea3d556cb800687",
+    "hydrate_artifact.py": "c14af9ec889c3f9ba37574a2a0a3f175d250ac721b4611417fa6f380fe659895",
+    "live_logging.py": "b5d64f9c2cb222ad545e39411929f4841c87a41a80542929ac3875223076b906",
+    "prepare_training.py": "5c947af4fddeaa99b21de401c21adf63cc111caf981f83ac508837407fc4dc22",
+    "runtime_practical_v1.py": "fc196cf9b7d22fae7f0128b5b0b1bd1e8b7630d6f9e27ba0fd310d0db49605c2",
+    "train_candidate.py": "0353bac44053b68e705030a8b3764e5e248d2212709429cb23cf3d5e32adaa71"
+  },
+  "backup_test_file_sha256": "356c8f8adbd043f4401ab5c5d5ed04e91e65c6cf3ce871c4f3c58356a4682aec",
+  "notebooks": [
+    {
+      "file": "GeoCPU_live_monitor_20261107.ipynb",
+      "code_cells_parsed": 4,
+      "executed_in_colab": false
+    },
+    {
+      "file": "GeoCPU_practical_training_logging_20261107.ipynb",
+      "code_cells_parsed": 9,
+      "executed_in_colab": false
+    },
+    {
+      "file": "GeoCPU_practical_training_logging_20261107_10k.ipynb",
+      "code_cells_parsed": 9,
+      "executed_in_colab": false
+    }
+  ],
+  "unchanged_against_original_release": {
+    "files_checked": 95,
+    "original_archive_sha256": "5ec565d23b85ef78b2b03b24cd66163f89e5053e39a01f084b1660d54e5f1dda",
+    "scopes": [
+      "all data/ and frozen/ assets",
+      "original 1k notebook",
+      "training runtime",
+      "training data preparation",
+      "evaluation and score comparison"
+    ]
+  },
+  "actual_parent_422500_sampler_preflight_executed": false,
+  "checkpoint_loaded": false,
+  "model_updates": 0,
+  "gpu_inference_calls": 0,
+  "torch_installed": false,
+  "limits": [
+    "CPU fixtures do not establish Colab/Drive FUSE compatibility or model performance improvement.",
+    "Intermediate checkpoint persistence has no automatic resume CLI.",
+    "Parent full-data reconstruction and full sampler preview remain required on Colab.",
+    "verification_cpu.json describes the earlier release; this report binds the updated launcher."
+  ]
+}

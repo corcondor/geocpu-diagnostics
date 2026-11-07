@@ -1,0 +1,50 @@
+{
+  "checked_utc": "2026-11-07T08:47:06.651535+00:00",
+  "scope": "CPU reproduction and recovery of missing local package imports in isolated Python; no GPU or actual Colab execution",
+  "initial_ModuleNotFoundError_reproduced": true,
+  "setup_executions": 2,
+  "three_user_facing_imports_succeeded": true,
+  "six_project_module_origins_match_current_WORK_after_explicit_import": true,
+  "rerun_replaces_project_import_cache": true,
+  "fixed_assets_and_full_evaluation_plan_verified": true,
+  "full_knowledge_plan": [
+    {
+      "suite": "benchmark_tool_jmmlu",
+      "mode": "closed",
+      "rows": 7536
+    },
+    {
+      "suite": "benchmark_tool_jmmlu",
+      "mode": "tool",
+      "rows": 7536
+    },
+    {
+      "suite": "benchmark_tool_jamcqa",
+      "mode": "closed",
+      "rows": 2309
+    },
+    {
+      "suite": "benchmark_tool_jamcqa",
+      "mode": "tool",
+      "rows": 2309
+    }
+  ],
+  "source_archive_unchanged": true,
+  "archive_sha256": "939e75d61aba5cd9f271b46e3d210d42af5a0c51904b80df101dbf40072d55d5",
+  "code_sha256": {
+    "GeoCPU_eval_40500_fresh_session_20261107.ipynb": "9578d2809b06359276ab13a31e87a784a059107736d01a4f3df8cc0ad37b9bc0",
+    "colab_setup.py": "e0c4955c74ee56e638b65307647fd976245738ccadc41785b59303a0a7d9e7ea",
+    "colab_evaluate.py": "fb0439e24eb813281b1f9fda59e63cf3b07a593751b3483830bb06deacbb0dee"
+  },
+  "torch_imported": false,
+  "model_loaded": false,
+  "gpu_calls": 0,
+  "actual_drive_mount_executed": false,
+  "test_substitutions": [
+    "google.colab.drive.mount replaced with a call recorder",
+    "STUDY and /content paths replaced with temporary test directories"
+  ],
+  "limitations": [
+    "Actual Google Drive mount and GPU evaluation were not run in this environment."
+  ]
+}
