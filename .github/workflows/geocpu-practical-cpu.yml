@@ -36,6 +36,18 @@ jobs:
         run: python -m unittest discover -s tests -p test_eval_candidate.py -v
       - name: Exact artifact restoration without overwrite
         run: python -m unittest discover -s tests -p test_hydrate_artifact.py -v
+      - name: Ten thousand update CLI and retention contracts
+        env:
+          PYTHONPATH: tests:.
+        run: |
+          python -m unittest -v \
+            test_training.TrainingPreparationTests.test_cli_default_is_ten_thousand_additional_updates_without_side_effects \
+            test_training.TrainingPreparationTests.test_cli_accepts_additional_update_boundaries_and_short_controls \
+            test_training.TrainingPreparationTests.test_cli_rejects_out_of_range_updates_before_any_file_access \
+            test_training.TrainingPreparationTests.test_ten_thousand_update_cli_keeps_repeat_limit \
+            test_training.TrainingPreparationTests.test_ten_thousand_update_command_targets_40500_and_keeps_protection
+      - name: Intermediate checkpoint backup contracts
+        run: python -m unittest discover -s tests -p test_checkpoint_backup.py -v
       - name: Parse code and notebook cells
         run: |
           python - <<'PY'

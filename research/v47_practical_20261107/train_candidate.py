@@ -1,7 +1,8 @@
 """Prepare/train one new GeoCPU branch from the verified saved step 30,500.
 
 Never modifies a source checkpoint, source training data or running process.
-The default is a 1,000-update pilot. --preflight-only does CPU preparation and
+The default is 10,000 additional updates, from step 30,500 to 40,500.
+--preflight-only does CPU preparation and
 deterministic sampling checks, with zero model updates. Training uses a frozen
 copy of the parent as the replay teacher, then leaves evaluation pending.
 """
@@ -18,19 +19,21 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import zipfile
 
 from prepare_training import (NEW_GROUP, ORIGINAL_RUNTIME_SHA, PARENT_ROWS,
                               PARENT_TRAIN_SHA, VARIANTS, manifest_train,
                               prepare_dataset, preview_plan, require_sha, sha,
                               write_runtime)
-from live_logging import run_with_logging
+from live_logging import atomic_json, run_with_logging
 
 
 HERE = Path(__file__).resolve().parent
 STUDY = Path("/content/drive/MyDrive/GeoCPU_v47_fullmodel_20261106")
 PARENT_RUN = "v47_from28000_to30500_curriculum_v1"
 PARENT_STEP = 30500
+CHECKPOINT_INTERVAL = 2500
 CONTINUE_ZIP = "GeoCPU_v47_continue30500_train_eval_v1.zip"
 CONTINUE_ZIP_SHA = "bba78c81b763608b70691395c39bc01996f7c483f0c4bcc7f1fa7b8269e079c5"
 PARENT_ARTIFACTS = {
@@ -242,6 +245,252 @@ def check_a100():
     return torch
 
 
+def checkpoint_steps(steps: int) -> list[int]:
+    """Native periodic saves plus the final stop, with no duplicate final step."""
+    if not 1 <= steps <= 10000:
+        raise ValueError("additional steps must be 1..10000")
+    stop = PARENT_STEP + steps
+    return [*range(PARENT_STEP + CHECKPOINT_INTERVAL, stop, CHECKPOINT_INTERVAL), stop]
+
+
+def checkpoint_storage_requirements(sizes: dict[str, int], steps: int) -> dict:
+    """Conservative byte reservations from actual parent files, not GPU estimates."""
+    if set(sizes) != {"checkpoint", "optimizer", "state"} or any(type(n) is not int or n <= 0 for n in sizes.values()):
+        raise ValueError("positive parent model/optimizer/state sizes are required")
+    saves = checkpoint_steps(steps)
+    reserved = dict(sizes)
+    # The new sampler has more rows and the state includes phase telemetry.
+    reserved["state"] = max(reserved["state"], 64 << 20)
+    snapshot_bytes, largest = sum(reserved.values()), max(reserved.values())
+    margin = 1_500_000_000
+    # A final copy can overlap the daemon's last intermediate copy. Reserve
+    # both .part files on the destination instead of assuming serial I/O.
+    drive_temporary = 2 * largest if len(saves) > 1 else largest
+    return {"checkpoint_steps": saves, "intermediate_steps": saves[:-1],
+            "parent_artifact_bytes": dict(sizes), "reserved_artifact_bytes": reserved,
+            "snapshot_reserved_bytes": snapshot_bytes, "margin_bytes_per_volume": margin,
+            "drive_atomic_temporary_bytes": drive_temporary,
+            "scratch_atomic_temporary_bytes": largest,
+            "scratch_optimizer_latest_copy_bytes": sizes["optimizer"],
+            "drive_required_free_bytes": len(saves) * snapshot_bytes + drive_temporary + margin,
+            "scratch_required_free_bytes": sum(sizes.values()) + len(saves) * snapshot_bytes +
+                largest + sizes["optimizer"] + margin,
+            "basis": "actual parent file sizes; state reserves at least 64 MiB; all snapshots retained; "
+                     "optimizer_latest may need a separate copy; temporary files and margins reserved",
+            "limitation": "filesystem free space is a point-in-time check, not a Drive quota or future-space guarantee"}
+
+
+def require_checkpoint_storage(parent: Path, scratch: Path, output: Path, steps: int,
+                               *, disk_usage=None, device_id=None) -> dict:
+    sizes = {kind: (parent / "checkpoints" / f"{'train_state' if kind == 'state' else kind}_step_30500.pt").stat().st_size
+             for kind in ("checkpoint", "optimizer", "state")}
+    plan = checkpoint_storage_requirements(sizes, steps)
+    drive_root = output.parent
+    while not drive_root.exists():
+        drive_root = drive_root.parent
+    usage = disk_usage or shutil.disk_usage
+    device = device_id or (lambda path: path.stat().st_dev)
+    drive_free, scratch_free = usage(drive_root).free, usage(scratch).free
+    shared = device(drive_root) == device(scratch)
+    plan.update(drive_checked_path=str(drive_root), scratch_checked_path=str(scratch),
+                drive_free_bytes=drive_free, scratch_free_bytes=scratch_free, shared_filesystem=shared)
+    combined = plan["drive_required_free_bytes"] + plan["scratch_required_free_bytes"]
+    if shared:
+        plan["shared_required_free_bytes"] = combined
+        enough = min(drive_free, scratch_free) >= combined
+    else:
+        enough = (drive_free >= plan["drive_required_free_bytes"] and
+                  scratch_free >= plan["scratch_required_free_bytes"])
+    if not enough:
+        raise RuntimeError("insufficient checkpoint storage before training: " + json.dumps(plan, ensure_ascii=False))
+    return plan
+
+
+def copy_checkpoint_artifact(source: Path, target: Path) -> str:
+    """Publish a new backup file after copy/hash verification; never alter source."""
+    if target.exists():
+        raise FileExistsError(f"backup destination already exists: {target}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_suffix(target.suffix + ".backup.part")
+    expected = sha(source)
+    with source.open("rb") as reader, temporary.open("xb") as writer:
+        shutil.copyfileobj(reader, writer, length=8 << 20)
+        writer.flush()
+        os.fsync(writer.fileno())
+    if sha(temporary) != expected:
+        raise RuntimeError(f"backup copy checksum differs: {source}")
+    if target.exists():
+        raise FileExistsError(f"backup destination appeared during copy: {target}")
+    os.replace(temporary, target)
+    if sha(target) != expected:
+        raise RuntimeError(f"published backup checksum differs: {target}")
+    return expected
+
+
+class IntermediateCheckpointBackup:
+    """Mirror completed native triplets into this launch's new branch only.
+
+    Final-step publication remains the main launcher's responsibility. An
+    intermediate receipt is recovery evidence, not training completion, model
+    evaluation or an implemented automatic-resume path. Errors are nonfatal to
+    final saving and are retained in backup_status.json and backup_events.jsonl.
+    """
+
+    def __init__(self, *, local: Path, output: Path, steps: int, binding: dict,
+                 state_loader, copy_file=copy_checkpoint_artifact, poll_seconds=5.0, stream=None):
+        self.local, self.output = Path(local), Path(output)
+        if self.local.resolve() == self.output.resolve() or self.output.resolve().is_relative_to(self.local.resolve()):
+            raise ValueError("backup output must be separate from local checkpoint sources")
+        if not 0 < poll_seconds <= 10:
+            raise ValueError("backup polling must be in (0, 10] seconds")
+        self.steps = checkpoint_steps(steps)[:-1]
+        self.final_step = PARENT_STEP + steps
+        self.binding = dict(binding)
+        self.state_loader, self.copy_file = state_loader, copy_file
+        self.poll_seconds = poll_seconds
+        self.stream = sys.stdout if stream is None else stream
+        self.saved, self.errors = {}, []
+        self.attempted = set()
+        self.stop_event = threading.Event()
+        self.thread = None
+        self.phase = "prepared"
+        self.active_step = None
+        self.local_log_dir = self.local.parent
+
+    def snapshot(self):
+        saved = dict(self.saved)
+        return {"state": self.phase, "updated_utc": stamp(), "final_step": self.final_step,
+                "planned_intermediate_steps": list(self.steps), "saved_steps": sorted(saved),
+                "pending_steps": [s for s in self.steps if s not in saved and s not in self.attempted],
+                "active_step": self.active_step, "errors": list(self.errors),
+                "automatic_resume_supported": False, "purpose": "intermediate recovery artifacts",
+                "final_checkpoint_saved_by": "main launcher after child success"}
+
+    def _record(self, event, **fields):
+        entry = {"event": event, "timestamp_utc": stamp(), **fields}
+        print("GECPU_CHECKPOINT_BACKUP " + json.dumps(entry, ensure_ascii=False), file=self.stream, flush=True)
+        # The local mirror preserves diagnostics when the Drive mount fails.
+        # Only this launch's new branch and private scratch files are written.
+        for folder in (self.output, self.local_log_dir):
+            try:
+                with (folder / "backup_events.jsonl").open("a", encoding="utf-8") as f:
+                    f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                    f.flush()
+                    os.fsync(f.fileno())
+                atomic_json(folder / "backup_status.json", self.snapshot())
+            except Exception as error:
+                issue = {"step": self.active_step, "operation": "backup_reporting",
+                         "path": str(folder), "error_type": type(error).__name__, "error": str(error)}
+                if issue not in self.errors:
+                    self.errors.append(issue)
+                print("GECPU_CHECKPOINT_BACKUP_REPORT_ERROR " + json.dumps(issue, ensure_ascii=False),
+                      file=self.stream, flush=True)
+
+    @staticmethod
+    def _fingerprint(path):
+        st = path.stat()
+        return st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns
+
+    def _save(self, step, sources):
+        fingerprints = {kind: self._fingerprint(path) for kind, path in sources.items()}
+        state = self.state_loader(sources["state"])
+        if (state.get("step") != step or state.get("practical_variant") != self.binding["variant"] or
+                state.get("new_curriculum_repeat") != self.binding["new_curriculum_repeat"] or
+                state.get("new_dataset_sampler_started") is not True):
+            raise RuntimeError(f"intermediate state binding differs at step {step}")
+        destination = self.output / "checkpoints"
+        receipt_path = destination / f"receipt_step_{step}.json"
+        if receipt_path.exists():
+            raise FileExistsError(f"intermediate receipt already exists: {receipt_path}")
+        receipt = {**self.binding, "step": step, "branch_from": PARENT_STEP,
+                   "planned_final_step": self.final_step, "state": "intermediate_backup_complete",
+                   "created_utc": stamp(), "purpose": "recovery_artifacts",
+                   "automatic_resume_supported": False, "final_training_complete": False,
+                   "evaluation": "not_run"}
+        for kind, source in sources.items():
+            target = destination / source.name
+            if target.exists():
+                raise FileExistsError(f"intermediate target already exists: {target}")
+            copied_sha = self.copy_file(source, target)
+            if sha(source) != copied_sha or sha(target) != copied_sha:
+                raise RuntimeError(f"intermediate copied bytes differ: {source.name}")
+            receipt[kind + "_sha256"] = copied_sha
+        if any(self._fingerprint(path) != fingerprints[kind] for kind, path in sources.items()):
+            raise RuntimeError("intermediate source changed while copying; no receipt published")
+        # None of the copied files qualify as a completed backup until this
+        # final atomic receipt appears. It is never a training_saved.json.
+        if receipt_path.exists():
+            raise FileExistsError(f"intermediate receipt appeared during copy: {receipt_path}")
+        atomic_json(receipt_path, receipt)
+        self.saved[step] = receipt
+
+    def poll_once(self):
+        for step in self.steps:
+            if step in self.attempted:
+                continue
+            sources = {kind: self.local / f"{'train_state' if kind == 'state' else kind}_step_{step}.pt"
+                       for kind in ("checkpoint", "optimizer", "state")}
+            # Native runtime writes each .pt via atomic replace, in the order
+            # model -> Adam -> RNG. A .tmp or two files never trigger a copy.
+            if not all(path.is_file() and path.stat().st_size > 0 for path in sources.values()):
+                continue
+            self.attempted.add(step)
+            self.active_step = step
+            self._record("intermediate_copy_started", step=step)
+            try:
+                self._save(step, sources)
+            except Exception as error:
+                self.errors.append({"step": step, "operation": "copy_or_validate",
+                                    "error_type": type(error).__name__, "error": str(error)})
+                self._record("intermediate_copy_failed", step=step, error_type=type(error).__name__, error=str(error))
+            else:
+                self._record("intermediate_copy_complete", step=step,
+                             receipt=str(self.output / "checkpoints" / f"receipt_step_{step}.json"))
+            finally:
+                self.active_step = None
+
+    def _loop(self):
+        self.phase = "watching"
+        self._record("backup_monitor_started", intermediate_steps=self.steps, final_step=self.final_step)
+        try:
+            while True:
+                self.poll_once()
+                if self.stop_event.wait(self.poll_seconds):
+                    break
+            self.poll_once()
+        except Exception as error:
+            self.errors.append({"step": self.active_step, "operation": "monitor",
+                                "error_type": type(error).__name__, "error": str(error)})
+        finally:
+            self.phase = ("stopped_with_errors" if self.errors else
+                          "complete" if len(self.saved) == len(self.steps) else "stopped_with_pending")
+            self._record("backup_monitor_stopped", state=self.phase)
+
+    def start(self):
+        self.thread = threading.Thread(target=self._loop, name="geocpu-checkpoint-backup", daemon=True)
+        try:
+            self.thread.start()
+        except Exception as error:
+            self.phase = "failed_to_start"
+            self.errors.append({"step": None, "operation": "start",
+                                "error_type": type(error).__name__, "error": str(error)})
+            self._record("backup_monitor_failed_to_start", error=str(error))
+
+    def request_stop(self):
+        self.stop_event.set()
+
+    def close(self, timeout=5.0):
+        self.request_stop()
+        if self.thread is not None and self.thread.ident is not None:
+            self.thread.join(timeout=timeout)
+            if self.thread.is_alive():
+                # A stuck Drive copy must not block publication of the final
+                # checkpoint. No receipt is claimed for an unfinished copy.
+                self.phase = "stopping_copy_in_progress"
+                self._record("backup_monitor_still_copying", step=self.active_step)
+        return self.snapshot()
+
+
 def build_command(*, source: Path, train: Path, corpus: Path, local: Path, output: Path,
                   steps: int, variant: str, repeat: int) -> list[str]:
     stop = PARENT_STEP + steps
@@ -262,13 +511,15 @@ def build_command(*, source: Path, train: Path, corpus: Path, local: Path, outpu
             "--telemetry_jsonl", str(output / "training_events.jsonl")]
 
 
-def main():
+def parse_args(argv=None):
+    """Parse the launch contract without reading files or loading a model."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--study", type=Path, default=STUDY)
     parser.add_argument("--parent-run", default=PARENT_RUN)
     parser.add_argument("--parent-step", type=int, default=PARENT_STEP)
     parser.add_argument("--output", type=Path, required=True, help="new, previously nonexistent branch directory")
-    parser.add_argument("--steps", type=int, default=1000)
+    parser.add_argument("--steps", type=int, default=10000,
+                        help="additional optimizer updates, 1..10000 (default: 10000)")
     parser.add_argument("--new-repeat", type=int, default=16)
     parser.add_argument("--variant", choices=VARIANTS, default="multistep")
     parser.add_argument("--prepared-parent", type=Path, help="optional exact-SHA cached train_30500.jsonl")
@@ -278,9 +529,14 @@ def main():
     parser.add_argument("--knowledge-manifest", type=Path, default=HERE / "data/knowledge_manifest.json")
     parser.add_argument("--preflight-only", action="store_true")
     parser.add_argument("--preflight-report", type=Path)
-    args = parser.parse_args()
-    if not 1 <= args.steps <= 2500 or not 1 <= args.new_repeat <= 16:
-        parser.error("pilot steps must be 1..2500 and new-repeat 1..16")
+    args = parser.parse_args(argv)
+    if not 1 <= args.steps <= 10000 or not 1 <= args.new_repeat <= 16:
+        parser.error("steps must be 1..10000 and new-repeat 1..16")
+    return args
+
+
+def main():
+    args = parse_args()
     study, output = args.study.resolve(), args.output.resolve()
     if output.exists() or output == study or output.is_relative_to(study / args.parent_run):
         raise FileExistsError("the candidate output must be a new branch, outside the parent branch")
@@ -312,10 +568,11 @@ def main():
             repeat=repeat, min_new=0 if args.variant == "replay_only" else 1000)
     runtime, diff = source / "runtime_practical_v1.py", scratch / "runtime_practical_v1.diff"
     runtime_binding = write_runtime(original / "training/runtime_30500.py", runtime, diff)
+    storage = require_checkpoint_storage(parent, scratch, output, args.steps)
     report = {"event": "cpu_preflight", "created_utc": stamp(), "model_updates": 0,
               "parent_binding": parent_binding, "parent_checkpoint_sha256": parent_receipt["checkpoint_sha256"],
               "variant": args.variant, "steps": args.steps, "manifest": manifest, "preview": preview,
-              "runtime": runtime_binding, "scratch": str(scratch),
+              "runtime": runtime_binding, "scratch": str(scratch), "checkpoint_storage": storage,
               "gpu_execution": "not_started", "evaluation": "pending",
               "parent_checkpoint_sha_source": "pinned receipt; file bytes checked when copying for training"}
     new_json(scratch / "preflight.json", report)
@@ -328,13 +585,9 @@ def main():
     torch = check_a100()
     local = scratch / "checkpoints"
     local.mkdir()
-    model_bytes = (parent / "checkpoints/checkpoint_step_30500.pt").stat().st_size
-    optimizer_bytes = (parent / "checkpoints/optimizer_step_30500.pt").stat().st_size
-    check_root = output.parent
-    while not check_root.exists():
-        check_root = check_root.parent
-    if shutil.disk_usage(check_root).free < model_bytes + optimizer_bytes + 1_500_000_000:
-        raise RuntimeError("insufficient room for a separate candidate checkpoint, Adam and RNG state")
+    # Recheck immediately before the first large parent copy. The preflight
+    # calculation covers all periodic saves, not only the final checkpoint.
+    require_checkpoint_storage(parent, scratch, output, args.steps)
     for kind, destination in (("checkpoint", "checkpoint_step_30500.pt"),
                               ("optimizer", "optimizer_latest.pt"),
                               ("state", "train_state_step_30500.pt")):
@@ -356,6 +609,8 @@ def main():
             "learning_rate": 3e-6, "step_token_budget": 36864,
             "sampler_deliberately_reset": True, "model_adam_rng_restore_required": True,
             "runtime": runtime_binding, "deterministic_preview": preview,
+            "checkpoint_storage": storage, "intermediate_backup_steps": checkpoint_steps(args.steps)[:-1],
+            "intermediate_backup_purpose": "recovery artifacts; no automatic resume is implemented",
             "retention": "not yet evaluated; training settings alone do not guarantee retention"}
     new_json(output / "fork_from_30500.json", fork)
     shutil.copyfile(manifest_file, output / "input_manifest.json")
@@ -364,8 +619,17 @@ def main():
     shutil.copyfile(diff, output / "runtime_practical_v1.diff")
     command = build_command(source=source, train=train, corpus=corpus, local=local, output=output,
                             steps=args.steps, variant=args.variant, repeat=repeat)
+    backup = IntermediateCheckpointBackup(local=local, output=output, steps=args.steps,
+        state_loader=lambda path: torch.load(path, map_location="cpu", weights_only=True),
+        binding={"training_data_sha256": manifest["output_sha256"],
+                 "parent_sha256": parent_receipt["checkpoint_sha256"],
+                 "source_receipt_sha256": parent_binding["receipt_sha256"],
+                 "runtime_sha256": runtime_binding["candidate_sha256"], "variant": args.variant,
+                 "new_curriculum_repeat": repeat, "teacher_sha256": parent_receipt["checkpoint_sha256"]})
     try:
+        backup.start()
         returncode = run_with_logging(command, output / "console", cwd=source)
+        backup.request_stop()
         if returncode:
             raise RuntimeError(f"training child failed with exit {returncode}; inspect {output / 'console/console.log'}")
         state = torch.load(local / f"train_state_step_{stop}.pt", map_location="cpu", weights_only=True)
@@ -399,6 +663,7 @@ def main():
                   "timestamp_utc": stamp(), "scratch_preserved": str(scratch), "evaluation": "pending"})
         raise
     finally:
+        backup.close()
         if active.exists() and read_json(active).get("pid") == os.getpid():
             active.unlink()
 

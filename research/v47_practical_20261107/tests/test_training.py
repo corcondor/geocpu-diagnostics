@@ -2,7 +2,9 @@
 from __future__ import annotations
 import ast
 import copy
+from contextlib import redirect_stderr
 import hashlib
+import io
 import json
 from pathlib import Path
 import random
@@ -15,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from prepare_training import (NEW_GROUP, manifest_train, normalization_table,
                               original_classes, patched_runtime, prepare_dataset,
                               preview_plan, sha, split_sequence, validate_new_row)
-from train_candidate import active_work, build_command, fixed_heldouts
+from train_candidate import active_work, build_command, fixed_heldouts, parse_args
 
 PACKAGE = Path(__file__).resolve().parents[1]
 RUNTIME = PACKAGE / "frozen/continue/training/runtime_30500.py"
@@ -193,6 +195,60 @@ class TrainingPreparationTests(unittest.TestCase):
         self.assertIn(PACKAGE / "data/knowledge_dev.jsonl", paths)
         self.assertIn(PACKAGE / "data/knowledge_free_dev.jsonl", paths)
         self.assertNotIn(PACKAGE / "data/knowledge_train.jsonl", paths)
+
+    def test_cli_default_is_ten_thousand_additional_updates_without_side_effects(self):
+        destination = self.root / "new_branch"
+        args = parse_args(["--output", str(destination), "--preflight-only"])
+        self.assertEqual((args.parent_step, args.steps, args.new_repeat), (30500, 10000, 16))
+        self.assertEqual(args.variant, "multistep")
+        self.assertTrue(args.preflight_only)
+        self.assertFalse(destination.exists())
+
+    def test_cli_accepts_additional_update_boundaries_and_short_controls(self):
+        for steps in (1, 1000, 2500, 9999, 10000):
+            with self.subTest(steps=steps):
+                args = parse_args(["--output", str(self.root / "new_branch"), "--steps", str(steps)])
+                self.assertEqual(args.steps, steps)
+
+    def test_cli_rejects_out_of_range_updates_before_any_file_access(self):
+        for steps in (-1, 0, 10001):
+            with self.subTest(steps=steps), redirect_stderr(io.StringIO()) as errors:
+                with self.assertRaises(SystemExit) as stopped:
+                    parse_args(["--output", str(self.root / "new_branch"), "--steps", str(steps)])
+                self.assertEqual(stopped.exception.code, 2)
+                self.assertIn("steps must be 1..10000", errors.getvalue())
+        self.assertFalse((self.root / "new_branch").exists())
+
+    def test_ten_thousand_update_cli_keeps_repeat_limit(self):
+        for repeat in (0, 17):
+            with self.subTest(repeat=repeat), redirect_stderr(io.StringIO()) as errors:
+                with self.assertRaises(SystemExit) as stopped:
+                    parse_args(["--output", str(self.root / "new_branch"), "--steps", "10000",
+                                "--new-repeat", str(repeat)])
+                self.assertEqual(stopped.exception.code, 2)
+                self.assertIn("new-repeat 1..16", errors.getvalue())
+
+    def test_ten_thousand_update_command_targets_40500_and_keeps_protection(self):
+        for variant in ("multistep", "answer_only", "replay_only"):
+            with self.subTest(variant=variant):
+                args = parse_args(["--output", str(self.root / "new_branch"), "--variant", variant])
+                cmd = build_command(source=self.root, train=self.data, corpus=self.holdout,
+                                    local=self.root, output=args.output, steps=args.steps,
+                                    variant=args.variant, repeat=args.new_repeat)
+                def arg(name):
+                    return cmd[cmd.index(name) + 1]
+                self.assertEqual((arg("--max_steps"), arg("--stop_at_step")), ("40500", "40500"))
+                self.assertEqual((arg("--phase_start"), arg("--required_start_step")), ("30500", "30500"))
+                self.assertEqual((arg("--phase_lr"), arg("--phase_floor")), ("3e-6", "3e-6"))
+                self.assertEqual(arg("--step_tokens"), "36864")
+                self.assertEqual(arg("--min_replay_share"), "0.75")
+                self.assertEqual(arg("--distill_teacher"), arg("--warmstart_path"))
+                self.assertEqual((arg("--distill_weight"), arg("--distill_temperature")), ("1.0", "1.0"))
+                self.assertEqual(arg("--new_group_min_exposures"), "0" if variant == "replay_only" else "1000")
+                self.assertEqual(arg("--new_curriculum_repeat"), "1" if variant == "replay_only" else "16")
+                for flag in ("--mask_tool_output", "--save_optimizer", "--new_dataset_sampler"):
+                    self.assertIn(flag, cmd)
+                self.assertTrue(arg("--resume_state").endswith("train_state_step_30500.pt"))
 
 
 if __name__ == "__main__":

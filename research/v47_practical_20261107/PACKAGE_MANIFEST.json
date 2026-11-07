@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "release": "v47_practical_20261107",
+  "release": "v47_practical_20261107_10k",
   "model_performance_evaluated": false,
   "files": [
     {
@@ -29,9 +29,14 @@
       "size_bytes": 13815
     },
     {
+      "path": "GeoCPU_practical_training_logging_20261107_10k.ipynb",
+      "sha256": "ce85cd4637b5a6cf83e0f67672c2555f45fdecb6ab87b9d197aeee7953d44b54",
+      "size_bytes": 17054
+    },
+    {
       "path": "GeoCPU_practical_training_logging_brief_20261107.md",
-      "sha256": "be870cdfc3f043ca54a92c9ac09c491ccf40c033bde75a1d8147a9dd2bdd7682",
-      "size_bytes": 8647
+      "sha256": "9e015f3453636226869afd169ddcef94527aee11105b27a44a7f07c9c9dc9ae1",
+      "size_bytes": 10354
     },
     {
       "path": "KNOWLEDGE.md",
@@ -45,18 +50,18 @@
     },
     {
       "path": "README_JA.md",
-      "sha256": "14355b0894a6a1f5e2e8d09f7b4e2bf886af89f952c54316ffdb12fcb9a0d6f4",
-      "size_bytes": 5643
+      "sha256": "a7da8b17920a9f177dc9a41b8edbe1f25fbbff5c7f2e97436a655e0527f55ada",
+      "size_bytes": 6957
     },
     {
       "path": "RESEARCH_LOG.md",
-      "sha256": "a0f62b8c4985ab668907d7835df16dcd313a717dbc38a454a130d95d2e278be4",
-      "size_bytes": 2873
+      "sha256": "4f4f1f691df0e0a66916aeb5d58f64a714374a0663063dfcde75251197f60753",
+      "size_bytes": 6376
     },
     {
       "path": "TRAINING.md",
-      "sha256": "04d7951912d09496075232ba78ec30a5e01c4ee3864db74bbc2575d3969ee4aa",
-      "size_bytes": 11435
+      "sha256": "3a88d450e043ad05191988b4d4cd261a1b0c8d6bed9276743592e18ac2ddb7e8",
+      "size_bytes": 14628
     },
     {
       "path": "build_curriculum.py",
@@ -564,6 +569,11 @@
       "size_bytes": 1147
     },
     {
+      "path": "tests/test_checkpoint_backup.py",
+      "sha256": "356c8f8adbd043f4401ab5c5d5ed04e91e65c6cf3ce871c4f3c58356a4682aec",
+      "size_bytes": 11086
+    },
+    {
       "path": "tests/test_compare_results.py",
       "sha256": "fea3560cea378efe934388c5e41faae49cb9bf0c6a089052bd5bad2c0825c2bd",
       "size_bytes": 16659
@@ -600,13 +610,18 @@
     },
     {
       "path": "tests/test_training.py",
-      "sha256": "5b3e68b5213024f39697e1b026bec27ccbf3fc55f29d23258ef110d07a8d2109",
-      "size_bytes": 11715
+      "sha256": "ae0e46fb5cd7e75aa575d2ae674d357e9edd19124104738b8d57816219d5a598",
+      "size_bytes": 15374
     },
     {
       "path": "train_candidate.py",
-      "sha256": "a360d96ec77d82b1c0397fe3bb67d69364a78e479a5c4234a33e432328481fbd",
-      "size_bytes": 23871
+      "sha256": "0353bac44053b68e705030a8b3764e5e248d2212709429cb23cf3d5e32adaa71",
+      "size_bytes": 38579
+    },
+    {
+      "path": "verification_10k_cpu.json",
+      "sha256": "7bbc9b78992a05312bec188a44c63a6cabffa13c1a753dd4c78e4fd7f6d8a895",
+      "size_bytes": 2905
     },
     {
       "path": "verification_cpu.json",
