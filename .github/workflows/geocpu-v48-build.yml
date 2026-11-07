@@ -31,7 +31,14 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add research/v48_balanced_augmentation_20261108/data
+          # Root .gitignore excludes *.jsonl; explicitly add the verified selfauthored snapshots.
+          git add -f research/v48_balanced_augmentation_20261108/data/*.jsonl
+          git add research/v48_balanced_augmentation_20261108/data/manifest.json
+          count=$(git ls-files research/v48_balanced_augmentation_20261108/data/*.jsonl | wc -l)
+          if [ "$count" -ne 12 ]; then
+            echo "Expected 12 JSONL datasets; found $count"
+            exit 1
+          fi
           if ! git diff --cached --quiet; then
             git commit -m 'data(v48): publish verified synthetic additive training/development sets'
             git push origin HEAD:${{ github.head_ref }}
