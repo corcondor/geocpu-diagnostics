@@ -1,0 +1,125 @@
+{
+  "version": "v48_additive_20261108",
+  "old_parent_unchanged": 422500,
+  "old_v47_additions_unchanged": 848,
+  "files": {
+    "python_train.jsonl": {
+      "rows": 1024,
+      "sha256": "ee21cb47a9b73b6b2af7fb47091e2f78f552b8772ded61cbcb9804d7208bc3ca",
+      "bytes": 1971614
+    },
+    "python_dev.jsonl": {
+      "rows": 128,
+      "sha256": "8a3a6e612d52cbba206b1d34f0038c75190eee30334a169d4e010092368a21a4",
+      "bytes": 234688
+    },
+    "python_unseen_eval.jsonl": {
+      "rows": 128,
+      "sha256": "6c31cb4a762599a450ecec28aad82ada0e9ca5bb7b9798785adcd5aff23216eb",
+      "bytes": 236436
+    },
+    "logic_train.jsonl": {
+      "rows": 1024,
+      "sha256": "62a0666cb0a3e946d6e931f95396da8699cf863e9d26a8b3bcb3032635b19e34",
+      "bytes": 1160980
+    },
+    "logic_dev.jsonl": {
+      "rows": 128,
+      "sha256": "15997bb9ecdc59aed0543553f5e34f595f05c5cae740cd8efb874058a634348e",
+      "bytes": 136899
+    },
+    "logic_unseen_eval.jsonl": {
+      "rows": 128,
+      "sha256": "0e6a678f3d2cd0c2db9e0b74c824e3be277a40aa3e10b2dae0cfeeda57942b13",
+      "bytes": 143884
+    },
+    "evidence_train.jsonl": {
+      "rows": 1024,
+      "sha256": "c2beee15a4637567e48204652fa060ab2aa9f70e2e378cebead97d8fa040bab4",
+      "bytes": 2115355
+    },
+    "evidence_dev.jsonl": {
+      "rows": 128,
+      "sha256": "4bbd7baea8f820e5368800cf7d25123c72473c7b1e2c1a5e6f159c19e194b02c",
+      "bytes": 249105
+    },
+    "evidence_unseen_eval.jsonl": {
+      "rows": 128,
+      "sha256": "fb84dfb4c46d53e86a1299db8c3fc79081618f6459a183f2e17d7a34f3509cf9",
+      "bytes": 284714
+    },
+    "japanese_train.jsonl": {
+      "rows": 1024,
+      "sha256": "4ffccb1405db26af58e304c93cdce9769aafe389f01962f1337128ec317d8a62",
+      "bytes": 1115712
+    },
+    "japanese_dev.jsonl": {
+      "rows": 128,
+      "sha256": "4c86cbe4fec84f3c5fff2899857a2223e5a823817221d37c2dcb1941366e399d",
+      "bytes": 139248
+    },
+    "japanese_unseen_eval.jsonl": {
+      "rows": 128,
+      "sha256": "316bb1e2ab544e5c89187ca61cdc73d6da4bda1825592c18555bf0d3ff37b17a",
+      "bytes": 144896
+    }
+  },
+  "categories": {
+    "python": {
+      "train": {
+        "rows": 1024,
+        "unique_prompts": 1024
+      },
+      "dev": {
+        "rows": 128,
+        "unique_prompts": 128
+      },
+      "unseen_eval": {
+        "rows": 128,
+        "unique_prompts": 128
+      }
+    },
+    "logic": {
+      "train": {
+        "rows": 1024,
+        "unique_prompts": 1024
+      },
+      "dev": {
+        "rows": 128,
+        "unique_prompts": 128
+      },
+      "unseen_eval": {
+        "rows": 128,
+        "unique_prompts": 128
+      }
+    },
+    "evidence": {
+      "train": {
+        "rows": 1024,
+        "unique_prompts": 1024
+      },
+      "dev": {
+        "rows": 128,
+        "unique_prompts": 128
+      },
+      "unseen_eval": {
+        "rows": 128,
+        "unique_prompts": 128
+      }
+    },
+    "japanese": {
+      "train": {
+        "rows": 1024,
+        "unique_prompts": 1024
+      },
+      "dev": {
+        "rows": 128,
+        "unique_prompts": 128
+      },
+      "unseen_eval": {
+        "rows": 128,
+        "unique_prompts": 128
+      }
+    }
+  }
+}

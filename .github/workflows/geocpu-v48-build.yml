@@ -1,0 +1,80 @@
+name: Rebuild and publish GeoCPU v48 additive selfauthored data
+on:
+  pull_request:
+    paths:
+      - 'research/v48_balanced_augmentation_20261108/**'
+      - '.github/workflows/geocpu-v48-build.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  generate-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Generate and check reference Python execution
+        run: |
+          python research/v48_balanced_augmentation_20261108/generate_dataset.py --output /tmp/geocpu_v48_build --verify
+      - name: Deterministic reproduction
+        run: |
+          python research/v48_balanced_augmentation_20261108/generate_dataset.py --output /tmp/geocpu_v48_verify
+          diff -rq /tmp/geocpu_v48_build /tmp/geocpu_v48_verify
+          cmp research/v48_balanced_augmentation_20261108/data/manifest.json /tmp/geocpu_v48_build/manifest.json
+          cp /tmp/geocpu_v48_build/*.jsonl research/v48_balanced_augmentation_20261108/data/
+      - name: Check 40500 continuation launcher without executing GPU
+        run: |
+          python -m py_compile research/v48_balanced_augmentation_20261108/train_from_40500.py
+          python research/v48_balanced_augmentation_20261108/train_from_40500.py --help >/tmp/v48_help.txt
+          python - <<'PY'
+          import runpy
+          mod=runpy.run_path("research/v48_balanced_augmentation_20261108/train_from_40500.py",run_name="v48_test")
+          f=mod["assess_exposure"]
+          old={"source_supervised_tokens":{"original_parent":700,"python_docs_ja":300}}
+          current={"source_supervised_tokens":{"original_parent":700,"python_docs_ja":300,
+            "v48_python":150,"v48_logic":150,"v48_evidence":150,"v48_japanese":150}}
+          assert f(old,current)["passed"]
+          current["source_supervised_tokens"]["original_parent"]=699
+          assert not f(old,current)["passed"]
+          current["source_supervised_tokens"]["original_parent"]=700
+          current["source_supervised_tokens"]["v48_japanese"]=10
+          assert not f(old,current)["passed"]
+          print("40500 launcher import, syntax, exposure checks passed; GPU not executed")
+          PY
+      - name: Validate Colab notebook code is syntactically correct
+        run: |
+          python - <<'PY'
+          import ast,json
+          nb=json.load(open("research/v48_balanced_augmentation_20261108/GeoCPU_v48_Colab_40500_to_balanced.ipynb",encoding="utf-8"))
+          assert nb["nbformat"]==4
+          for cell in nb["cells"]:
+              if cell["cell_type"]=="code":
+                  assert not cell.get("outputs")
+                  ast.parse("".join(cell["source"]))
+          print("Colab bootstrap cell passed static validation; GPU not executed")
+          PY
+      - name: Test no-reduction exposure gate
+        run: python -m unittest discover -s research/v48_balanced_augmentation_20261108 -p 'test_exposure_gate.py' -v
+      - name: Commit generated licensed selfauthored data
+        if: github.event_name == 'pull_request'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          # Root .gitignore excludes *.jsonl; explicitly add the verified selfauthored snapshots.
+          git add -f research/v48_balanced_augmentation_20261108/data/*.jsonl
+          git add research/v48_balanced_augmentation_20261108/data/manifest.json
+          count=$(git ls-files research/v48_balanced_augmentation_20261108/data/*.jsonl | wc -l)
+          if [ "$count" -ne 12 ]; then
+            echo "Expected 12 JSONL datasets; found $count"
+            exit 1
+          fi
+          if ! git diff --cached --quiet; then
+            git commit -m 'data(v48): publish verified synthetic additive training/development sets'
+            git push origin HEAD:${{ github.head_ref }}
+          fi
