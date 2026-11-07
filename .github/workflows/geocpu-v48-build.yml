@@ -28,6 +28,25 @@ jobs:
           diff -rq /tmp/geocpu_v48_build /tmp/geocpu_v48_verify
           cmp research/v48_balanced_augmentation_20261108/data/manifest.json /tmp/geocpu_v48_build/manifest.json
           cp /tmp/geocpu_v48_build/*.jsonl research/v48_balanced_augmentation_20261108/data/
+      - name: Check 40500 continuation launcher without executing GPU
+        run: |
+          python -m py_compile research/v48_balanced_augmentation_20261108/train_from_40500.py
+          python research/v48_balanced_augmentation_20261108/train_from_40500.py --help >/tmp/v48_help.txt
+          python - <<'PY'
+          import runpy
+          mod=runpy.run_path("research/v48_balanced_augmentation_20261108/train_from_40500.py",run_name="v48_test")
+          f=mod["assess_exposure"]
+          old={"source_supervised_tokens":{"original_parent":700,"python_docs_ja":300}}
+          current={"source_supervised_tokens":{"original_parent":700,"python_docs_ja":300,
+            "v48_python":150,"v48_logic":150,"v48_evidence":150,"v48_japanese":150}}
+          assert f(old,current)["passed"]
+          current["source_supervised_tokens"]["original_parent"]=699
+          assert not f(old,current)["passed"]
+          current["source_supervised_tokens"]["original_parent"]=700
+          current["source_supervised_tokens"]["v48_japanese"]=10
+          assert not f(old,current)["passed"]
+          print("40500 launcher import, syntax, exposure checks passed; GPU not executed")
+          PY
       - name: Test no-reduction exposure gate
         run: python -m unittest discover -s research/v48_balanced_augmentation_20261108 -p 'test_exposure_gate.py' -v
       - name: Commit generated licensed selfauthored data
