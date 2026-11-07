@@ -1,0 +1,38 @@
+name: Rebuild and publish GeoCPU v48 additive selfauthored data
+on:
+  pull_request:
+    paths:
+      - 'research/v48_balanced_augmentation_20261108/**'
+      - '.github/workflows/geocpu-v48-build.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  generate-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Generate and check reference Python execution
+        run: |
+          python research/v48_balanced_augmentation_20261108/generate_dataset.py --output research/v48_balanced_augmentation_20261108/data --verify
+      - name: Deterministic reproduction
+        run: |
+          python research/v48_balanced_augmentation_20261108/generate_dataset.py --output /tmp/geocpu_v48_verify
+          diff -rq research/v48_balanced_augmentation_20261108/data /tmp/geocpu_v48_verify
+      - name: Commit generated licensed selfauthored data
+        if: github.event_name == 'pull_request'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add research/v48_balanced_augmentation_20261108/data
+          if ! git diff --cached --quiet; then
+            git commit -m 'data(v48): publish verified synthetic additive training/development sets'
+            git push origin HEAD:${{ github.head_ref }}
+          fi
