@@ -21,11 +21,13 @@ jobs:
           python-version: '3.11'
       - name: Generate and check reference Python execution
         run: |
-          python research/v48_balanced_augmentation_20261108/generate_dataset.py --output research/v48_balanced_augmentation_20261108/data --verify
+          python research/v48_balanced_augmentation_20261108/generate_dataset.py --output /tmp/geocpu_v48_build --verify
       - name: Deterministic reproduction
         run: |
           python research/v48_balanced_augmentation_20261108/generate_dataset.py --output /tmp/geocpu_v48_verify
-          diff -rq research/v48_balanced_augmentation_20261108/data /tmp/geocpu_v48_verify
+          diff -rq /tmp/geocpu_v48_build /tmp/geocpu_v48_verify
+          cmp research/v48_balanced_augmentation_20261108/data/manifest.json /tmp/geocpu_v48_build/manifest.json
+          cp /tmp/geocpu_v48_build/*.jsonl research/v48_balanced_augmentation_20261108/data/
       - name: Commit generated licensed selfauthored data
         if: github.event_name == 'pull_request'
         run: |
