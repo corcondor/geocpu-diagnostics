@@ -1,0 +1,250 @@
+--- runtime_30500.py (unchanged original)
++++ runtime_practical_v1.py (candidate)
+@@ -146,6 +146,8 @@
+         self.max_len = max_len
+         self.samples = []
+         self.groups = []
++        self.origins = []
++        self.supervised_counts = []
+         t0 = time.time()
+         n_rows = n_spans = n_dropped = masked = target_tok = long_rows = 0
+         with open(jsonl_path, "r", encoding="utf-8") as f:
+@@ -165,8 +167,7 @@
+                     raise RuntimeError(f"row {n_rows} has fewer than two tokens")
+                 spans = tuple((int(s), int(e)) for s, e in spans if int(s) < len(tokens))
+                 long_rows += int(len(tokens) + 1 > max_len)
+-                is_v43 = (item.get("_v46_group") == "original_parent"
+-                          and not str(item.get("source", "")).startswith("bridge_py:"))
++                is_v43 = str(item.get("_v46_group", "legacy")) != "practical_multistep_v1"
+                 for chunk, pl, local_spans in self.split_sequence(tokens, prompt_len, spans, max_len):
+                     n_spans += len(local_spans)
+                     target_tok += len(chunk) - pl
+@@ -174,6 +175,8 @@
+                                   if min(e, len(chunk)) > max(s, pl))
+                     self.samples.append((chunk, pl, local_spans, is_v43))
+                     self.groups.append(str(item.get("_v46_group", "legacy")))
++                    self.origins.append(str(item.get("_practical_source", item.get("_v46_group", "legacy"))))
++                    self.supervised_counts.append(practical_supervised_count(chunk, pl, local_spans))
+         self.stats = {"rows": n_rows, "spans": n_spans, "rows_with_unaligned_spans_dropped": n_dropped,
+                       "long_rows_chunked": long_rows, "samples_after_chunking": len(self.samples),
+                       "masked_target_token_share": masked / max(1, target_tok)}
+@@ -330,6 +333,21 @@
+     return lr
+ 
+ 
++def practical_supervised_count(chunk, prompt_len, spans):
++    first = max(1, int(prompt_len))
++    return len(chunk) - first - sum(max(0, min(e, len(chunk)) - max(s, first)) for s, e in spans)
++
++
++def practical_telemetry(path, event):
++    record = dict(event, timestamp_utc=datetime.now(timezone.utc).isoformat())
++    line = json.dumps(record, ensure_ascii=False, sort_keys=True, allow_nan=False)
++    with open(path, "a", encoding="utf-8") as sink:
++        sink.write(line + "\n")
++        sink.flush()
++        os.fsync(sink.fileno())
++    print("GECPU_TRAIN_EVENT " + line, flush=True)
++
++
+ def main():
+     parser = argparse.ArgumentParser(description="GeoCPU v43: Knowledge-Relational & Search Co-Training Runtime")
+     parser.add_argument("--train_path", type=str, default=str(ROOT / "data" / "train_v43_knowledge_unified.jsonl"))
+@@ -363,7 +381,7 @@
+     parser.add_argument("--numina_repeat", type=int, default=1, help="planned per-phase presentation multiplier 1..4")
+     parser.add_argument("--new_phase_sampler", action="store_true", help="intentionally reset sampler at a 2500-step curriculum boundary")
+     parser.add_argument("--new_dataset_sampler", action="store_true", help="explicitly reset sampler after a SHA-pinned append; restore model, Adam and all RNG")
+-    parser.add_argument("--new_curriculum_repeat", type=int, default=1, help="presentation multiplier for appended python_tir_30500 rows")
++    parser.add_argument("--new_curriculum_repeat", type=int, default=1, help="presentation multiplier for appended practical_multistep_v1 rows")
+     parser.add_argument("--new_group_min_exposures", type=int, default=1000, help="minimum deterministic new-row presentations before first update")
+     parser.add_argument("--distill_teacher", type=str, default="",
+                         help="v44b r4: frozen teacher checkpoint (v43); adds weight*KL(teacher||student) on v43 rows only")
+@@ -371,7 +389,12 @@
+     parser.add_argument("--distill_temperature", type=float, default=1.0)
+     parser.add_argument("--mask_tool_output", action="store_true",
+                         help="v44b r2: exclude each row's loss_mask_spans (injected ```output blocks, failed first attempts) from the loss")
++    parser.add_argument("--practical_variant", choices=("multistep", "answer_only", "replay_only"), default="multistep")
++    parser.add_argument("--telemetry_jsonl", required=True)
++    parser.add_argument("--min_replay_share", type=float, default=0.75)
+     args = parser.parse_args()
++    if not 0.75 <= args.min_replay_share <= 1.0:
++        raise RuntimeError("replay supervised-token floor must be at least 0.75")
+ 
+     print("=" * 95)
+     print(f"[{now_iso()}] V43 SCALED 247.5M KNOWLEDGE-RELATIONAL & SEARCH CO-TRAINING ENGINE")
+@@ -485,23 +508,29 @@
+             for _ in range(args.numina_repeat - 1):
+                 dataset.samples.extend(originals)
+                 dataset.groups.extend(["numina_tir"] * len(originals))
++                dataset.origins.extend([dataset.origins[i] for i in numina_indices])
++                dataset.supervised_counts.extend([dataset.supervised_counts[i] for i in numina_indices])
+         print(f"[v46 curriculum] numina_presentation_multiplier={args.numina_repeat} "
+               f"unique_numina={len(set(i for i,g in enumerate(dataset.groups) if g == 'numina_tir')) // args.numina_repeat}", flush=True)
+         if not 1 <= args.new_curriculum_repeat <= 16:
+             raise RuntimeError("new curriculum repeat must be 1..16")
+-        new_indices = [i for i, group in enumerate(dataset.groups) if group == "python_tir_30500"]
++        new_indices = [i for i, group in enumerate(dataset.groups) if group == "practical_multistep_v1"]
+         if args.new_dataset_sampler:
+             if not args.resume_state or not args.save_optimizer or not isinstance(dataset, ToolMaskedDataset):
+                 raise RuntimeError("new dataset phase requires masked data and exact model/Adam/RNG resume")
+-            if not new_indices:
+-                raise RuntimeError("explicit new dataset phase has no python_tir_30500 rows")
++            if not new_indices and args.practical_variant != "replay_only":
++                raise RuntimeError("explicit new dataset phase has no practical_multistep_v1 rows")
++            if args.practical_variant == "replay_only" and (new_indices or args.new_curriculum_repeat != 1 or args.new_group_min_exposures != 0):
++                raise RuntimeError("replay-only requires no new rows, repeat=1 and exposure floor=0")
+         if args.new_curriculum_repeat > 1:
+             if not new_indices:
+                 raise RuntimeError("new curriculum rows absent from verified dataset")
+             originals = [dataset.samples[i] for i in new_indices]
+             for _ in range(args.new_curriculum_repeat - 1):
+                 dataset.samples.extend(originals)
+-                dataset.groups.extend(["python_tir_30500"] * len(originals))
++                dataset.groups.extend(["practical_multistep_v1"] * len(originals))
++                dataset.origins.extend([dataset.origins[i] for i in new_indices])
++                dataset.supervised_counts.extend([dataset.supervised_counts[i] for i in new_indices])
+         print(f"[new curriculum] unique_rows={len(new_indices)} presentation_multiplier={args.new_curriculum_repeat}", flush=True)
+         batch_sampler = ResumableTokenBucketSampler(
+             dataset,
+@@ -592,6 +621,10 @@
+                      "numpy": (ns[0], ns[1].tolist(), ns[2], ns[3], ns[4]),
+                      "loader_generator": loader_generator.get_state(),
+                      "source_exposures": exposure_counts,
++                     "practical_phase_sources": phase_sources,
++                     "practical_supervised_tokens": phase_supervised,
++                     "practical_replay_supervised_tokens": phase_replay_supervised,
++                     "practical_variant": args.practical_variant,
+                      "numina_repeat": args.numina_repeat,
+                      "new_curriculum_repeat": args.new_curriculum_repeat,
+                      "new_dataset_sampler_started": bool(args.new_dataset_sampler),
+@@ -624,17 +657,24 @@
+             for p_ in teacher.parameters():
+                 p_.requires_grad_(False)
+             print(f"  v44b r4 distillation: teacher {args.distill_teacher} | weight {args.distill_weight} | "
+-                  f"T {args.distill_temperature} | applied to v43 rows only", flush=True)
++                  f"T {args.distill_temperature} | applied to ALL replay rows; new practical rows excluded", flush=True)
+ 
+         print(f"\nStarting Knowledge Co-Training from step {start_step} to {args.max_steps}...")
+         step = start_step
+         running_loss = 0.0
+-        log_interval = 50
++        log_interval = 10
+         checkpoint_interval = 2500
+         t_start = time.time()
+ 
+         model.train()
+         exposure_counts = {key: 0 for key in set(dataset.groups)}
++        phase_sources = {}
++        phase_source_tokens = {}
++        phase_source_supervised = {}
++        phase_supervised = 0
++        phase_replay_supervised = 0
++        phase_input_tokens = 0
++        phase_padded_tokens = 0
+         # Construct the loader iterator before restoring the recorded RNG: even
+         # a zero-worker DataLoader may draw a private base seed in __iter__.
+         data_iter = iter(dataloader)
+@@ -651,7 +691,7 @@
+             if args.new_dataset_sampler:
+                 if args.new_phase_sampler or int(state["numina_repeat"]) != args.numina_repeat:
+                     raise RuntimeError("new dataset phase must retain the recorded Numina multiplier")
+-                if args.stop_at_step <= start_step or args.new_group_min_exposures < 1000:
++                if args.stop_at_step <= start_step or (args.new_group_min_exposures < 1000 and args.practical_variant != "replay_only"):
+                     raise RuntimeError("new dataset phase needs a stop step and exposure floor >=1000")
+                 print("[new dataset] parent sampler cursor deliberately retired; new sampler begins at epoch 1", flush=True)
+             elif args.new_phase_sampler:
+@@ -677,7 +717,7 @@
+                 torch.cuda.set_rng_state_all(state["torch_cuda"])
+             loader_generator.set_state(state["loader_generator"])
+         planned_new_exposures = None
+-        new_group_start_exposures = exposure_counts.get("python_tir_30500", 0)
++        new_group_start_exposures = exposure_counts.get("practical_multistep_v1", 0)
+         if args.new_dataset_sampler:
+             # Preview the private sampler without consuming the training sampler or global RNG.
+             preview = ResumableTokenBucketSampler(
+@@ -685,17 +725,32 @@
+                 megabucket_mult=32, seed=460006 + args.numina_repeat)
+             iterator = iter(preview)
+             planned = 0
++            planned_sources = {}
++            planned_supervised = 0
++            planned_replay = 0
+             for _ in range(args.stop_at_step - start_step):
+                 try:
+                     indices = next(iterator)
+                 except StopIteration:
+                     iterator = iter(preview)
+                     indices = next(iterator)
+-                planned += sum(dataset.groups[index] == "python_tir_30500" for index in indices)
++                planned += sum(dataset.groups[index] == "practical_multistep_v1" for index in indices)
++                for index in indices:
++                    tokens = dataset.supervised_counts[index]
++                    planned_supervised += tokens
++                    planned_replay += tokens if dataset.groups[index] != "practical_multistep_v1" else 0
++                    origin = dataset.origins[index]
++                    planned_sources[origin] = planned_sources.get(origin, 0) + 1
+             print(f"[new dataset] planned new-row presentations={planned} minimum={args.new_group_min_exposures}", flush=True)
+             if planned < args.new_group_min_exposures:
+                 raise RuntimeError("appended curriculum exposure floor cannot be met")
+             planned_new_exposures = planned
++            planned_replay_share = planned_replay / max(1, planned_supervised)
++            practical_telemetry(args.telemetry_jsonl, {"event": "preview", "new_presentations": planned,
++                "source_presentations": planned_sources, "supervised_tokens": planned_supervised,
++                "replay_supervised_tokens": planned_replay, "replay_supervised_share": planned_replay_share})
++            if planned_replay_share < args.min_replay_share:
++                raise RuntimeError("deterministic phase replay share is below 75%; no update performed")
+         while step < args.max_steps:
+             step += 1
+             lr = get_lr(step)
+@@ -717,25 +772,47 @@
+             for idx in batch_sampler.last_batch:
+                 group = dataset.groups[idx]
+                 exposure_counts[group] = exposure_counts.get(group, 0) + 1
++                origin = dataset.origins[idx]
++                tokens = dataset.supervised_counts[idx]
++                inputs = len(dataset.samples[idx][0]) - 1
++                phase_sources[origin] = phase_sources.get(origin, 0) + 1
++                phase_source_tokens[origin] = phase_source_tokens.get(origin, 0) + inputs
++                phase_source_supervised[origin] = phase_source_supervised.get(origin, 0) + tokens
++                phase_supervised += tokens
++                phase_replay_supervised += tokens if group != "practical_multistep_v1" else 0
++                phase_input_tokens += inputs
++            phase_padded_tokens += int(batch["input_ids"].numel())
+ 
+             running_loss += accum_loss
+ 
+-            if step % log_interval == 0:
+-                avg_loss = running_loss / log_interval
++            if step % log_interval == 0 or step == args.stop_at_step:
++                window_steps = min(log_interval, step - start_step) if step % log_interval == 0 else max(1, step % log_interval)
++                avg_loss = running_loss / window_steps
+                 running_loss = 0.0
+                 elapsed = time.time() - t_start
+                 steps_per_sec = (step - start_step) / max(1.0, elapsed)
+                 eta_sec = (args.max_steps - step) / max(0.01, steps_per_sec)
+                 kl_txt = ""
++                mean_kl = sum(kl_log) / len(kl_log) if kl_log else None
+                 if kl_log:
+-                    kl_txt = f" | KL(v43): {sum(kl_log) / len(kl_log):.4f}"
++                    kl_txt = f" | KL(parent30500/replay): {sum(kl_log) / len(kl_log):.4f}"
+                     kl_log.clear()
+                 ch_txt = f" | OOM retries {policy.oom_retries}" if policy.oom_retries else ""
+                 print(f"  Step {step:6d}/{args.max_steps} | Loss: {avg_loss:.4f}{kl_txt} | LR: {lr:.2e} | "
+                       f"Throughput: {steps_per_sec:.2f} step/s | ETA: {eta_sec/60:.1f}m{ch_txt}", flush=True)
++                practical_telemetry(args.telemetry_jsonl, {"event": "train_step", "step": step,
++                    "start_step": start_step, "stop_step": args.stop_at_step, "loss": avg_loss, "kl": mean_kl,
++                    "learning_rate": lr, "elapsed_seconds": elapsed, "eta_seconds": eta_sec,
++                    "source_presentations": phase_sources, "source_input_tokens": phase_source_tokens,
++                    "source_supervised_tokens": phase_source_supervised, "supervised_tokens": phase_supervised,
++                    "replay_supervised_tokens": phase_replay_supervised, "input_tokens": phase_input_tokens,
++                    "padded_tokens": phase_padded_tokens, "replay_supervised_share": phase_replay_supervised/max(1,phase_supervised),
++                    "vram_allocated_bytes": torch.cuda.memory_allocated(dev) if dev.type == "cuda" else 0,
++                    "vram_peak_bytes": torch.cuda.max_memory_allocated(dev) if dev.type == "cuda" else 0,
++                    "oom_retries": policy.oom_retries, "variant": args.practical_variant})
+ 
+             if args.new_dataset_sampler and step == args.stop_at_step:
+-                actual = exposure_counts.get("python_tir_30500", 0) - new_group_start_exposures
++                actual = exposure_counts.get("practical_multistep_v1", 0) - new_group_start_exposures
+                 print(f"[new dataset] actual new-row presentations={actual} planned={planned_new_exposures}", flush=True)
+                 if actual != planned_new_exposures or actual < args.new_group_min_exposures:
+                     raise RuntimeError("new curriculum sampler exposure differed from the verified plan")

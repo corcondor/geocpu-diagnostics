@@ -1,0 +1,23 @@
+{
+  "verified_utc": "2026-11-07T01:01:25.837594+00:00",
+  "verification_kind": "CPU source and adapter verification only",
+  "unittest": {
+    "command": "python -m unittest discover -s tests -p test_frozen_eval.py -v",
+    "tests_run": 8,
+    "passed": 8,
+    "failed": 0
+  },
+  "source_archive_roundtrip_files": 72,
+  "all_original_bytes_equal_to_archive_members": true,
+  "python120_native_select_cases_matches_full_saved_selection": true,
+  "heldout_prompt_views": 33822,
+  "unique_heldout_prompt_strings": 33085,
+  "checkpoint_loaded": false,
+  "gpu_experiment_executed": false,
+  "files": {
+    "frozen_eval.py": "ddedd2f48c3d15f508bb1e47a51d52ca087864ef43b00329aea3d556cb800687",
+    "tests/test_frozen_eval.py": "13c689ca5e8b89e652edf7db9bbc72cf22cabef4abcfbe54e2e21a2242b4b615",
+    "frozen/registry.json": "527f0f1cb4b97ce83fdc79e247f64ec20653befa9b6964d3e2ce65f589e99928",
+    "frozen/source_files.json": "1a579f01d6269084bc428e7e67d139fa4bdd6a3aff142d5e1912f944489bbb88"
+  }
+}

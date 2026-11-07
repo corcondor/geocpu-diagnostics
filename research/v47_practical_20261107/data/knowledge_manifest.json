@@ -1,0 +1,196 @@
+{
+  "version": 2,
+  "input_sha256": "d3bbc47da537c9073c0fb113c3073d19a6ad2990201688943141aaba41391263",
+  "public_bundle_sha256": "a2938b23ecb35ea6584b7e77109021e855c81f456d12c1b18fa7c44b1169b62f",
+  "model_updates": 0,
+  "gpu_model_evaluations": 0,
+  "source_train_dev_chain_overlap": 0,
+  "source_train_dev_ancestor_overlap": 0,
+  "splits": {
+    "train": {
+      "selected_source_chains": 328,
+      "rejected_chains": {
+        "fewer_than_three_same_relation_distractors": 158,
+        "retrieval_or_chain_inconsistent": 2
+      },
+      "file": "knowledge_train.jsonl",
+      "rows": 336,
+      "underlying_chains": 168,
+      "answer_values": 55,
+      "source_families": {
+        "wikidata": 256,
+        "jemhop": 80
+      },
+      "source_family_chains": {
+        "jemhop": 40,
+        "wikidata": 128
+      },
+      "answer_positions": {
+        "0": 84,
+        "1": 84,
+        "2": 84,
+        "3": 84
+      },
+      "sha256": "a122189d79c0a695b861c0ced48328996f3e35c7d668d0ab793d9d14ea0c7bd3",
+      "size_bytes": 2117640,
+      "max_characters_plus_eos": 559,
+      "unknown_characters": [],
+      "normalization_changes": 0,
+      "context_tokens_including_eos": 142045,
+      "supervised_target_tokens_including_eos": 39285
+    },
+    "dev": {
+      "selected_source_chains": 64,
+      "rejected_chains": {
+        "fewer_than_three_same_relation_distractors": 62
+      },
+      "file": "knowledge_dev.jsonl",
+      "rows": 4,
+      "underlying_chains": 2,
+      "answer_values": 2,
+      "source_families": {
+        "jemhop": 4
+      },
+      "source_family_chains": {
+        "jemhop": 2
+      },
+      "answer_positions": {
+        "0": 2,
+        "1": 2
+      },
+      "sha256": "7a196056668d032641f4d3e0c5c4d019639ab0aa12ebae752f8ec00159b0ad67",
+      "size_bytes": 25646,
+      "max_characters_plus_eos": 395,
+      "unknown_characters": [],
+      "normalization_changes": 0,
+      "context_tokens_including_eos": 1520,
+      "supervised_target_tokens_including_eos": 390
+    },
+    "free_dev": {
+      "selected_source_chains": 64,
+      "rejected_chains": {},
+      "file": "knowledge_free_dev.jsonl",
+      "rows": 64,
+      "underlying_chains": 64,
+      "answer_values": 38,
+      "source_families": {
+        "wikidata": 32,
+        "jemhop": 32
+      },
+      "source_family_chains": {
+        "jemhop": 32,
+        "wikidata": 32
+      },
+      "answer_positions": {},
+      "sha256": "a6cf60c48a1a2b1e95d686b57fdc65f56606aaedc91486ce62a2ffbd9e06b388",
+      "size_bytes": 245568,
+      "max_characters_plus_eos": 454,
+      "unknown_characters": [],
+      "normalization_changes": 0,
+      "context_tokens_including_eos": 22548,
+      "supervised_target_tokens_including_eos": 7075
+    }
+  },
+  "scope": "Action/format views of existing source splits, not new knowledge coverage.",
+  "fact_verification": "Snapshot consistency only; upstream facts were not re-queried individually.",
+  "distractor_policy": "Exactly the same final relation, same original split, distinct normalized literal values, actual retriever support; no mixed-relation fallback.",
+  "runtime_observation_protocol": {
+    "source": "base/code/integrated_model_v44fix.py",
+    "sha256": "f8f0d6a3db491a0ffd4a3de7a16d21e82337662a2703ccb80e855fc3261d7eae",
+    "injection_template": " => {native_search_observation} ",
+    "matching_ast_sites": 1
+  },
+  "added_train_used_source_ancestor_overlap_with_all_old_dev": 0,
+  "frozen_evaluation_overlap": {
+    "frozen_prompt_views": 33822,
+    "registry_sha256": "527f0f1cb4b97ce83fdc79e247f64ec20653befa9b6964d3e2ce65f589e99928",
+    "source_inventory_sha256": "1a579f01d6269084bc428e7e67d139fa4bdd6a3aff142d5e1912f944489bbb88",
+    "new_full_prompt_normalized_overlap": {
+      "train": 0,
+      "dev": 0,
+      "free_dev": 0
+    },
+    "underlying_source_prompt_overlap": {
+      "train": 0,
+      "dev": 4,
+      "free_dev": 64
+    },
+    "normalization": "NFKC + collapsed whitespace + casefold",
+    "note": "Development views intentionally reuse old development chains; they are not independent new facts. Exact prompt matching does not exclude all semantic overlap."
+  },
+  "native_replay": {
+    "query_calls": 571,
+    "by_split": {
+      "train": {
+        "unique_chains_replayed": 168,
+        "verified_query_entity_transitions": 254,
+        "exact_final_value_matches": 168
+      },
+      "dev": {
+        "unique_chains_replayed": 2,
+        "verified_query_entity_transitions": 2,
+        "exact_final_value_matches": 2
+      },
+      "free_dev": {
+        "unique_chains_replayed": 64,
+        "verified_query_entity_transitions": 81,
+        "exact_final_value_matches": 64
+      }
+    },
+    "generation_unique_query_calls": {
+      "train": 488,
+      "dev": 131
+    }
+  },
+  "source_records": {
+    "file": "knowledge_support/used_source_rows.jsonl",
+    "rows": 265,
+    "sha256": "eebc171721494314eb0dddc43d83cdec71a18c8fc5814f6aa2d1ccd06b70efb8"
+  },
+  "support_files": {
+    "knowledge_support/corpus_dev.jsonl": {
+      "sha256": "62ace662b949aae120f843d6bc08527c99edc596ec620dcd84de2fdc65434a2f",
+      "size_bytes": 1532916
+    },
+    "knowledge_support/corpus_train.jsonl": {
+      "sha256": "a5fa55de0552ff2dd90a2b6b72819f4b9bbd38dcc2ac8e970db0b23132aa992c",
+      "size_bytes": 1233208
+    },
+    "knowledge_support/jemhop_manifest.json": {
+      "sha256": "692a42f11a8c012dfd291eeff92f051ad2cc5ad56ae7e7ca2c92c61166c68faf",
+      "size_bytes": 2560
+    },
+    "knowledge_support/local_search_engine_v42.py": {
+      "sha256": "d1c3cb1791fdda0f48f394e926d4a8812fa956c8ff5597898c67da1ddc506ace",
+      "size_bytes": 9688
+    },
+    "knowledge_support/used_source_rows.jsonl": {
+      "sha256": "eebc171721494314eb0dddc43d83cdec71a18c8fc5814f6aa2d1ccd06b70efb8",
+      "size_bytes": 543954
+    },
+    "knowledge_support/wikidata_manifest.json": {
+      "sha256": "17f28008bfefa8ed530f9114eb35818d1af9d21cf4ce0d2871257beb4a7c00d6",
+      "size_bytes": 2146
+    },
+    "knowledge_support/qwenputer_controller_v30.py": {
+      "sha256": "e452bd0c5cf4c745b3de2276acbdcc67a4022f5329e4d8513a87587a8cb36e8e",
+      "size_bytes": 9537
+    }
+  },
+  "limitations": [
+    "Same-relation distractors remove easy cross-type options but do not prove absence of aliases or all semantic ambiguity.",
+    "The four-choice dev set is very small because its Wikidata country/capital pools each contain only three distinct values.",
+    "Free-answer dev reuses 64 existing development chains; it is a new view, not 64 independent new fact chains.",
+    "Train/source-dev ancestry is checked within this public bundle. Other historical training sources may contain the same facts.",
+    "JEMHopQA statements are rendered annotation triples, not newly verified Wikipedia quotations. Some facts may be outdated.",
+    "No model capability or GPU training has been evaluated by this CPU data build."
+  ],
+  "independent_review": {
+    "test_suite": "tests/test_knowledge.py",
+    "test_cases_passed": 11,
+    "native_retrieval_query_and_option_replay": "passed",
+    "model_capability_measurement": false,
+    "gpu_evaluation": false,
+    "reference": "KNOWLEDGE.md"
+  }
+}

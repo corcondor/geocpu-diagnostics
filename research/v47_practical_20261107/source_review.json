@@ -1,0 +1,24 @@
+{
+  "checked_utc": "2026-11-07T01:22:43.236513+00:00",
+  "scope": "saved v47 step 30500, not a claim to have loaded model weights",
+  "study_url": "https://drive.google.com/drive/folders/1f4ny9Sr26rOnU8mOoEyrKxbQw60iH2Aj",
+  "parent_run": "v47_from28000_to30500_curriculum_v1",
+  "step": 30500,
+  "checkpoint_sha256_from_receipt": "cc38411e66aab0ed309d0fa6e0b268d04317da17ffa47f730383e6ad0e2d0391",
+  "training_sha256_from_receipt": "358f96521122606ce398eb6f5f30f51e71048728e52e6b8ee9f55de854fcd5fc",
+  "parent_rows_from_manifest": 422500,
+  "recent_log_snapshot": {
+    "url": "https://drive.google.com/file/d/1FsPyDjA7jH0sHsbKm1tSwUyOgMsXGWI5/view",
+    "modified_utc": "2026-11-07T01:15:23.596Z",
+    "step_30500_last_progress": 70,
+    "planned": 120,
+    "last_progress_utc": "2026-11-07T01:15:16+00:00",
+    "progress_is_not_correct_count": true,
+    "step_30500_complete_score_seen": false
+  },
+  "prior_github_research": [
+    "https://github.com/corcondor/geocpu-diagnostics/blob/main/reports/v44fix/2026-11-03-python-cot.md",
+    "https://github.com/corcondor/geocpu-diagnostics/pull/1"
+  ],
+  "local_changes_to_source_drive_files": 0
+}

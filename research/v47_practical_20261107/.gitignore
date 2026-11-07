@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pt
+data/**
+!data/practical_manifest.json
+!data/knowledge_manifest.json
+frozen/**
+!frozen/registry.json
+!frozen/source_files.json
+!frozen/verification_cpu.json
