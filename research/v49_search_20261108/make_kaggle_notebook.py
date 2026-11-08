@@ -14,10 +14,22 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 OUT = Path(sys.argv[1])
+VARIANT = sys.argv[2] if len(sys.argv) > 2 else "main"
 OUT.mkdir(parents=True, exist_ok=True)
 DATASET = "geocpuresearch/geocpu-v48-eval-assets-20261108"
+DATASET_PARENT = "geocpuresearch/geocpu-v47-eval-parent40500-20261109"
 DATASET_CODE = "geocpuresearch/geocpu-v48-eval-code-20261108"
-SLUG = "geocpu-v48-robust-eval-20261108"
+# main: 30,500 and 61,500 side by side (one T4 each).  parent40500: the step-40,500 parent alone, so the three can be compared offline.
+VARIANTS = {
+    "main": {"slug": "geocpu-v48-robust-eval-20261108", "title": "GeoCPU v48 robust eval 20261108",
+             "datasets": [DATASET, DATASET_CODE], "sentinel": "v48_61500_checkpoint_step_61500.pt",
+             "jobs": [("v47_30500", "v47_from28000_to30500_curriculum_v1", 30500), ("v48_61500", "v48_A100_from40500_20261108T045428Z", 61500)]},
+    "parent40500": {"slug": "geocpu-v47-parent40500-robust-eval-20261109", "title": "GeoCPU v47 parent 40500 robust eval 20261109",
+                    "datasets": [DATASET_PARENT, DATASET_CODE], "sentinel": "v47_40500_checkpoint_step_40500.pt",
+                    "jobs": [("v47_40500", "practical_20261107_10k_multistep_40500", 40500)]},
+}
+CFG = VARIANTS[VARIANT]
+SLUG = CFG["slug"]
 
 files = {n: (HERE / n).read_text(encoding="utf-8") for n in ("robust_eval.py", "kaggle_runner.py", "kaggle_compare.py")}
 
@@ -31,8 +43,8 @@ for name, text in FILES.items():
 sys.path.insert(0, str(CODE))
 import kaggle_runner as K
 
-hits = list(Path("/kaggle/input").rglob("v48_61500_checkpoint_step_61500.pt"))
-assert hits, "dataset geocpu-v48-eval-assets-20261108 is not attached"
+hits = list(Path("/kaggle/input").rglob("__SENTINEL__"))
+assert hits, "the checkpoint dataset is not attached (looked for __SENTINEL__)"
 INPUT = hits[0].parent
 ZIP_ROOTS = [p.parent for p in Path("/kaggle/input").rglob(K.BUNDLE + ".bin")] or [INPUT]
 bundle, code_zip = K.locate([*ZIP_ROOTS, INPUT], K.BUNDLE), K.locate([*ZIP_ROOTS, INPUT], K.CODE_ZIP)
@@ -46,7 +58,7 @@ gpus = subprocess.run(["nvidia-smi", "--query-gpu=index,name,memory.total", "--f
 print(gpus)
 N_GPU = len([l for l in gpus.splitlines() if l.strip()])
 assert N_GPU >= 1, "no GPU"
-JOBS = [("v47_30500", "v47_from28000_to30500_curriculum_v1", 30500), ("v48_61500", "v48_A100_from40500_20261108T045428Z", 61500)]
+JOBS = __JOBS__
 
 
 def launch(out_dir, extra=()):
@@ -87,7 +99,8 @@ def wait(procs, out_dir, deadline=None, every=120):
             bad.append(prefix)
             print((out_dir / f"{prefix}.log").read_text(encoding="utf-8", errors="replace")[-4000:])
     return bad
-'''.replace("__FILES__", json.dumps(files, ensure_ascii=False))
+'''.replace("__FILES__", json.dumps(files, ensure_ascii=False)).replace("__SENTINEL__", CFG["sentinel"]).replace(
+    "__JOBS__", repr([tuple(j) for j in CFG["jobs"]]))
 
 cell_smoke = '''# 2. smoke test on the real GPUs: 2 items per task (+ the longest JMMLU prompt), tiny generation caps. Must pass before the full run.
 SMOKE = Path("/kaggle/working/out_smoke")
@@ -121,6 +134,18 @@ shutil.rmtree(SMOKE, ignore_errors=True)
 assert not bad and r.returncode == 0, f"failed: children={bad} compare_rc={r.returncode}; the report above says what is missing"
 '''
 
+# one checkpoint only: nothing to compare inside the kernel (the three checkpoints are compared offline with kaggle_compare.py)
+cell_report_single = '''# 4. summary of the single checkpoint, cleanup
+r = None                                 # r.stderr: no comparison runs here; compare offline with kaggle_compare.py
+for prefix, *_ in JOBS:
+    print(prefix, (OUT / prefix / "summary.json").read_text(encoding="utf-8") if (OUT / prefix / "summary.json").exists() else "NO SUMMARY")
+    shutil.rmtree(f"/kaggle/working/study_{prefix}", ignore_errors=True)
+shutil.rmtree(SMOKE, ignore_errors=True)
+assert not bad, f"failed: children={bad}; see out/*.log"
+'''
+if len(CFG["jobs"]) == 1:
+    cell_report = cell_report_single
+
 
 def code(src, cid):
     return {"cell_type": "code", "execution_count": None, "id": cid, "metadata": {}, "outputs": [], "source": src.splitlines(keepends=True)}
@@ -132,9 +157,9 @@ nb = {"nbformat": 4, "nbformat_minor": 5,
                  "source": ["# GeoCPU v48: 修正版の評価（T5・T6・JMMLU の位置入れ替え）\n", "30,500 と 61,500 を、T4 を 1 台ずつ使って同時に測り、対応のある検定で比べます。学習はしません。\n"]},
                 code(cell_setup, "setup"), code(cell_smoke, "smoke"), code(cell_run, "run"), code(cell_report, "report")]}
 (OUT / f"{SLUG}.ipynb").write_text(json.dumps(nb, ensure_ascii=False, indent=1), encoding="utf-8")
-meta = {"id": f"geocpuresearch/{SLUG}", "title": "GeoCPU v48 robust eval 20261108", "code_file": f"{SLUG}.ipynb", "language": "python",
+meta = {"id": f"geocpuresearch/{SLUG}", "title": CFG["title"], "code_file": f"{SLUG}.ipynb", "language": "python",
         "kernel_type": "notebook", "is_private": True, "enable_gpu": True, "enable_tpu": False, "enable_internet": False,
-        "keywords": [], "dataset_sources": [DATASET, DATASET_CODE], "kernel_sources": [], "competition_sources": [], "model_sources": [],
+        "keywords": [], "dataset_sources": CFG["datasets"], "kernel_sources": [], "competition_sources": [], "model_sources": [],
         "machine_shape": "NvidiaTeslaT4"}
 (OUT / "kernel-metadata.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
 print("written", OUT)
