@@ -117,7 +117,7 @@ def patch_runtime(source: str) -> str:
         "                         \"amp_dtype\": str(amp_dtype), \"amp_scaler_enabled\": scaler.is_enabled()}\n")
 
     out=replace_once(out,
-        "                      \"practical_variant\": args.practical_variant,\n",
+        "                     \"practical_variant\": args.practical_variant,\n",
         "                      \"practical_variant\": args.practical_variant,\n"
         "                      \"amp_scaler_state\": scaler.state_dict() if scaler.is_enabled() else None,\n")
 
