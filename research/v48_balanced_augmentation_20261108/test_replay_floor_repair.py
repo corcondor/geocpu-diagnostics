@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from replay_floor_repair import next_weights, write_weighted_candidate
@@ -63,34 +64,32 @@ class ReplayFloorRepairTests(unittest.TestCase):
             next_weights({"rare":{"baseline":100,"candidate":1}}, {"rare":32})
 
     def test_cpu_plan_selects_lowest_passing_budget(self):
-        class FakePrep:
-            def __init__(self): self.calls = []
-            def preview_plan(self, train, *, steps, **kwargs):
-                self.calls.append(steps)
-                rows = [json.loads(s) for s in Path(train).read_text(encoding="utf-8").splitlines()]
-                rare = sum(row.get("_practical_source") == "rare" for row in rows)
-                # Deterministic toy sampler: one rare-source unit per 1000 steps.
-                supervision = rare * (steps // 1000)
-                return {"source_supervised_tokens":{
-                            "rare": supervision,
-                            "v48_python":300,"v48_logic":300,
-                            "v48_evidence":300,"v48_japanese":300},
-                        "supervised_tokens":supervision+1200}
-        src = self.root / "source"
-        src.mkdir()
-        original = self.root / "previous"
-        original.mkdir()
-        prep = FakePrep()
-        resulting, steps, preview, review, stats = cpu_plan_with_replay_floor_repair(
-            self.original,self.root,prep,src,original,
-            {"source_supervised_tokens":{"rare":100}},10000,20000)
+        calls = []
+        def fake_preview(prep,data,*,budgets,**kwargs):
+            calls.append(list(budgets))
+            rows = [json.loads(x) for x in Path(data).read_text(encoding="utf-8").splitlines()]
+            rare = sum(row.get("_practical_source")=="rare" for row in rows)
+            return {
+                steps:{"steps":steps,"passed":True,
+                       "source_supervised_tokens":{
+                           "rare":rare*(steps//1000),
+                           "v48_python":300,"v48_logic":300,
+                           "v48_evidence":300,"v48_japanese":300},
+                       "supervised_tokens":rare*(steps//1000)+1200}
+                for steps in budgets
+            }
+        with (mock.patch("multibudget_preflight.preview_budgets", side_effect=fake_preview),
+              mock.patch("multibudget_preflight.assert_preview_parity", return_value=True)):
+            resulting,steps,preview,review,stats=cpu_plan_with_replay_floor_repair(
+                self.original,self.root,object(),self.root,self.root,
+                {"source_supervised_tokens":{"rare":100}},10000,20000)
         self.assertTrue(review["passed"])
-        self.assertEqual(steps, 17000)
-        self.assertEqual(stats["replay_replicas_added"], 5)
-        self.assertEqual(prep.calls[0], 20000)
-        self.assertEqual(prep.calls[1], 20000)
+        self.assertEqual(steps,17000)
+        self.assertEqual(stats["replay_replicas_added"],5)
+        self.assertEqual(len(calls),2)  # Not 11 scans per attempt.
+        self.assertEqual(calls[0],list(range(10000,20001,1000)))
         self.assertTrue(resulting.exists())
-        self.assertEqual(self.original.read_text(encoding="utf-8"), self.raw)
+        self.assertEqual(self.original.read_text(encoding="utf-8"),self.raw)
 
 
 if __name__ == "__main__":
