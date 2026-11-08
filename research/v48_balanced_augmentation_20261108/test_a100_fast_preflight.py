@@ -116,7 +116,7 @@ class PlanChoice(unittest.TestCase):
     """Replay weights are sized at the 20k horizon, so the plan uses the fewest GPU updates;
     the no-replay alternative is recorded for the report."""
 
-    def plan(self, floor, maximum=60000):
+    def plan(self, floor, maximum=60000, explicit_weights=None):
         from unittest import mock
         with tempfile.TemporaryDirectory() as td:
             d = Path(td)
@@ -140,7 +140,8 @@ class PlanChoice(unittest.TestCase):
                   mock.patch("multibudget_preflight.assert_preview_parity", return_value=True)):
                 res = T.cpu_plan_with_replay_floor_repair(data, d, object(), d, d,
                                                           {"source_supervised_tokens": {"rare": floor}},
-                                                          10000, maximum, alternatives=alt)
+                                                          10000, maximum, alternatives=alt,
+                                                          explicit_weights=explicit_weights)
             return res[1], res[4]["replay_replicas_added"], alt
 
     def test_fewer_updates_with_explicit_replay_than_without(self):
@@ -153,6 +154,37 @@ class PlanChoice(unittest.TestCase):
         steps, replicas, alt = self.plan(15)
         self.assertEqual((steps, replicas), (15000, 0))
         self.assertEqual(alt["first_passing_updates_without_replay"], 15000)
+
+    def test_explicit_weights_give_the_shortest_plan_they_allow(self):
+        # the rare source (1 row) x4 -> 4 rows; 4 * (steps/1000) >= 55 first holds at 14,000
+        steps, replicas, alt = self.plan(55, explicit_weights={"rare": 4})
+        self.assertEqual((steps, replicas), (14000, 3))
+        self.assertEqual(alt["mode"], "explicit_replay_weights")
+        # a larger stated weight reaches the same floor sooner: 16 * 10 >= 55 already at the minimum budget
+        steps16, replicas16, _ = self.plan(55, explicit_weights={"rare": 16})
+        self.assertEqual((steps16, replicas16), (10000, 15))
+
+    def test_explicit_weights_that_never_reach_the_floor_stop_before_gpu(self):
+        with self.assertRaisesRegex(RuntimeError, "GPU has NOT started"):
+            self.plan(10 ** 6, maximum=20000, explicit_weights={"rare": 2})
+
+    def test_explicit_weight_for_an_absent_source_fails_closed(self):
+        with self.assertRaisesRegex(RuntimeError, "absent"):
+            self.plan(55, explicit_weights={"no_such_source": 4})
+
+
+class ParseWeights(unittest.TestCase):
+    def test_valid(self):
+        from replay_floor_repair import parse_weights
+        self.assertEqual(parse_weights("a=16, b=2"), {"a": 16, "b": 2})
+        self.assertEqual(parse_weights("practical_python_multistep_v1=16,practical_knowledge_multistep_v1=16"),
+                         {"practical_python_multistep_v1": 16, "practical_knowledge_multistep_v1": 16})
+
+    def test_malformed_or_out_of_range_is_rejected(self):
+        from replay_floor_repair import parse_weights
+        for bad in ("", "a", "a=", "=3", "a=x", "a=1", "a=33", "a=-4", "a=16,a=8", "a=2.5"):
+            with self.assertRaises(ValueError, msg=bad):
+                parse_weights(bad)
 
 
 class DatasetCache(unittest.TestCase):

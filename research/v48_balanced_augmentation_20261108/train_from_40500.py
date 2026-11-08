@@ -320,7 +320,7 @@ def parity_with_receipt(prep,snapshots,train,compare_steps,cache,common):
 
 def cpu_plan_with_replay_floor_repair(train, scratch, prep, source, original, reference,
                                       minimum_updates, maximum_updates, cache=None, repair_horizon=20000,
-                                      alternatives=None):
+                                      alternatives=None, explicit_weights=None):
     """Bounded CPU repair. One sampler pass per attempt covers every budget and stops
     at the first one where all old-source floors and the new-domain balance hold.
 
@@ -343,6 +343,34 @@ def cpu_plan_with_replay_floor_repair(train, scratch, prep, source, original, re
                   base_sampler_source=source/"runtime_cotraining_v41_247M.py",
                   runtime_source=original/"training/runtime_30500.py")
     accept = lambda snap: bool(snap["passed"] and assess_exposure(reference,snap)["passed"])
+    if explicit_weights:
+        # The replay weights are stated by the caller (e.g. the x16 the 30500->40500 phase
+        # used for its own new sources); only the number of updates is computed. The first
+        # budget where every old source keeps its 40500-window tokens wins, so the plan is
+        # as short as these weights allow. Nothing is auto-tuned or silently capped.
+        train = scratch/"train_v48_replay_explicit.jsonl"
+        latest_stats = write_weighted_candidate(base_train,train,explicit_weights)
+        snapshots = preview_budgets(prep,train,budgets=budgets,repeat=1,min_new=1000,accept=accept,**common)
+        parity_with_receipt(prep,snapshots,train,budgets[0],cache,common)
+        reached = sorted(snapshots)
+        reviews = {steps:assess_exposure(reference,snapshots[steps]) for steps in reached}
+        passing = [steps for steps in reached if snapshots[steps]["passed"] and reviews[steps]["passed"]]
+        last = reviews[reached[-1]]
+        if alternatives is not None:
+            alternatives["mode"] = "explicit_replay_weights"
+        print("V48_CPU_EXPLICIT_REPLAY_AUDIT "+json.dumps({
+            "steps_scanned":[reached[0],reached[-1]],"passing_steps":passing,
+            "replay_weights":dict(explicit_weights),
+            "replay_replica_rows":latest_stats["replay_replicas_added"],
+            "declines_at_last_scanned_budget":last["old_source_declines"],
+            "new_source_supervised_tokens":last["new_source_supervised_tokens"],
+            "gpu_updates":0},ensure_ascii=False),flush=True)
+        if passing:
+            steps=passing[0]
+            return train,steps,snapshots[steps],reviews[steps],latest_stats
+        raise RuntimeError("The given replay weights do not keep every old source at its 40500-window "
+                           "exposure up to "+str(budgets[-1])+" updates; GPU has NOT started. Remaining deficits: "
+                           +json.dumps(last["old_source_declines"],ensure_ascii=False))
     for attempt in range(5):
         if weights:
             train = scratch/f"train_v48_replay_reweighted_{attempt}.jsonl"
@@ -478,6 +506,11 @@ def main():
     parser.add_argument("--minimum-updates",type=int,default=10000)
     parser.add_argument("--maximum-updates",type=int,default=60000,
                         help="scan ceiling only; the plan uses the FIRST budget where every old source keeps its floor")
+    parser.add_argument("--replay-weights",
+                        help="explicit repetition of short old sources, e.g. "
+                             "practical_python_multistep_v1=16,practical_knowledge_multistep_v1=16 "
+                             "(x16 is what the 30500->40500 phase used for these 848 rows). "
+                             "Without it the weights are sized automatically at the 20,000-update horizon.")
     parser.add_argument("--gpu-profile",choices=sorted(GPU_PROFILES),default="a100")
     parser.add_argument("--dataset-cache",type=Path,
                         help="SHA-bound cache of rebuilt parents (default: STUDY/_v48_dataset_cache)")
@@ -517,6 +550,7 @@ def main():
             metadata=metadata,minimum=args.minimum_updates,maximum=args.maximum_updates,
             confirm=args.confirm_updates if args.execute else int(approval.get("steps",-1)))
         weights=prior.get("replay_source_training_weights",{})
+        replay_mode=approval.get("replay_mode","unknown")
         if weights:
             repaired=scratch/"train_v48_approved_replay.jsonl"
             repair=write_weighted_candidate(train,repaired,weights)
@@ -541,9 +575,13 @@ def main():
             "gpu_updates":0,"replay_weights":weights},ensure_ascii=False),flush=True)
     else:
         alternatives={}
+        from replay_floor_repair import parse_weights
+        explicit=parse_weights(args.replay_weights) if args.replay_weights else None
+        replay_mode="explicit" if explicit else "auto"
         train,steps,preview,review,repair=cpu_plan_with_replay_floor_repair(
             train,scratch,prep,source,original,comparison,
-            args.minimum_updates,args.maximum_updates,cache,alternatives=alternatives)
+            args.minimum_updates,args.maximum_updates,cache,alternatives=alternatives,
+            explicit_weights=explicit)
         metadata["plan_alternatives"]={**alternatives,
             "estimated_gpu_hours_without_replay":(estimated_gpu_hours(args.gpu_profile,alternatives["first_passing_updates_without_replay"])
                                                   if alternatives.get("first_passing_updates_without_replay") else None)}
@@ -569,7 +607,7 @@ def main():
        "steps":steps,"start_step":40500,"stop_step":stop,
        "sampler_preview":preview,"exposure_gate":review,
        "old_source_floors":source_floor_table(comparison,preview),
-       "runtime_sha256":digest(runtime),"gpu_profile":args.gpu_profile,
+       "runtime_sha256":digest(runtime),"gpu_profile":args.gpu_profile,"replay_mode":replay_mode,
        "estimated_gpu_hours":estimated_gpu_hours(args.gpu_profile,steps),
        "gpu_training_started":False,"final_benchmark_status":"not_executed",
        "logical_step_token_budget":36864,

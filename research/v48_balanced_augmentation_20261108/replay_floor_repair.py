@@ -16,6 +16,31 @@ MAX_WEIGHT = 32
 MAX_REPLAY_REPLICAS = 75000
 
 
+def parse_weights(text: str) -> dict[str, int]:
+    """'source_a=16,source_b=16' -> {'source_a': 16, 'source_b': 16}.
+
+    Explicit replay weights, so the repetition used to keep an old source at its
+    previous exposure is a stated, reviewable number (each in [2, MAX_WEIGHT])."""
+    weights: dict[str, int] = {}
+    for part in str(text).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        name, sep, value = part.partition("=")
+        name, value = name.strip(), value.strip()
+        if not sep or not name or not value.isdigit():
+            raise ValueError("replay weight must look like source=integer: " + repr(part))
+        weight = int(value)
+        if not 2 <= weight <= MAX_WEIGHT:
+            raise ValueError(f"replay weight for {name!r} must be in [2, {MAX_WEIGHT}], got {weight}")
+        if name in weights:
+            raise ValueError("replay weight given twice: " + name)
+        weights[name] = weight
+    if not weights:
+        raise ValueError("no replay weights given")
+    return weights
+
+
 def next_weights(declines: dict, old_weights: dict[str, int]) -> dict[str, int]:
     """Conservatively boost only sources below the absolute v47 token floor."""
     if not declines:
