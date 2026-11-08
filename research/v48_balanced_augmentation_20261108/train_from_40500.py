@@ -19,6 +19,7 @@ from pathlib import Path
 import shutil
 import sys
 import tempfile
+import time
 import zipfile
 
 ROOT = Path(__file__).resolve().parent
@@ -111,6 +112,57 @@ GPU_PROFILES={
     "a100":{"names":("A100",),"min_vram_gib":39,"chunk_tokens":None,"updates_per_second":1.27},
     "t4":{"names":("T4",),"min_vram_gib":14,"chunk_tokens":16384,"updates_per_second":None},
 }
+
+# ---------------------------------------------------------------------------
+# Launch guards found by the first real A100 attempt (2026-11-08). Both stopped the
+# run BEFORE any training update, but only after the A100 had been allocated.
+#  1. v47's checkpoint_steps() refuses more than 10,000 additional updates (a limit
+#     of v47's own 30500 phase). The CPU preflight approved 21,000, and the backup
+#     class built from that limit raised "additional steps must be 1..10000".
+#  2. That failure happened outside the try/finally, so training_active.json stayed
+#     in the failed output folder, and v47's refuse_active_work() refuses every later
+#     launch while any */training_active.json exists in the study folder.
+# ---------------------------------------------------------------------------
+def checkpoint_steps_uncapped(oldtrain,steps):
+    """Same list as v47's checkpoint_steps for 1..10,000 updates, without its cap."""
+    if not 1<=steps<=100000:
+        raise ValueError("additional steps must be 1..100000")
+    stop=oldtrain.PARENT_STEP+steps
+    interval=oldtrain.CHECKPOINT_INTERVAL
+    return [*range(oldtrain.PARENT_STEP+interval,stop,interval),stop]
+
+def install_uncapped_checkpoint_steps(oldtrain):
+    oldtrain.checkpoint_steps=lambda steps:checkpoint_steps_uncapped(oldtrain,steps)
+
+STALE_LOCK_MIN_AGE_SECONDS=600
+TRAINING_ARTIFACTS=("console","checkpoints","training_events.jsonl","training_saved.json","training_incomplete.json")
+
+def unstarted_stale_locks(study,now=None):
+    """training_active.json files whose launch stopped before the training process existed:
+    no console/, checkpoints/ or telemetry in the folder, and older than 10 minutes (so a
+    launch that is only seconds old, e.g. on another Colab host, is never mistaken for one).
+    Such a lock is ignored, never deleted."""
+    now=time.time() if now is None else now
+    found=[]
+    for lock in sorted(Path(study).glob("*/training_active.json")):
+        if any((lock.parent/name).exists() for name in TRAINING_ARTIFACTS):
+            continue
+        if now-lock.stat().st_mtime<STALE_LOCK_MIN_AGE_SECONDS:
+            continue
+        found.append(lock)
+    return found
+
+def refuse_active_work_v48(oldtrain,study):
+    stale={str(p) for p in unstarted_stale_locks(study)}
+    if stale:
+        print("V48_STALE_LOCK_IGNORED "+json.dumps(sorted(stale),ensure_ascii=False),flush=True)
+    active=oldtrain.active_work()
+    locks=[str(path) for pattern in ("*/suite_active.json","*/evaluation_active.json","*/training_active.json")
+           for path in Path(study).glob(pattern) if str(path) not in stale]
+    if active or locks:
+        raise RuntimeError("another training/evaluation is active or retains its lock; this launch has not "
+                           "stopped it. Watch that run, then start a new branch after it finishes: "
+                           +json.dumps({"processes":active,"locks":locks},ensure_ascii=False))
 
 def a100_resume_patch(text):
     """The pinned runtime refuses any GPU-name change on exact resume. Colab hands
@@ -622,7 +674,7 @@ def main():
         "old_declines":review["old_source_declines"]},ensure_ascii=False),flush=True)
     if not args.execute:
         return
-    oldtrain.refuse_active_work(study)
+    refuse_active_work_v48(oldtrain,study)
     import torch
     if not torch.cuda.is_available():
         raise RuntimeError('A GPU is required for --execute; CPU-only runtime cannot train this model')
@@ -635,6 +687,7 @@ def main():
     print(f'[{args.gpu_profile.upper()}] GPU {gpu_name} / VRAM {gpu_bytes/2**30:.1f} GiB', flush=True)
     oldtrain.PARENT_STEP=40500
     oldtrain.CHECKPOINT_INTERVAL=5000
+    install_uncapped_checkpoint_steps(oldtrain)
     oldtrain.PARENT_ARTIFACTS={"checkpoint":PINNED_PARENT_MODEL,"optimizer":PINNED_PARENT_OPT,"state":PINNED_PARENT_STATE}
     local=scratch/"training_checkpoints"
     local.mkdir()
@@ -661,13 +714,14 @@ def main():
          "teacher_sha256":PINNED_PARENT_MODEL,"teacher_frozen":True,"learning_rate":3e-6,
          "supervised_exposure_gate":review,"sampler_reset":True})
     shutil.copyfile(runtime,output/"runtime_v48_40500.py")
-    backup=oldtrain.IntermediateCheckpointBackup(
-        local=local,output=output,steps=steps,
-        state_loader=lambda path:torch.load(path,map_location="cpu",weights_only=True),
-        binding={"training_data_sha256":metadata["input_sha256"],"parent_sha256":PINNED_PARENT_MODEL,
-                 "runtime_sha256":digest(runtime),"variant":"multistep",
-                 "new_curriculum_repeat":1,"teacher_sha256":PINNED_PARENT_MODEL})
+    backup=None
     try:
+        backup=oldtrain.IntermediateCheckpointBackup(
+            local=local,output=output,steps=steps,
+            state_loader=lambda path:torch.load(path,map_location="cpu",weights_only=True),
+            binding={"training_data_sha256":metadata["input_sha256"],"parent_sha256":PINNED_PARENT_MODEL,
+                     "runtime_sha256":digest(runtime),"variant":"multistep",
+                     "new_curriculum_repeat":1,"teacher_sha256":PINNED_PARENT_MODEL})
         backup.start()
         rc=oldtrain.run_with_logging(
             command_for(source,local,corpus,train,runtime,output,stop,args.gpu_profile),output/"console",cwd=source)
@@ -710,8 +764,9 @@ def main():
              "scratch_path":str(scratch)})
         raise
     finally:
-        backup.request_stop()
-        backup.close()
+        if backup is not None:
+            backup.request_stop()
+            backup.close()
         (output/"training_active.json").unlink(missing_ok=True)
 
 if __name__=="__main__":
