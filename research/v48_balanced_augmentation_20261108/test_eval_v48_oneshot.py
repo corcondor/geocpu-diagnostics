@@ -122,6 +122,31 @@ class QuestionLoop(unittest.TestCase):
             self.run_sets(td, lambda case: calls.append(case["id"]) or perfect(case))
             self.assertEqual(calls, [], "completed suites must be verified and skipped, not regenerated")
 
+    def test_only_runs_the_named_suites(self):
+        with tempfile.TemporaryDirectory() as td:
+            only = ["v48_dev_python", "v48_unseen_eval_python"]
+            results = self.run_sets(td, perfect, only=only)
+            self.assertEqual(sorted(results), sorted(only))
+            self.assertEqual(sorted(p.name for p in Path(td).iterdir()),
+                             sorted(s + "__generate" for s in only))
+
+    def test_breakdown_explains_a_zero(self):
+        """Right answers without EOS must show up as exact_final, not vanish into terminal_exact = 0."""
+        def right_but_no_eos(case):
+            return native(case["target"], len(case.get("tool_steps", [])), eos=False)
+        with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
+            self.run_sets(a, right_but_no_eos)
+            self.run_sets(b, perfect)
+            summary = M.summarize_sets(Path(a), Path(b))
+            n = 8 * LIMIT
+            self.assertEqual(summary["totals"]["dev_before"], {"correct": 0, "answered": 4 * LIMIT})
+            d = summary["detail_totals"]
+            self.assertEqual(d["before_exact_final"], n)
+            self.assertEqual(d["before_ended_with_eos"], 0)
+            self.assertEqual(d["before_format_valid"], n)
+            self.assertEqual(d["after_ended_with_eos"], n)
+            self.assertIn("EOSを問わない", M.sets_markdown(summary))
+
     def test_wrong_generator_scores_zero_but_completes(self):
         with tempfile.TemporaryDirectory() as td:
             for suite, status in self.run_sets(td, wrong).items():
@@ -225,49 +250,66 @@ class Orchestration(unittest.TestCase):
 
     def args(self, **kw):
         base = dict(study=self.study, run="auto", step=61500, stamp="S1", resume=False, aux=False,
-                    full_knowledge=False, code_dir=self.study / "code")
+                    full_knowledge=False, code_dir=self.study / "code", shards=4)
         base.update(kw)
         return types.SimpleNamespace(**base)
 
     def run_child(self, command, label):
         self.commands.append((label, command))
-        if label == self.fail_label:
-            return 2
-        if label == "original_tier_1_8":
-            out = Path(command[-1])
-            out.mkdir(parents=True)
-            (out / "complete.json").write_text("{}", encoding="utf-8")
-        return 0
+        return 2 if label == self.fail_label else 0
+
+    def run_group(self, group):
+        codes = {}
+        for label, command in group:
+            self.commands.append((label, command))
+            codes[label] = 2 if label == self.fail_label else 0
+            if label == "original_tier_1_8" and codes[label] == 0:
+                out = Path(command[-1])
+                out.mkdir(parents=True)
+                (out / "complete.json").write_text("{}", encoding="utf-8")
+        return codes
 
     def report(self, before, after, output):
         self.reports.append((Path(before), Path(after), Path(output)))
         return {"written": True}
 
     def go(self, **kw):
-        return M.oneshot(self.args(**kw), run_child=self.run_child, report_originals=self.report,
-                         E=E, frozen=FakeFrozen(), OLD=OLD, T=T)
+        return M.oneshot(self.args(**kw), run_child=self.run_child, run_group=self.run_group,
+                         report_originals=self.report, E=E, frozen=FakeFrozen(), OLD=OLD, T=T)
 
     def labels(self):
         return [label for label, _ in self.commands]
 
     def test_order_and_arguments(self):
         state = self.go()
-        self.assertEqual(self.labels(), ["original_stage_preflight", "v48_sets_new", "v48_sets_baseline",
-                                         "original_tier_1_8"])
+        sets = [f"v48_sets_{tag}_{i}" for tag in ("new", "base") for i in range(4)]
+        self.assertEqual(self.labels(), ["original_stage_preflight", "original_tier_1_8"] + sets)
         root = self.study / "v48_eval_S1"
         self.assertTrue(state["finished"])
         self.assertEqual(self.commands[0][1][-1], "--preflight-only")
         self.assertEqual(self.commands[0][1][1], "v48_A100_from40500_20261108T045428Z")   # the finished run, not the failed one
-        sets_new, sets_base = self.commands[1][1], self.commands[2][1]
-        self.assertIn("v48_A100_from40500_20261108T045428Z", sets_new)
-        self.assertEqual(sets_new[sets_new.index("--step") + 1], "61500")
-        self.assertEqual(sets_new[sets_new.index("--output") + 1], str(root / "step61500"))
-        self.assertIn(M.BASE_RUN, sets_base)
-        self.assertEqual(sets_base[sets_base.index("--output") + 1], str(root / "step40500_v48sets"))
-        self.assertEqual(self.commands[3][1][-1], str(root / "step61500/original_tiers"))
+        by = dict(self.commands)
+        new0, base3 = by["v48_sets_new_0"], by["v48_sets_base_3"]
+        self.assertIn("v48_A100_from40500_20261108T045428Z", new0)
+        self.assertEqual(new0[new0.index("--step") + 1], "61500")
+        self.assertEqual(new0[new0.index("--output") + 1], str(root / "step61500"))
+        self.assertEqual(new0[new0.index("--only") + 1], "v48_dev_python,v48_unseen_eval_python")
+        self.assertIn(M.BASE_RUN, base3)
+        self.assertEqual(base3[base3.index("--output") + 1], str(root / "step40500_v48sets"))
+        self.assertEqual(base3[base3.index("--only") + 1], "v48_dev_japanese,v48_unseen_eval_japanese")
+        self.assertEqual(by["original_tier_1_8"][-1], str(root / "step61500/original_tiers"))
         self.assertEqual(self.reports, [(self.study / M.BASE_EVAL_DIR, root / "step61500",
                                          root / "reports/original_tiers_vs_40500")])
         self.assertTrue((root / "oneshot_state.json").is_file())
+
+    def test_shards_cover_every_suite_exactly_once(self):
+        for shards in (1, 2, 4):
+            parts = M.shard_suites(shards)
+            self.assertEqual(len(parts), shards)
+            flat = [s for p in parts for s in p]
+            self.assertEqual(sorted(flat), sorted(M.ALL_SUITES))
+        with self.assertRaises(ValueError):
+            M.shard_suites(3)
 
     def test_baseline_sets_are_outside_the_after_root(self):
         """compare_results rglobs the 'after' root; baseline v48 suites inside it would collide with the new ones."""
@@ -283,17 +325,25 @@ class Orchestration(unittest.TestCase):
         self.assertEqual(self.labels(), ["original_stage_preflight"])
         self.assertEqual(self.reports, [])
 
-    def test_failed_sets_stop_before_the_long_original_stage(self):
-        self.fail_label = "v48_sets_new"
-        with self.assertRaises(RuntimeError):
+    def test_a_failed_worker_does_not_hide_the_others_and_blocks_the_report(self):
+        self.fail_label = "v48_sets_new_1"
+        with self.assertRaisesRegex(RuntimeError, "v48_sets_new_1"):
             self.go()
-        self.assertNotIn("original_tier_1_8", self.labels())
+        self.assertIn("original_tier_1_8", self.labels())      # the sibling stages were still launched
+        self.assertEqual(self.reports, [])
+        self.assertTrue((self.study / "v48_eval_S1/v48_sets_summary.md").is_file())   # partial table is still written
+
+    def test_failed_original_stage_blocks_the_report(self):
+        self.fail_label = "original_tier_1_8"
+        with self.assertRaisesRegex(RuntimeError, "original_tier_1_8"):
+            self.go()
+        self.assertEqual(self.reports, [])
 
     def test_resume_skips_completed_original_stage(self):
         self.go()
         self.commands.clear()
         self.go(resume=True)
-        self.assertEqual(self.labels(), ["v48_sets_new", "v48_sets_baseline"])
+        self.assertEqual(self.labels(), [f"v48_sets_{tag}_{i}" for tag in ("new", "base") for i in range(4)])
 
     def test_existing_root_needs_resume(self):
         self.go()

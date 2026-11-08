@@ -112,7 +112,7 @@ def generation_settings() -> dict:
 
 
 def run_sets(E, frozen, generator, output: Path, *, checkpoint_id, checkpoint_sha, runtime_sha, corpus_sha,
-             data_dir: Path = DATA, limit=None, after_suite=None) -> dict:
+             data_dir: Path = DATA, limit=None, after_suite=None, only=None) -> dict:
     """Resumable: a suite that is already complete is verified and skipped by run_questions.
 
     `limit` exists only so CPU tests can use a few rows per suite; production always runs all 128."""
@@ -122,6 +122,8 @@ def run_sets(E, frozen, generator, output: Path, *, checkpoint_id, checkpoint_sh
     for split in SPLITS:
         for domain in DOMAINS:
             suite = suite_name(split, domain)
+            if only is not None and suite not in only:
+                continue
             cases = load_cases(split, domain, data_dir)
             if limit:
                 cases = cases[:limit]
@@ -168,6 +170,14 @@ def run_sets_mirrored(E, frozen, generator, output: Path, **kw) -> dict:
     return run_sets(E, frozen, generator, local, after_suite=publish, **kw)
 
 
+def shard_suites(shards: int) -> list[list[str]]:
+    """Split the 8 suites into 1, 2 or 4 workers by domain (each worker keeps a domain's dev and unseen_eval)."""
+    groups = {1: [DOMAINS], 2: [DOMAINS[:2], DOMAINS[2:]], 4: [(d,) for d in DOMAINS]}
+    if shards not in groups:
+        raise ValueError("--shards must be 1, 2 or 4")
+    return [[suite_name(s, d) for d in domains for s in SPLITS] for domains in groups[shards]]
+
+
 def summarize_sets(before_dir: Path, after_dir: Path) -> dict:
     """Plain before/after table from each suite's durable status.json (no rounding of counts)."""
     def read(root, suite):
@@ -175,8 +185,11 @@ def summarize_sets(before_dir: Path, after_dir: Path) -> dict:
         if not p.is_file():
             return None
         r = json.loads(p.read_text(encoding="utf-8"))
+        totals = r.get("metric_totals") or {}
         return {"correct": r.get("correct"), "answered": r.get("answered"), "total": r.get("total"),
-                "accuracy": r.get("accuracy"), "state": r.get("state")}
+                "accuracy": r.get("accuracy"), "state": r.get("state"),
+                "detail": {k: totals.get(k) for k in ("exact_final", "format_valid", "ended_with_eos",
+                                                      "tool_grounded_exact")}}
     rows = []
     for split in SPLITS:
         for domain in DOMAINS:
@@ -190,7 +203,13 @@ def summarize_sets(before_dir: Path, after_dir: Path) -> dict:
             complete = all(p and p["state"] == "complete" for p in parts)
             totals[f"{split}_{side}"] = ({"correct": sum(p["correct"] for p in parts),
                                          "answered": sum(p["answered"] for p in parts)} if complete else None)
-    return {"rows": rows, "totals": totals}
+    detail = {}
+    for side in ("before", "after"):
+        for key in ("exact_final", "format_valid", "ended_with_eos", "tool_grounded_exact"):
+            parts = [r[side] for r in rows]
+            ok = all(p and p["state"] == "complete" and (p.get("detail") or {}).get(key) is not None for p in parts)
+            detail[f"{side}_{key}"] = sum(p["detail"][key] for p in parts) if ok else None
+    return {"rows": rows, "totals": totals, "detail_totals": detail}
 
 
 def sets_markdown(summary: dict) -> str:
@@ -204,6 +223,17 @@ def sets_markdown(summary: dict) -> str:
         lines.append(f"| {split} | **合計** | {cell(summary['totals'][split+'_before'])} | "
                      f"{cell(summary['totals'][split+'_after'])} |")
     lines += ["", "正答は「答え: X。」の最終行が参照値と完全一致し、かつ EOS で終わったもの。", ""]
+    d = summary.get("detail_totals") or {}
+    if any(v is not None for v in d.values()):
+        def n(v):
+            return "未評価" if v is None else str(v)
+        lines += ["## 内訳（全1,024問のうち）", "", "| 指標 | 40,500 | 61,500 |", "|---|---:|---:|"]
+        for key, label in (("exact_final", "答えが参照値と一致（EOSを問わない）"),
+                           ("format_valid", "「答え: X。」の形式で終わっている"),
+                           ("ended_with_eos", "EOSで終了した"),
+                           ("tool_grounded_exact", "Pythonを実行して正答（EOS終了）")):
+            lines.append(f"| {label} | {n(d.get('before_'+key))} | {n(d.get('after_'+key))} |")
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -246,13 +276,15 @@ def bootstrap_modules(code_dir: Path):
     return E, frozen, OLD, T
 
 
-def child_command(args, command: str, run: str, step: int, output: Path) -> list[str]:
-    return [sys.executable, "-u", str(Path(__file__).resolve()), command, "--study", str(args.study),
-            "--code-dir", str(args.code_dir), "--run", run, "--step", str(step), "--output", str(output)]
+def child_command(args, command: str, run: str, step: int, output: Path, only=None) -> list[str]:
+    cmd = [sys.executable, "-u", str(Path(__file__).resolve()), command, "--study", str(args.study),
+           "--code-dir", str(args.code_dir), "--run", run, "--step", str(step), "--output", str(output)]
+    return cmd + (["--only", ",".join(only)] if only else [])
 
 
-def oneshot(args, *, run_child, report_originals, E=None, frozen=None, OLD=None, T=None) -> dict:
-    """The whole evaluation. `run_child(command, label)` -> returncode; injected so order is testable."""
+def oneshot(args, *, run_child, run_group, report_originals, E=None, frozen=None, OLD=None, T=None) -> dict:
+    """The whole evaluation. `run_child(command, label)` -> returncode and `run_group([(label, command)])` ->
+    {label: returncode} are injected so the order is testable on the CPU."""
     study = Path(args.study)
     if E is None:
         E, frozen, OLD, T = bootstrap_modules(Path(args.code_dir))
@@ -272,41 +304,56 @@ def oneshot(args, *, run_child, report_originals, E=None, frozen=None, OLD=None,
              "checkpoint_sha256": new_receipt["checkpoint_sha256"],
              "baseline_checkpoint_sha256": base_receipt["checkpoint_sha256"], "stages": []}
 
-    def stage(label, command):
-        code = run_child(command, label)
-        state["stages"].append({"stage": label, "returncode": code})
+    def save():
         (root / "oneshot_state.json").write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-        if code:
-            raise RuntimeError(f"stage {label} stopped with return code {code}; finished stages are kept, "
-                               f"rerun with --resume --stamp {args.stamp}")
+
+    def record(label, code):
+        state["stages"].append({"stage": label, "returncode": code})
+        save()
 
     tier_dir = after / "original_tiers"
     tier_done = (tier_dir / "complete.json").is_file()
+    tier_command = frozen.build_official_tier_command(
+        study=study, run=run, step=step, checkpoint_sha=new_receipt["checkpoint_sha256"], output=tier_dir)
     if not tier_done:
         if tier_dir.exists():
             raise RuntimeError(f"{tier_dir} exists but is not complete; inspect it (the original stage refuses overwrite)")
-        stage("original_stage_preflight", frozen.build_official_tier_command(
+        probe = frozen.build_official_tier_command(
             study=study, run=run, step=step, checkpoint_sha=new_receipt["checkpoint_sha256"],
-            output=after / "preflight_probe", preflight_only=True))
-    stage("v48_sets_new", child_command(args, "sets", run, step, after))
-    stage("v48_sets_baseline", child_command(args, "sets", BASE_RUN, BASE_STEP, before_sets))
+            output=after / "preflight_probe", preflight_only=True)
+        code = run_child(probe, "original_stage_preflight")
+        record("original_stage_preflight", code)
+        if code:
+            raise RuntimeError(f"stage original_stage_preflight stopped with return code {code}")
+    # 1. one concurrent group: the original Tier stage and the v48 sets of both checkpoints.
+    #    Batch-1 generation leaves the A100 mostly idle, so independent processes overlap almost for free.
+    group = [] if tier_done else [("original_tier_1_8", tier_command)]
+    for tag, (ck_run, ck_step, out) in (("new", (run, step, after)), ("base", (BASE_RUN, BASE_STEP, before_sets))):
+        for index, suites in enumerate(shard_suites(args.shards)):
+            group.append((f"v48_sets_{tag}_{index}", child_command(args, "sets", ck_run, ck_step, out, only=suites)))
+    codes = run_group(group)
+    for label, code in codes.items():
+        record(label, code)
     summary = summarize_sets(before_sets, after)
     root.joinpath("v48_sets_summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     root.joinpath("v48_sets_summary.md").write_text(sets_markdown(summary), encoding="utf-8")
     print(sets_markdown(summary), flush=True)
-    if not tier_done:
-        stage("original_tier_1_8", frozen.build_official_tier_command(
-            study=study, run=run, step=step, checkpoint_sha=new_receipt["checkpoint_sha256"], output=tier_dir))
-        if not (tier_dir / "complete.json").is_file():
-            raise RuntimeError("original Tier stage returned 0 but complete.json is missing")
+    failed = sorted(label for label, code in codes.items() if code)
+    if failed:
+        raise RuntimeError(f"stages stopped: {failed}; finished work is kept, rerun with --resume --stamp {args.stamp}")
+    if not (tier_dir / "complete.json").is_file():
+        raise RuntimeError("original Tier stage returned 0 but complete.json is missing")
     report_dir.mkdir(exist_ok=True)
     state["originals_report"] = report_originals(study / BASE_EVAL_DIR, after, report_dir / "original_tiers_vs_40500")
     if args.aux:
-        stage("aux_suites", [sys.executable, "-u", str(Path(E.__file__)), "run", "--study", str(study),
-                             "--run", run, "--step", str(step), "--output", str(after), "--resume", "--aux-only"]
-              + (["--full-knowledge"] if args.full_knowledge else []))
+        code = run_child([sys.executable, "-u", str(Path(E.__file__)), "run", "--study", str(study),
+                          "--run", run, "--step", str(step), "--output", str(after), "--resume", "--aux-only"]
+                         + (["--full-knowledge"] if args.full_knowledge else []), "aux_suites")
+        record("aux_suites", code)
+        if code:
+            raise RuntimeError(f"stage aux_suites stopped with return code {code}")
     state["finished"] = True
-    (root / "oneshot_state.json").write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    save()
     return state
 
 
@@ -334,6 +381,50 @@ def subprocess_runner(command, label):
     return subprocess.run(command).returncode
 
 
+def subprocess_group_runner(group, *, log_dir=None, every=40):
+    """Run commands concurrently; stream each one prefixed with its label. Per-question logger lines are thinned
+    (every `every`-th shown); everything is written to a per-stage log. Waits for all, never kills a sibling."""
+    import threading
+    log_dir = Path(log_dir) if log_dir else None
+    if log_dir:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    lock = threading.Lock()
+    procs, threads = {}, []
+
+    def pump(label, proc):
+        shown = 0
+        log = (log_dir / (label + ".log")).open("a", encoding="utf-8") if log_dir else None
+        try:
+            for line in proc.stdout:
+                if log:
+                    log.write(line)
+                    log.flush()
+                if line.startswith("[20"):
+                    shown += 1
+                    if shown % every:
+                        continue
+                with lock:
+                    print(f"[{label}] {line}", end="" if line.endswith("\n") else "\n", flush=True)
+        finally:
+            if log:
+                log.close()
+
+    for label, command in group:
+        print(f"=== start {label} ===", flush=True)
+        proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                encoding="utf-8", errors="replace", bufsize=1)
+        procs[label] = proc
+        thread = threading.Thread(target=pump, args=(label, proc), daemon=True)
+        thread.start()
+        threads.append(thread)
+    codes = {}
+    for label, proc in procs.items():
+        codes[label] = proc.wait()
+    for thread in threads:
+        thread.join()
+    return codes
+
+
 def cmd_sets(args) -> None:
     """Load one saved checkpoint on the GPU and run the 8 v48 suites (subprocess: frees the GPU on exit)."""
     E, frozen, OLD, T = bootstrap_modules(Path(args.code_dir))
@@ -352,7 +443,10 @@ def cmd_sets(args) -> None:
             return generation
 
         runtime_sha = E.hash_object({p.name: E.file_sha(p) for p in sorted(source.glob("*.py"))})
-        run_sets_mirrored(E, frozen, generate, Path(args.output), checkpoint_id=f"{args.run}:{args.step}",
+        only = [x for x in args.only.split(",") if x] if args.only else None
+        if only is not None and not set(only) <= set(ALL_SUITES):
+            raise ValueError(f"unknown suites in --only: {sorted(set(only) - set(ALL_SUITES))}")
+        run_sets_mirrored(E, frozen, generate, Path(args.output), only=only, checkpoint_id=f"{args.run}:{args.step}",
                  checkpoint_sha=receipt["checkpoint_sha256"], runtime_sha=runtime_sha,
                  corpus_sha=E.file_sha(corpus))
 
@@ -370,7 +464,10 @@ def parser() -> argparse.ArgumentParser:
     one.add_argument("--resume", action="store_true")
     one.add_argument("--aux", action="store_true", help="also run the v47 auxiliary suites (hours)")
     one.add_argument("--full-knowledge", action="store_true")
+    one.add_argument("--shards", type=int, default=4, choices=(1, 2, 4),
+                     help="v48-set workers per checkpoint (they run alongside the original Tier stage)")
     sets = sub.add_parser("sets")
+    sets.add_argument("--only", default="", help="comma-separated suite names")
     for name in ("--study", "--code-dir", "--output"):
         sets.add_argument(name, type=Path, required=True)
     sets.add_argument("--run", required=True)
@@ -387,7 +484,10 @@ def main(argv=None) -> None:
     args.stamp = args.stamp or stamp_utc()
     zip_path = args.code_zip or (study / CODE_ZIP)
     args.code_dir = extract_code(zip_path, args.code_zip_sha256, Path(tempfile.gettempdir()))
-    state = oneshot(args, run_child=subprocess_runner, report_originals=default_report_originals)
+    log_dir = study / f"v48_eval_{args.stamp}" / "logs"
+    state = oneshot(args, run_child=subprocess_runner,
+                    run_group=lambda group: subprocess_group_runner(group, log_dir=log_dir),
+                    report_originals=default_report_originals)
     print("V48_EVAL_DONE", json.dumps({k: state[k] for k in ("run", "step", "root")}, ensure_ascii=False), flush=True)
 
 
