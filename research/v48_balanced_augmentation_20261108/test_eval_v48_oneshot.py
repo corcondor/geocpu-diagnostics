@@ -83,6 +83,22 @@ class Scoring(unittest.TestCase):
                 count += 1
         self.assertEqual(count, 1024)
 
+    def test_every_target_scores_correct_as_the_model_really_samples_it(self):
+        """The runtime injects the tool observation; model_text never contains it (found on the first A100 run:
+        a perfect python answer scored 0/128 because the closing fence is followed directly by the answer)."""
+        count = 0
+        for suite, rows in ALL.items():
+            for row in rows:
+                text = row["target"]
+                for step in row.get("tool_steps", []):
+                    assert step["observation"] in text
+                    text = text.replace(step["observation"], "", 1)
+                gen = native(text, len(row.get("tool_steps", [])))
+                result = M.score_v48(row, gen)
+                self.assertIs(result["terminal_exact"], True, (suite, row["id"], text[-90:], result))
+                count += 1
+        self.assertEqual(count, 1024)
+
     def test_python_rows_are_tool_grounded_only_when_python_ran(self):
         row = ALL["v48_dev_python"][0]
         self.assertTrue(M.score_v48(row, perfect(row))["tool_grounded_exact"])
@@ -98,6 +114,8 @@ class Scoring(unittest.TestCase):
         self.assertFalse(M.score_v48(row, native("\n答え: %s。" % good, eos=False))["terminal_exact"])
         self.assertTrue(M.score_v48(row, native("\n答え: %s。" % good, eos=False))["exact_final"])
         self.assertIsNone(M.final_answer("```python\n答え: %s。\n```" % good))          # inside code
+        self.assertEqual(M.final_answer("```python\nprint(1)\n```答え: %s。実行結果を確認しました。" % good), good)  # no newline after the fence
+        self.assertIsNone(M.final_answer("```python\nprint(1)\n```答え: %s。```" % good))   # odd fence count
         self.assertIsNone(M.final_answer("説明\n```python\nprint(1)\n答え: %s。" % good))  # unterminated fence
         self.assertEqual(M.final_answer("答え: 1。\n考え直す\n答え: %s。" % good), good)    # last answer wins
         self.assertIsNone(M.final_answer("答えは%s" % good))                               # not the required form
@@ -211,6 +229,26 @@ class QuestionLoop(unittest.TestCase):
             for suite in ALL:
                 self.assertEqual(live_logging.read_logged_run(out / (suite + "__generate"))["status"]["state"],
                                  "complete")
+
+    def test_rescore_fixes_scores_from_saved_raw_without_touching_the_logs(self):
+        """A run scored with a wrong scorer can be re-scored from raw/*.json; the logs stay byte-identical."""
+        def as_sampled(case):
+            text = case["target"]
+            for step in case.get("tool_steps", []):
+                text = text.replace(step["observation"], "", 1)
+            return native(text, len(case.get("tool_steps", [])))
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for folder in ("step61500", "step40500_v48sets"):
+                local = root / folder
+                M.run_sets(E, frozen, as_sampled, local, checkpoint_id="x:1", checkpoint_sha="a" * 64,
+                           runtime_sha="b" * 64, corpus_sha="c" * 64, limit=LIMIT)
+            before_bytes = {p: p.read_bytes() for p in root.rglob("status.json")}
+            summary = M.rescore(root, step=61500, expected=LIMIT)
+            self.assertEqual(summary["totals"]["dev_after"], {"correct": 4 * LIMIT, "answered": 4 * LIMIT})
+            self.assertEqual(summary["detail_totals"]["after_tool_grounded_exact"], 2 * LIMIT)   # the python suites
+            self.assertTrue((root / "v48_sets_rescored.md").is_file())
+            self.assertEqual(before_bytes, {p: p.read_bytes() for p in root.rglob("status.json")})
 
     def test_missing_side_is_unmeasured_not_zero(self):
         with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:

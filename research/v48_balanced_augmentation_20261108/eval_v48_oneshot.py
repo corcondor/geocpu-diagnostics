@@ -72,11 +72,15 @@ def load_cases(split: str, domain: str, data_dir: Path = DATA) -> list[dict]:
 
 
 def final_answer(model_text: str):
-    """Last '答え: X。' in the prose after the last closed code fence; never code or tool output."""
-    closed = list(FENCE.finditer(model_text))
-    prose = model_text[closed[-1].end():] if closed else model_text
-    if re.search(r"(?m)^```", prose):
-        return None                      # an unterminated fence cannot become an answer
+    """Last '答え: X。' in the model's own prose, never code and never tool output.
+
+    The runtime records only what the MODEL sampled: the observation block is injected, not sampled, so a
+    correct python answer reads  ```python ... ```答え: 73。...  (the closing fence is followed directly by the
+    answer, no newline). Code blocks are therefore removed wherever they close; an odd number of fence markers
+    means an unterminated block, which can never become an answer."""
+    if len(re.findall(r"```", model_text)) % 2:
+        return None
+    prose = re.sub(r"```.*?```", " ", model_text, flags=re.S)
     hits = ANSWER.findall(prose)
     return hits[-1].strip() if hits else None
 
@@ -168,6 +172,61 @@ def run_sets_mirrored(E, frozen, generator, output: Path, **kw) -> dict:
         shutil.copytree(local / folder, output / folder, dirs_exist_ok=True)
 
     return run_sets(E, frozen, generator, local, after_suite=publish, **kw)
+
+
+def rescore_dir(folder: Path, cases: dict, expected: int = EXPECTED_ROWS) -> dict:
+    """Score every saved raw generation of one result folder with the CURRENT scorer. Reads raw/*.json only."""
+    rows = {}
+    for suite in ALL_SUITES:
+        raw = Path(folder) / (suite + "__" + MODE) / "raw"
+        records = [json.loads(p.read_text(encoding="utf-8")) for p in sorted(raw.glob("*.json"))] if raw.is_dir() else []
+        totals = {"terminal_exact": 0, "exact_final": 0, "format_valid": 0, "ended_with_eos": 0,
+                  "tool_grounded_exact": 0}
+        n = 0
+        for record in records:
+            generation = record.get("generation")
+            case = cases.get(record.get("id"))
+            if generation is None or case is None:
+                continue
+            result = score_v48(case, generation)
+            n += 1
+            for key in totals:
+                totals[key] += int(bool(result[key]))
+        rows[suite] = {"correct": totals["terminal_exact"], "answered": n, "total": expected,
+                       "accuracy": (totals["terminal_exact"] / n) if n else None,
+                       "state": "complete" if n == expected else "incomplete", "detail": totals}
+    return rows
+
+
+def rescore(root: Path, step: int = FINAL_STEP, expected: int = EXPECTED_ROWS) -> dict:
+    """Recompute the before/after table from saved raw generations and write it NEXT TO the original logs."""
+    root = Path(root)
+    cases = {c["id"]: c for split in SPLITS for domain in DOMAINS for c in load_cases(split, domain)}
+    after = rescore_dir(root / f"step{step}", cases, expected)
+    before = rescore_dir(root / f"step{BASE_STEP}_v48sets", cases, expected)
+    rows = []
+    for split in SPLITS:
+        for domain in DOMAINS:
+            suite = suite_name(split, domain)
+            rows.append({"split": split, "domain": domain, "suite": suite,
+                         "before": before[suite], "after": after[suite]})
+    totals, detail = {}, {}
+    for split in SPLITS:
+        for side in ("before", "after"):
+            parts = [r[side] for r in rows if r["split"] == split]
+            ok = all(p["state"] == "complete" for p in parts)
+            totals[f"{split}_{side}"] = ({"correct": sum(p["correct"] for p in parts),
+                                         "answered": sum(p["answered"] for p in parts)} if ok else None)
+    for side in ("before", "after"):
+        for key in ("exact_final", "format_valid", "ended_with_eos", "tool_grounded_exact"):
+            parts = [r[side] for r in rows]
+            ok = all(p["state"] == "complete" for p in parts)
+            detail[f"{side}_{key}"] = sum(p["detail"][key] for p in parts) if ok else None
+    summary = {"rows": rows, "totals": totals, "detail_totals": detail,
+               "note": "re-scored from saved raw generations with the corrected scorer; original logs untouched"}
+    (root / "v48_sets_rescored.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    (root / "v48_sets_rescored.md").write_text(sets_markdown(summary), encoding="utf-8")
+    return summary
 
 
 def shard_suites(shards: int) -> list[list[str]]:
@@ -466,6 +525,9 @@ def parser() -> argparse.ArgumentParser:
     one.add_argument("--full-knowledge", action="store_true")
     one.add_argument("--shards", type=int, default=4, choices=(1, 2, 4),
                      help="v48-set workers per checkpoint (they run alongside the original Tier stage)")
+    resc = sub.add_parser("rescore", help="recompute the v48-set table from saved raw generations (CPU only)")
+    resc.add_argument("--root", type=Path, required=True, help="the v48_eval_<stamp> folder")
+    resc.add_argument("--step", type=int, default=FINAL_STEP)
     sets = sub.add_parser("sets")
     sets.add_argument("--only", default="", help="comma-separated suite names")
     for name in ("--study", "--code-dir", "--output"):
@@ -479,6 +541,10 @@ def main(argv=None) -> None:
     args = parser().parse_args(argv)
     if args.command == "sets":
         cmd_sets(args)
+        return
+    if args.command == "rescore":
+        summary = rescore(args.root, args.step)
+        print(sets_markdown(summary))
         return
     study = Path(args.study)
     args.stamp = args.stamp or stamp_utc()
