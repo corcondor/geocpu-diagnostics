@@ -56,6 +56,77 @@ def new_json(path,data):
         json.dump(data,stream,ensure_ascii=False,indent=2)
         stream.write("\n")
 
+# ---------------------------------------------------------------------------
+# Durable, SHA-bound cache of the rebuilt datasets (Google Drive). Every Colab
+# run used to rebuild the 30500 and 40500 parents from the original sources
+# (several minutes) because v47's cache lookup only searches /tmp names this
+# launcher never creates. A cached file is used only after its SHA256 equals
+# the pinned value, so the cache can never change what is trained.
+# ---------------------------------------------------------------------------
+def digest_prefix(path,nbytes):
+    h=hashlib.sha256()
+    left=int(nbytes)
+    with open(path,"rb") as stream:
+        while left:
+            block=stream.read(min(1<<20,left))
+            if not block:
+                raise ValueError("file shorter than the inherited parent: "+str(path))
+            h.update(block)
+            left-=len(block)
+    return h.hexdigest()
+
+def cache_fetch(cache,name,expected,destination):
+    if cache is None or not (cache/name).is_file():
+        return None
+    part=destination.with_name(destination.name+".part")
+    shutil.copyfile(cache/name,part)
+    if digest(part)!=expected:
+        part.unlink()
+        print("V48_CACHE_REJECTED "+json.dumps({"file":name,"reason":"sha256 mismatch"}),flush=True)
+        return None
+    os.replace(part,destination)
+    print("V48_CACHE_HIT "+json.dumps({"file":name,"sha256":expected}),flush=True)
+    return destination
+
+def cache_store(cache,name,expected,source_file):
+    if cache is None:
+        return
+    target=cache/name
+    if target.is_file() and target.stat().st_size==source_file.stat().st_size and digest(target)==expected:
+        return
+    cache.mkdir(parents=True,exist_ok=True)
+    part=cache/(name+f".part{os.getpid()}")
+    shutil.copyfile(source_file,part)
+    if digest(part)!=expected:
+        part.unlink()
+        raise ValueError("cache copy corrupted: "+name)
+    os.replace(part,target)
+    print("V48_CACHE_STORED "+json.dumps({"file":name,"sha256":expected}),flush=True)
+
+# A100 is the target. The 30500->40500 phase ran on "NVIDIA A100-SXM4-40GB" with
+# the unmodified BF16 runtime and automatic chunking (36,864 tokens fit in one
+# chunk; OOM halves it and redoes the same step). Measured: 10,000 updates in
+# 7,848 s including the frozen teacher, i.e. 1.27 updates/s.
+GPU_PROFILES={
+    "a100":{"names":("A100",),"min_vram_gib":39,"chunk_tokens":None,"updates_per_second":1.27},
+    "t4":{"names":("T4",),"min_vram_gib":14,"chunk_tokens":16384,"updates_per_second":None},
+}
+
+def a100_resume_patch(text):
+    """The pinned runtime refuses any GPU-name change on exact resume. Colab hands
+    out A100 40GB or 80GB; both run the same BF16 kernels, so only inside a checked
+    new-dataset phase an A100->A100 variant change is allowed (anything else still fails)."""
+    before=('            if state["gpu_name"] != (torch.cuda.get_device_name(dev) if dev.type == "cuda" else "cpu"):\n'
+            '                raise RuntimeError("GPU model changed on exact resume")\n')
+    after=('            _v48_gpu = torch.cuda.get_device_name(dev) if dev.type == "cuda" else "cpu"\n'
+           '            if state["gpu_name"] != _v48_gpu:\n'
+           '                if not (args.new_dataset_sampler and "A100" in state["gpu_name"] and "A100" in _v48_gpu):\n'
+           '                    raise RuntimeError("GPU model changed on exact resume")\n'
+           '                print(f"[A100] declared variant change in new dataset phase: {state[\'gpu_name\']} -> {_v48_gpu}", flush=True)\n')
+    if text.count(before)!=1:
+        raise ValueError("A100 resume anchor changed in pinned runtime")
+    return text.replace(before,after,1)
+
 def parent_receipt(study):
     parent=study/PINNED_PARENT_RUN
     cp=parent/"checkpoints"
@@ -93,21 +164,33 @@ def unpack_v47(archive,scratch):
     import prepare_training as old_prep
     return old,old_train,old_prep
 
-def compose_40500(study,scratch,oldroot,oldtrain,prep,prepared):
+def count_rows(path):
+    with open(path,"rb") as stream:
+        return sum(1 for line in stream if line.strip())
+
+def compose_40500(study,scratch,oldroot,oldtrain,prep,prepared,cache=None):
+    if prepared is None:
+        prepared=cache_fetch(cache,"train_30500.jsonl",oldtrain.PARENT_TRAIN_SHA,scratch/"train_30500_cached.jsonl")
     parent30500,source,corpus,original,old,runner=oldtrain.make_parent_dataset(
         study,scratch,prepared)
+    cache_store(cache,"train_30500.jsonl",oldtrain.PARENT_TRAIN_SHA,parent30500)
     heldouts=oldtrain.fixed_heldouts(oldroot)
     cached=scratch/"train_40500_exact.jsonl"
-    manifest=scratch/"recompose_40500.json"
-    additions=[
-        (oldroot/"data/practical_train.jsonl",oldroot/"data/practical_manifest.json"),
-        (oldroot/"data/knowledge_train.jsonl",oldroot/"data/knowledge_manifest.json")]
-    prep.prepare_dataset(parent30500,additions,meta=source/"base_metadata.json",
-        normalizer_source=source/"qwenputer_controller_v30.py",
-        heldouts=heldouts,output=cached,manifest_output=manifest,variant="multistep")
-    require_file(cached,PINNED_PARENT_TRAIN)
-    if load_json(manifest).get("output_rows")!=423348:
-        raise ValueError("40500 exact parent row count mismatch")
+    if cache_fetch(cache,"train_40500_exact.jsonl",PINNED_PARENT_TRAIN,cached) is None:
+        manifest=scratch/"recompose_40500.json"
+        additions=[
+            (oldroot/"data/practical_train.jsonl",oldroot/"data/practical_manifest.json"),
+            (oldroot/"data/knowledge_train.jsonl",oldroot/"data/knowledge_manifest.json")]
+        prep.prepare_dataset(parent30500,additions,meta=source/"base_metadata.json",
+            normalizer_source=source/"qwenputer_controller_v30.py",
+            heldouts=heldouts,output=cached,manifest_output=manifest,variant="multistep")
+        require_file(cached,PINNED_PARENT_TRAIN)
+        if load_json(manifest).get("output_rows")!=423348:
+            raise ValueError("40500 exact parent row count mismatch")
+        cache_store(cache,"train_40500_exact.jsonl",PINNED_PARENT_TRAIN,cached)
+    # Inherited assets: every one of the 423,348 parent rows, byte for byte.
+    if count_rows(cached)!=423348 or digest(cached)!=PINNED_PARENT_TRAIN:
+        raise ValueError("40500 parent must be the exact 423,348-row pinned file")
     return cached,source,corpus,original,old,runner,heldouts
 
 def build_v48_dataset(parent_dataset,scratch,oldroot,source,prep,heldouts):
@@ -171,9 +254,14 @@ def build_v48_dataset(parent_dataset,scratch,oldroot,source,prep,heldouts):
                     rr["_v46_group"]=V48_GROUP
                     rr["training_variant"]="multistep"
                     out.write(json.dumps(rr,ensure_ascii=False,separators=(",",":"))+"\n")
+    # The candidate is the parent file verbatim followed by appended rows: prove it.
+    if digest_prefix(train,parent_dataset.stat().st_size)!=PINNED_PARENT_TRAIN:
+        raise ValueError("candidate does not start with the exact 423,348-row parent")
     # Earlier trainer preview uses group and origin exactly as the training runtime.
     prep.NEW_GROUP=V48_GROUP
     return train,{"input_sha256":digest(train),
+                  "inherited_rows":423348,"inherited_sha256":PINNED_PARENT_TRAIN,
+                  "inherited_prefix_verified":True,
                   "new_unique_examples":sum(map(len,base_rows.values())),
                   "rows_with_training_weights":sum(len(base_rows[d])*repeats[d] for d in CATEGORIES),
                   "repeat_factor_by_domain":repeats,
@@ -207,23 +295,123 @@ def assess_exposure(reference,preview,tolerance=0.15):
         "new_sources_balanced_within_15pct":balanced,
         "old_source_count":len(before)}
 
-def patched_runtime(oldroot,source):
+def parity_with_receipt(prep,snapshots,train,compare_steps,cache,common):
+    """Run the frozen v47 oracle once per exact (data, simulator, oracle) triple;
+    later runs reuse the SHA-bound receipt instead of a second full simulation."""
+    from multibudget_preflight import assert_preview_parity
+    if cache is None:
+        return assert_preview_parity(prep,snapshots,train,compare_steps=compare_steps,**common)
+    key={"train_sha256":digest(train),
+         "simulator_sha256":digest(ROOT/"multibudget_preflight.py"),
+         "oracle_sha256":digest(Path(prep.__file__)),
+         "compare_steps":compare_steps,
+         "snapshot_sha256":hashlib.sha256(json.dumps(snapshots[compare_steps],sort_keys=True).encode()).hexdigest()}
+    receipt=cache/f"parity_{key['train_sha256'][:16]}_{compare_steps}.json"
+    if receipt.is_file() and load_json(receipt)=={**key,"identical":True}:
+        print("V48_PARITY_RECEIPT_REUSED "+json.dumps(key),flush=True)
+        return True
+    assert_preview_parity(prep,snapshots,train,compare_steps=compare_steps,**common)
+    cache.mkdir(parents=True,exist_ok=True)
+    part=receipt.with_name(receipt.name+f".part{os.getpid()}")
+    part.write_text(json.dumps({**key,"identical":True},indent=2),encoding="utf-8")
+    os.replace(part,receipt)
+    return True
+
+
+def cpu_plan_with_replay_floor_repair(train, scratch, prep, source, original, reference,
+                                      minimum_updates, maximum_updates, cache=None, repair_horizon=20000,
+                                      alternatives=None):
+    """Bounded CPU repair. One sampler pass per attempt covers every budget and stops
+    at the first one where all old-source floors and the new-domain balance hold.
+
+    The plan with the fewest GPU updates is chosen: if no budget up to repair_horizon
+    passes without replay, the replay weights are sized from the deficits AT the
+    horizon (not at the scan ceiling, which would ask for small weights but 3x more
+    updates). `alternatives` (a dict) receives the first passing budget without any
+    replay, or None, so the report can show the cost/repetition trade-off."""
+    from replay_floor_repair import next_weights, write_weighted_candidate
+    from multibudget_preflight import preview_budgets
+
+    base_train = train
+    weights = {}
+    budgets = list(range(minimum_updates,maximum_updates+1,1000))
+    horizon = max(b for b in budgets if b <= max(minimum_updates, min(repair_horizon, maximum_updates)))
+    latest_review = None
+    latest_stats = {"replay_replicas_added":0, "source_training_weights":{}}
+    common = dict(meta=source/"base_metadata.json",
+                  normalizer_source=source/"qwenputer_controller_v30.py",
+                  base_sampler_source=source/"runtime_cotraining_v41_247M.py",
+                  runtime_source=original/"training/runtime_30500.py")
+    accept = lambda snap: bool(snap["passed"] and assess_exposure(reference,snap)["passed"])
+    for attempt in range(5):
+        if weights:
+            train = scratch/f"train_v48_replay_reweighted_{attempt}.jsonl"
+            latest_stats = write_weighted_candidate(base_train,train,weights)
+        else:
+            train = base_train
+        snapshots = preview_budgets(prep,train,budgets=budgets,repeat=1,min_new=1000,accept=accept,**common)
+        if attempt == 0:
+            # Actual original private dataset, tested against untouched v47 oracle.
+            parity_with_receipt(prep,snapshots,train,budgets[0],cache,common)
+        reached = sorted(snapshots)
+        reviews = {steps:assess_exposure(reference,snapshots[steps]) for steps in reached}
+        passing = [steps for steps in reached
+                   if snapshots[steps]["passed"] and reviews[steps]["passed"]]
+        latest_review = reviews[horizon] if horizon in reviews else reviews[reached[-1]]
+        if attempt == 0 and alternatives is not None:
+            alternatives["first_passing_updates_without_replay"] = passing[0] if passing else None
+            alternatives["scan_ceiling"] = budgets[-1]
+        print("V48_CPU_REPLAY_FLOOR_AUDIT "+json.dumps({
+            "attempt":attempt,"steps_scanned":[reached[0],reached[-1]],
+            "passing_steps":passing,"repair_horizon":horizon,
+            "horizon_old_source_declines":latest_review["old_source_declines"],
+            "new_source_supervised_tokens":latest_review["new_source_supervised_tokens"],
+            "replay_weights":weights,
+            "replay_replica_rows":latest_stats["replay_replicas_added"],
+            "gpu_updates":0},ensure_ascii=False),flush=True)
+        if passing and (weights or passing[0] <= horizon):
+            steps=passing[0]
+            return train,steps,snapshots[steps],reviews[steps],latest_stats
+        if not latest_review["old_source_declines"]:
+            if passing:   # beyond the horizon and nothing replay could improve: more updates are the only way
+                steps=passing[0]
+                return train,steps,snapshots[steps],reviews[steps],latest_stats
+            raise RuntimeError(
+                "Old source floors pass but new domain balance fails; "
+                "do not use GPU until curriculum is fixed")
+        if attempt==4:
+            break
+        weights=next_weights(latest_review["old_source_declines"],weights)
+    raise RuntimeError("CPU replay balancing exhausted; GPU has NOT started. Remaining deficits: "+
+                       json.dumps(latest_review["old_source_declines"],ensure_ascii=False))
+
+
+def runtime_text(oldroot,profile="a100"):
     source_runtime=require_file(oldroot/"runtime_practical_v1.py",PINNED_RUNTIME)
     text=source_runtime.read_text(encoding="utf-8")
     if text.count('"practical_multistep_v1"')<5:
         raise ValueError("runtime group replacement sites changed")
     patched=text.replace('"practical_multistep_v1"',f'"{V48_GROUP}"')
     patched=patched.replace("KL(parent30500/replay)","KL(parent40500/replay)")
-    # Full budget on 16-GiB T4: switch autocast to fp16 with loss scaling,
-    # checkpoint activations, and allow A100->T4 only at the guarded new phase.
-    from t4_runtime_patch import patch_runtime
-    patched=patch_runtime(patched)
+    if profile=="a100":
+        # Same BF16 numerics and automatic chunking as the 30500->40500 A100 phase.
+        patched=a100_resume_patch(patched)
+    elif profile=="t4":
+        # 16-GiB T4: fp16 with loss scaling, activation checkpointing, guarded A100->T4.
+        from t4_runtime_patch import patch_runtime
+        patched=patch_runtime(patched)
+    else:
+        raise ValueError("unknown GPU profile: "+str(profile))
     ast.parse(patched)
+    return patched
+
+def patched_runtime(oldroot,source,profile="a100"):
     runtime=source/"runtime_v48_40500.py"
-    runtime.write_text(patched,encoding="utf-8")
+    runtime.write_text(runtime_text(oldroot,profile),encoding="utf-8")
     return runtime
 
-def command_for(source,local,corpus,train,runtime,output,stop):
+def command_for(source,local,corpus,train,runtime,output,stop,profile="a100"):
+    chunk=GPU_PROFILES[profile]["chunk_tokens"]
     return [sys.executable,"-u",str(runtime),
       "--train_path",str(train),"--meta_path",str(source/"base_metadata.json"),
       "--corpus_path",str(corpus),
@@ -232,7 +420,8 @@ def command_for(source,local,corpus,train,runtime,output,stop):
       "--resume_state",str(local/"train_state_step_40500.pt"),
       "--output_dir",str(local),
       "--max_steps",str(stop),"--stop_at_step",str(stop),
-      "--batch_size","64","--step_tokens","36864","--chunk_tokens","16384",
+      "--batch_size","64","--step_tokens","36864",
+      *(["--chunk_tokens",str(chunk)] if chunk else []),
       "--phase_lr","3e-6","--phase_floor","3e-6",
       "--phase_start","40500","--phase_warmup","0",
       "--skip_final_eval","--mask_tool_output","--save_optimizer","--numina_repeat","1",
@@ -243,6 +432,43 @@ def command_for(source,local,corpus,train,runtime,output,stop):
       "--practical_variant","multistep","--min_replay_share","0.75",
       "--telemetry_jsonl",str(output/"training_events.jsonl")]
 
+def source_floor_table(reference,preview):
+    """Per old source: absolute supervised tokens in the 30500->40500 window vs the plan."""
+    before=reference["source_supervised_tokens"]
+    after=preview["source_supervised_tokens"]
+    return {k:{"reference_40500_window":v,"planned":int(after.get(k,0)),
+               "ratio":round(after.get(k,0)/v,4) if v else None} for k,v in sorted(before.items())}
+
+def estimated_gpu_hours(profile,steps):
+    rate=GPU_PROFILES[profile]["updates_per_second"]
+    return None if not rate else round(steps/rate/3600,2)
+
+def validate_approval(approval,*,runtime_sha,profile,metadata,minimum,maximum,confirm):
+    """GPU side: accept only a CPU report produced by this revision, for the same
+    weights, runtime bytes, GPU profile and curriculum; the caller must restate the
+    approved update count (explicit acceptance of the GPU time it implies)."""
+    if (approval.get("event")!="v48_preflight"
+        or approval.get("preflight_revision")!="cpu_fast_v2"
+        or approval.get("start_step")!=40500
+        or approval.get("parent_checkpoint_sha256")!=PINNED_PARENT_MODEL
+        or approval.get("parent_train_sha256")!=PINNED_PARENT_TRAIN
+        or approval.get("runtime_sha256")!=runtime_sha
+        or approval.get("gpu_profile")!=profile):
+        raise ValueError("CPU approval is missing, stale, or bound to different code/weights/GPU profile")
+    prior=approval.get("train",{})
+    if (prior.get("new_unique_examples")!=4096
+        or prior.get("inherited_rows")!=423348
+        or prior.get("repeat_factor_by_domain")!=metadata["repeat_factor_by_domain"]
+        or prior.get("reference_target_tokens_by_domain")!=metadata["reference_target_tokens_by_domain"]):
+        raise ValueError("Candidate curriculum differs from CPU approval")
+    steps=int(approval["steps"])
+    if not minimum<=steps<=maximum or steps%1000:
+        raise ValueError("CPU-approved update budget is outside the caller limits")
+    if confirm!=steps:
+        raise ValueError(f"--confirm-updates must restate the CPU-approved {steps} updates "
+                         f"(about {approval.get('estimated_gpu_hours')} GPU hours) before GPU time is spent")
+    return prior,steps
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--study",type=Path,required=True)
@@ -250,76 +476,125 @@ def main():
     parser.add_argument("--output",type=Path,required=True)
     parser.add_argument("--prepared-30500",type=Path)
     parser.add_argument("--minimum-updates",type=int,default=10000)
-    parser.add_argument("--maximum-updates",type=int,default=20000)
+    parser.add_argument("--maximum-updates",type=int,default=60000,
+                        help="scan ceiling only; the plan uses the FIRST budget where every old source keeps its floor")
+    parser.add_argument("--gpu-profile",choices=sorted(GPU_PROFILES),default="a100")
+    parser.add_argument("--dataset-cache",type=Path,
+                        help="SHA-bound cache of rebuilt parents (default: STUDY/_v48_dataset_cache)")
+    parser.add_argument("--no-dataset-cache",action="store_true")
     parser.add_argument("--preflight-report",type=Path)
+    parser.add_argument("--approved-preflight",type=Path,
+                        help="CPU-only approved manifest from the SAME pinned input; skips the sampler preview on GPU")
+    parser.add_argument("--confirm-updates",type=int,
+                        help="with --execute: restate the CPU-approved update count")
     parser.add_argument("--execute",action="store_true",help="Only this flag permits GPU training")
     args=parser.parse_args()
-    if args.minimum_updates<1000 or args.maximum_updates<args.minimum_updates or args.maximum_updates>20000:
-        parser.error("updates must be between 1000 and 20000, with maximum>=minimum")
+    if args.minimum_updates<1000 or args.maximum_updates<args.minimum_updates or args.maximum_updates>100000:
+        parser.error("updates must be between 1000 and 100000, with maximum>=minimum")
+    if args.execute and not args.approved_preflight:
+        parser.error("--execute requires --approved-preflight from the CPU stage (never debug on paid GPU)")
     study=args.study.resolve()
     output=args.output.resolve()
     if output.exists() or output==study or output.is_relative_to(study/PINNED_PARENT_RUN):
         raise FileExistsError("Output must be a new branch directory; never overwrite parent")
+    cache=None if args.no_dataset_cache else (args.dataset_cache or study/"_v48_dataset_cache").resolve()
     parent,receipt=parent_receipt(study)
     scratch=Path(tempfile.mkdtemp(prefix="geocpu_v48_40500_"))
     oldroot,oldtrain,prep=unpack_v47(args.v47_zip,scratch)
     # Existing 30500 historical preparation code (including data hashes) is reused.
     parent_data,source,corpus,original,old,runner,heldouts=compose_40500(
-        study,scratch,oldroot,oldtrain,prep,args.prepared_30500)
+        study,scratch,oldroot,oldtrain,prep,args.prepared_30500,cache)
     train,metadata=build_v48_dataset(parent_data,scratch,oldroot,source,prep,heldouts)
-    runtime=patched_runtime(oldroot,source)
+    runtime=patched_runtime(oldroot,source,args.gpu_profile)
     comparison=reference_exposure(parent)
-    chosen=None
-    for steps in range(args.minimum_updates,args.maximum_updates+1,1000):
-        preview=prep.preview_plan(train,meta=source/"base_metadata.json",
-            normalizer_source=source/"qwenputer_controller_v30.py",
-            base_sampler_source=source/"runtime_cotraining_v41_247M.py",
-            runtime_source=original/"training/runtime_30500.py",
-            steps=steps,repeat=1,min_new=1000)
+    if args.approved_preflight:
+        # The CPU phase has already checked exact supervised-token exposure.
+        # The GPU phase independently rebuilds the candidate, verifies its
+        # SHA256, old 40500 parent, patched runtime and the frozen source floors.
+        from replay_floor_repair import write_weighted_candidate
+        approval=load_json(require_file(args.approved_preflight))
+        prior,steps=validate_approval(approval,runtime_sha=digest(runtime),profile=args.gpu_profile,
+            metadata=metadata,minimum=args.minimum_updates,maximum=args.maximum_updates,
+            confirm=args.confirm_updates if args.execute else int(approval.get("steps",-1)))
+        weights=prior.get("replay_source_training_weights",{})
+        if weights:
+            repaired=scratch/"train_v48_approved_replay.jsonl"
+            repair=write_weighted_candidate(train,repaired,weights)
+            train=repaired
+        else:
+            repair={"replay_replicas_added":0,"source_training_weights":{}}
+        metadata["input_sha256"]=digest(train)
+        metadata["replay_floor_replica_rows"]=repair["replay_replicas_added"]
+        metadata["replay_source_training_weights"]=repair["source_training_weights"]
+        metadata["total_training_rows"]=423348+metadata["rows_with_training_weights"]+repair["replay_replicas_added"]
+        if (metadata["input_sha256"]!=prior.get("input_sha256")
+            or metadata["replay_floor_replica_rows"]!=prior.get("replay_floor_replica_rows")
+            or metadata["total_training_rows"]!=prior.get("total_training_rows")):
+            raise ValueError("Prepared training bytes differ from approved CPU preflight")
+        preview=approval["sampler_preview"]
         review=assess_exposure(comparison,preview)
-        print("V48_EXPOSURE_PREVIEW "+json.dumps({
-            "updates":steps, "passed":review["passed"],
-            "old_group_deficit_count":len(review["old_source_declines"]),
-            "new_tokens":review["new_source_supervised_tokens"],
-            "new_balanced":review["new_sources_balanced_within_15pct"]},
-            ensure_ascii=False),flush=True)
-        if review["passed"]:
-            chosen=(steps,preview,review)
-            break
-    if chosen is None:
-        raise RuntimeError("No safe budget found: old sources or new domain balance insufficient. "
-            "GPU training has NOT started; change curriculum weights rather than lowering floors.")
-    steps,preview,review=chosen
+        if not (review["passed"] and approval.get("exposure_gate")==review
+                and preview.get("steps")==steps and preview.get("passed")):
+            raise ValueError("CPU-approved source floors or sampling contract do not match")
+        print("V48_APPROVED_CPU_PREFLIGHT_REUSED "+json.dumps({
+            "steps":steps,"training_sha256":metadata["input_sha256"],
+            "gpu_updates":0,"replay_weights":weights},ensure_ascii=False),flush=True)
+    else:
+        alternatives={}
+        train,steps,preview,review,repair=cpu_plan_with_replay_floor_repair(
+            train,scratch,prep,source,original,comparison,
+            args.minimum_updates,args.maximum_updates,cache,alternatives=alternatives)
+        metadata["plan_alternatives"]={**alternatives,
+            "estimated_gpu_hours_without_replay":(estimated_gpu_hours(args.gpu_profile,alternatives["first_passing_updates_without_replay"])
+                                                  if alternatives.get("first_passing_updates_without_replay") else None)}
+        metadata["input_sha256"]=digest(train)
+        metadata["replay_floor_replica_rows"]=repair["replay_replicas_added"]
+        metadata["replay_source_training_weights"]=repair["source_training_weights"]
+        metadata["total_training_rows"]=(
+            423348+metadata["rows_with_training_weights"]
+            +repair["replay_replicas_added"])
+        if digest_prefix(train,parent_data.stat().st_size)!=PINNED_PARENT_TRAIN:
+            raise ValueError("planned training file does not start with the exact inherited parent")
     stop=PINNED_STEP+steps
-    report={"event":"v48_preflight","model_updates":0,
+    profile=GPU_PROFILES[args.gpu_profile]
+    report={"event":"v48_preflight","preflight_revision":"cpu_fast_v2","model_updates":0,
        "parent_run":PINNED_PARENT_RUN,"parent_checkpoint_sha256":PINNED_PARENT_MODEL,
        "parent_train_sha256":PINNED_PARENT_TRAIN,"train":metadata,
+       "records":{"inherited_rows":423348,"new_unique_examples":metadata["new_unique_examples"],
+                  "new_domain_repeat_rows":metadata["rows_with_training_weights"]-metadata["new_unique_examples"],
+                  "old_source_replay_replica_rows":metadata["replay_floor_replica_rows"],
+                  "training_file_rows":metadata["total_training_rows"],
+                  "independent_problems":423348+metadata["new_unique_examples"],
+                  "note":"repeat/replica rows are explicit sampling weights, not independent problems"},
        "steps":steps,"start_step":40500,"stop_step":stop,
        "sampler_preview":preview,"exposure_gate":review,
-       "runtime_sha256":digest(runtime),"gpu_training_started":False,
-       "final_benchmark_status":"not_executed",
-       "hardware_target":"NVIDIA T4 16-GiB VRAM, High-RAM host",
+       "old_source_floors":source_floor_table(comparison,preview),
+       "runtime_sha256":digest(runtime),"gpu_profile":args.gpu_profile,
+       "estimated_gpu_hours":estimated_gpu_hours(args.gpu_profile,steps),
+       "gpu_training_started":False,"final_benchmark_status":"not_executed",
        "logical_step_token_budget":36864,
-       "max_initial_activation_chunk_tokens":16384,
-       "numerics_note":"FP16 autocast + dynamic loss scaling; no skipped optimizer updates permitted",
-       "activation_checkpointing":True}
+       "chunk_tokens":profile["chunk_tokens"] or "automatic (36,864 on A100 40GB; OOM halves and redoes the step)",
+       "numerics_note":("BF16 autocast as in the 30500->40500 A100 phase" if args.gpu_profile=="a100"
+                        else "FP16 autocast + dynamic loss scaling; no skipped optimizer updates permitted")}
     if args.preflight_report:
         new_json(args.preflight_report,report)
     print("V48_PREFLIGHT_PASS "+json.dumps({"start":40500,"stop":stop,
-        "steps":steps,"new_sources":review["new_source_supervised_tokens"],
+        "steps":steps,"estimated_gpu_hours":report["estimated_gpu_hours"],"gpu_profile":args.gpu_profile,
+        "records":report["records"],"new_sources":review["new_source_supervised_tokens"],
         "old_declines":review["old_source_declines"]},ensure_ascii=False),flush=True)
     if not args.execute:
         return
     oldtrain.refuse_active_work(study)
     import torch
     if not torch.cuda.is_available():
-        raise RuntimeError('T4 GPU is required; CPU-only runtime cannot train this model')
+        raise RuntimeError('A GPU is required for --execute; CPU-only runtime cannot train this model')
     gpu_name = torch.cuda.get_device_name(0)
     gpu_bytes = torch.cuda.get_device_properties(0).total_memory
-    if 'T4' not in gpu_name or gpu_bytes < 14 * (1024 ** 3):
-        raise RuntimeError(f'Choose NVIDIA T4 High-RAM Colab: detected {gpu_name}, {gpu_bytes/2**30:.1f} GiB VRAM')
-    print(f'[T4 High-RAM] GPU {gpu_name} / VRAM {gpu_bytes/2**30:.1f} GiB; '
-          'physical VRAM stays 16 GiB, host RAM supports checkpoint loading', flush=True)
+    if (not any(n in gpu_name for n in profile["names"])
+            or gpu_bytes < profile["min_vram_gib"] * (1024 ** 3)):
+        raise RuntimeError(f'GPU profile {args.gpu_profile} needs {profile["names"]} with >= {profile["min_vram_gib"]} GiB; '
+                           f'detected {gpu_name}, {gpu_bytes/2**30:.1f} GiB VRAM')
+    print(f'[{args.gpu_profile.upper()}] GPU {gpu_name} / VRAM {gpu_bytes/2**30:.1f} GiB', flush=True)
     oldtrain.PARENT_STEP=40500
     oldtrain.CHECKPOINT_INTERVAL=5000
     oldtrain.PARENT_ARTIFACTS={"checkpoint":PINNED_PARENT_MODEL,"optimizer":PINNED_PARENT_OPT,"state":PINNED_PARENT_STATE}
@@ -339,7 +614,9 @@ def main():
     new_json(output/"input_manifest.json",
         {"parent_sha256":PINNED_PARENT_TRAIN,"parent_rows_preserved":423348,
          "new_unique_rows":4096,"weighted_training_rows":metadata["rows_with_training_weights"],
-         "output_sha256":metadata["input_sha256"],"output_rows":423348+metadata["rows_with_training_weights"],
+         "output_sha256":metadata["input_sha256"],"output_rows":metadata["total_training_rows"],
+         "replay_replica_rows":metadata["replay_floor_replica_rows"],
+         "replay_source_weights":metadata["replay_source_training_weights"],
          "new_group":V48_GROUP,"source_repeat_weights":metadata["repeat_factor_by_domain"]})
     new_json(output/"fork_from_40500.json",
         {"step_start":40500,"step_stop":stop,"parent_sha256":PINNED_PARENT_MODEL,
@@ -355,7 +632,7 @@ def main():
     try:
         backup.start()
         rc=oldtrain.run_with_logging(
-            command_for(source,local,corpus,train,runtime,output,stop),output/"console",cwd=source)
+            command_for(source,local,corpus,train,runtime,output,stop,args.gpu_profile),output/"console",cwd=source)
         backup.request_stop()
         if rc:
             raise RuntimeError("GPU process exit "+str(rc)+"; see console.log")
