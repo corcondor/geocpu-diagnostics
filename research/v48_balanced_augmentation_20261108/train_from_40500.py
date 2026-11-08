@@ -19,6 +19,7 @@ from pathlib import Path
 import shutil
 import sys
 import tempfile
+import time
 import zipfile
 
 ROOT = Path(__file__).resolve().parent
@@ -111,6 +112,57 @@ GPU_PROFILES={
     "a100":{"names":("A100",),"min_vram_gib":39,"chunk_tokens":None,"updates_per_second":1.27},
     "t4":{"names":("T4",),"min_vram_gib":14,"chunk_tokens":16384,"updates_per_second":None},
 }
+
+# ---------------------------------------------------------------------------
+# Launch guards found by the first real A100 attempt (2026-11-08). Both stopped the
+# run BEFORE any training update, but only after the A100 had been allocated.
+#  1. v47's checkpoint_steps() refuses more than 10,000 additional updates (a limit
+#     of v47's own 30500 phase). The CPU preflight approved 21,000, and the backup
+#     class built from that limit raised "additional steps must be 1..10000".
+#  2. That failure happened outside the try/finally, so training_active.json stayed
+#     in the failed output folder, and v47's refuse_active_work() refuses every later
+#     launch while any */training_active.json exists in the study folder.
+# ---------------------------------------------------------------------------
+def checkpoint_steps_uncapped(oldtrain,steps):
+    """Same list as v47's checkpoint_steps for 1..10,000 updates, without its cap."""
+    if not 1<=steps<=100000:
+        raise ValueError("additional steps must be 1..100000")
+    stop=oldtrain.PARENT_STEP+steps
+    interval=oldtrain.CHECKPOINT_INTERVAL
+    return [*range(oldtrain.PARENT_STEP+interval,stop,interval),stop]
+
+def install_uncapped_checkpoint_steps(oldtrain):
+    oldtrain.checkpoint_steps=lambda steps:checkpoint_steps_uncapped(oldtrain,steps)
+
+STALE_LOCK_MIN_AGE_SECONDS=600
+TRAINING_ARTIFACTS=("console","checkpoints","training_events.jsonl","training_saved.json","training_incomplete.json")
+
+def unstarted_stale_locks(study,now=None):
+    """training_active.json files whose launch stopped before the training process existed:
+    no console/, checkpoints/ or telemetry in the folder, and older than 10 minutes (so a
+    launch that is only seconds old, e.g. on another Colab host, is never mistaken for one).
+    Such a lock is ignored, never deleted."""
+    now=time.time() if now is None else now
+    found=[]
+    for lock in sorted(Path(study).glob("*/training_active.json")):
+        if any((lock.parent/name).exists() for name in TRAINING_ARTIFACTS):
+            continue
+        if now-lock.stat().st_mtime<STALE_LOCK_MIN_AGE_SECONDS:
+            continue
+        found.append(lock)
+    return found
+
+def refuse_active_work_v48(oldtrain,study):
+    stale={str(p) for p in unstarted_stale_locks(study)}
+    if stale:
+        print("V48_STALE_LOCK_IGNORED "+json.dumps(sorted(stale),ensure_ascii=False),flush=True)
+    active=oldtrain.active_work()
+    locks=[str(path) for pattern in ("*/suite_active.json","*/evaluation_active.json","*/training_active.json")
+           for path in Path(study).glob(pattern) if str(path) not in stale]
+    if active or locks:
+        raise RuntimeError("another training/evaluation is active or retains its lock; this launch has not "
+                           "stopped it. Watch that run, then start a new branch after it finishes: "
+                           +json.dumps({"processes":active,"locks":locks},ensure_ascii=False))
 
 def a100_resume_patch(text):
     """The pinned runtime refuses any GPU-name change on exact resume. Colab hands
@@ -320,7 +372,7 @@ def parity_with_receipt(prep,snapshots,train,compare_steps,cache,common):
 
 def cpu_plan_with_replay_floor_repair(train, scratch, prep, source, original, reference,
                                       minimum_updates, maximum_updates, cache=None, repair_horizon=20000,
-                                      alternatives=None):
+                                      alternatives=None, explicit_weights=None):
     """Bounded CPU repair. One sampler pass per attempt covers every budget and stops
     at the first one where all old-source floors and the new-domain balance hold.
 
@@ -343,6 +395,34 @@ def cpu_plan_with_replay_floor_repair(train, scratch, prep, source, original, re
                   base_sampler_source=source/"runtime_cotraining_v41_247M.py",
                   runtime_source=original/"training/runtime_30500.py")
     accept = lambda snap: bool(snap["passed"] and assess_exposure(reference,snap)["passed"])
+    if explicit_weights:
+        # The replay weights are stated by the caller (e.g. the x16 the 30500->40500 phase
+        # used for its own new sources); only the number of updates is computed. The first
+        # budget where every old source keeps its 40500-window tokens wins, so the plan is
+        # as short as these weights allow. Nothing is auto-tuned or silently capped.
+        train = scratch/"train_v48_replay_explicit.jsonl"
+        latest_stats = write_weighted_candidate(base_train,train,explicit_weights)
+        snapshots = preview_budgets(prep,train,budgets=budgets,repeat=1,min_new=1000,accept=accept,**common)
+        parity_with_receipt(prep,snapshots,train,budgets[0],cache,common)
+        reached = sorted(snapshots)
+        reviews = {steps:assess_exposure(reference,snapshots[steps]) for steps in reached}
+        passing = [steps for steps in reached if snapshots[steps]["passed"] and reviews[steps]["passed"]]
+        last = reviews[reached[-1]]
+        if alternatives is not None:
+            alternatives["mode"] = "explicit_replay_weights"
+        print("V48_CPU_EXPLICIT_REPLAY_AUDIT "+json.dumps({
+            "steps_scanned":[reached[0],reached[-1]],"passing_steps":passing,
+            "replay_weights":dict(explicit_weights),
+            "replay_replica_rows":latest_stats["replay_replicas_added"],
+            "declines_at_last_scanned_budget":last["old_source_declines"],
+            "new_source_supervised_tokens":last["new_source_supervised_tokens"],
+            "gpu_updates":0},ensure_ascii=False),flush=True)
+        if passing:
+            steps=passing[0]
+            return train,steps,snapshots[steps],reviews[steps],latest_stats
+        raise RuntimeError("The given replay weights do not keep every old source at its 40500-window "
+                           "exposure up to "+str(budgets[-1])+" updates; GPU has NOT started. Remaining deficits: "
+                           +json.dumps(last["old_source_declines"],ensure_ascii=False))
     for attempt in range(5):
         if weights:
             train = scratch/f"train_v48_replay_reweighted_{attempt}.jsonl"
@@ -478,6 +558,11 @@ def main():
     parser.add_argument("--minimum-updates",type=int,default=10000)
     parser.add_argument("--maximum-updates",type=int,default=60000,
                         help="scan ceiling only; the plan uses the FIRST budget where every old source keeps its floor")
+    parser.add_argument("--replay-weights",
+                        help="explicit repetition of short old sources, e.g. "
+                             "practical_python_multistep_v1=16,practical_knowledge_multistep_v1=16 "
+                             "(x16 is what the 30500->40500 phase used for these 848 rows). "
+                             "Without it the weights are sized automatically at the 20,000-update horizon.")
     parser.add_argument("--gpu-profile",choices=sorted(GPU_PROFILES),default="a100")
     parser.add_argument("--dataset-cache",type=Path,
                         help="SHA-bound cache of rebuilt parents (default: STUDY/_v48_dataset_cache)")
@@ -517,6 +602,7 @@ def main():
             metadata=metadata,minimum=args.minimum_updates,maximum=args.maximum_updates,
             confirm=args.confirm_updates if args.execute else int(approval.get("steps",-1)))
         weights=prior.get("replay_source_training_weights",{})
+        replay_mode=approval.get("replay_mode","unknown")
         if weights:
             repaired=scratch/"train_v48_approved_replay.jsonl"
             repair=write_weighted_candidate(train,repaired,weights)
@@ -541,9 +627,13 @@ def main():
             "gpu_updates":0,"replay_weights":weights},ensure_ascii=False),flush=True)
     else:
         alternatives={}
+        from replay_floor_repair import parse_weights
+        explicit=parse_weights(args.replay_weights) if args.replay_weights else None
+        replay_mode="explicit" if explicit else "auto"
         train,steps,preview,review,repair=cpu_plan_with_replay_floor_repair(
             train,scratch,prep,source,original,comparison,
-            args.minimum_updates,args.maximum_updates,cache,alternatives=alternatives)
+            args.minimum_updates,args.maximum_updates,cache,alternatives=alternatives,
+            explicit_weights=explicit)
         metadata["plan_alternatives"]={**alternatives,
             "estimated_gpu_hours_without_replay":(estimated_gpu_hours(args.gpu_profile,alternatives["first_passing_updates_without_replay"])
                                                   if alternatives.get("first_passing_updates_without_replay") else None)}
@@ -569,7 +659,7 @@ def main():
        "steps":steps,"start_step":40500,"stop_step":stop,
        "sampler_preview":preview,"exposure_gate":review,
        "old_source_floors":source_floor_table(comparison,preview),
-       "runtime_sha256":digest(runtime),"gpu_profile":args.gpu_profile,
+       "runtime_sha256":digest(runtime),"gpu_profile":args.gpu_profile,"replay_mode":replay_mode,
        "estimated_gpu_hours":estimated_gpu_hours(args.gpu_profile,steps),
        "gpu_training_started":False,"final_benchmark_status":"not_executed",
        "logical_step_token_budget":36864,
@@ -584,7 +674,7 @@ def main():
         "old_declines":review["old_source_declines"]},ensure_ascii=False),flush=True)
     if not args.execute:
         return
-    oldtrain.refuse_active_work(study)
+    refuse_active_work_v48(oldtrain,study)
     import torch
     if not torch.cuda.is_available():
         raise RuntimeError('A GPU is required for --execute; CPU-only runtime cannot train this model')
@@ -597,6 +687,7 @@ def main():
     print(f'[{args.gpu_profile.upper()}] GPU {gpu_name} / VRAM {gpu_bytes/2**30:.1f} GiB', flush=True)
     oldtrain.PARENT_STEP=40500
     oldtrain.CHECKPOINT_INTERVAL=5000
+    install_uncapped_checkpoint_steps(oldtrain)
     oldtrain.PARENT_ARTIFACTS={"checkpoint":PINNED_PARENT_MODEL,"optimizer":PINNED_PARENT_OPT,"state":PINNED_PARENT_STATE}
     local=scratch/"training_checkpoints"
     local.mkdir()
@@ -623,13 +714,14 @@ def main():
          "teacher_sha256":PINNED_PARENT_MODEL,"teacher_frozen":True,"learning_rate":3e-6,
          "supervised_exposure_gate":review,"sampler_reset":True})
     shutil.copyfile(runtime,output/"runtime_v48_40500.py")
-    backup=oldtrain.IntermediateCheckpointBackup(
-        local=local,output=output,steps=steps,
-        state_loader=lambda path:torch.load(path,map_location="cpu",weights_only=True),
-        binding={"training_data_sha256":metadata["input_sha256"],"parent_sha256":PINNED_PARENT_MODEL,
-                 "runtime_sha256":digest(runtime),"variant":"multistep",
-                 "new_curriculum_repeat":1,"teacher_sha256":PINNED_PARENT_MODEL})
+    backup=None
     try:
+        backup=oldtrain.IntermediateCheckpointBackup(
+            local=local,output=output,steps=steps,
+            state_loader=lambda path:torch.load(path,map_location="cpu",weights_only=True),
+            binding={"training_data_sha256":metadata["input_sha256"],"parent_sha256":PINNED_PARENT_MODEL,
+                     "runtime_sha256":digest(runtime),"variant":"multistep",
+                     "new_curriculum_repeat":1,"teacher_sha256":PINNED_PARENT_MODEL})
         backup.start()
         rc=oldtrain.run_with_logging(
             command_for(source,local,corpus,train,runtime,output,stop,args.gpu_profile),output/"console",cwd=source)
@@ -672,8 +764,9 @@ def main():
              "scratch_path":str(scratch)})
         raise
     finally:
-        backup.request_stop()
-        backup.close()
+        if backup is not None:
+            backup.request_stop()
+            backup.close()
         (output/"training_active.json").unlink(missing_ok=True)
 
 if __name__=="__main__":
