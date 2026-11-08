@@ -37,7 +37,7 @@ class Notebook(unittest.TestCase):
             for node in ast.parse(sources["setup"]).body:
                 if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "FILES":
                     files = ast.literal_eval(node.value)
-            self.assertEqual(set(files), {"robust_eval.py", "kaggle_runner.py", "kaggle_compare.py"})
+            self.assertEqual(set(files), {"robust_eval.py", "kaggle_runner.py", "kaggle_compare.py", "t5_probe.py", "t5_templates.json"})
             for name, text in files.items():
                 self.assertEqual(text, (HERE / name).read_text(encoding="utf-8"), name)
 
@@ -62,7 +62,7 @@ class Notebook(unittest.TestCase):
             meta = json.loads((Path(td) / "kernel-metadata.json").read_text(encoding="utf-8"))
             self.assertEqual(meta["dataset_sources"], ["geocpuresearch/geocpu-v47-eval-parent40500-20261109",
                                                        "geocpuresearch/geocpu-v48-eval-code-20261108"])
-            self.assertEqual(meta["id"], "geocpuresearch/geocpu-v47-parent40500-robust-eval-20261109")
+            self.assertEqual(meta["id"], "geocpuresearch/geocpu-v47-parent-40500-robust-eval-20261109")
             nb = json.loads((Path(td) / meta["code_file"]).read_text(encoding="utf-8"))
             src = {c["id"]: "".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code"}
             for s in src.values():
@@ -73,6 +73,26 @@ class Notebook(unittest.TestCase):
             jobs_line = [l for l in src["setup"].splitlines() if l.startswith("JOBS = ")]
             self.assertEqual(len(jobs_line), 1)
             self.assertNotIn("v48_61500", jobs_line[0])                                       # (the embedded compare script mentions it)
+
+    def test_probe_variant_measures_three_checkpoints_with_the_probe_task_only(self):
+        with tempfile.TemporaryDirectory() as td:
+            subprocess.run([sys.executable, "-I", str(HERE / "make_kaggle_notebook.py"), td, "probe"], check=True, capture_output=True)
+            meta = json.loads((Path(td) / "kernel-metadata.json").read_text(encoding="utf-8"))
+            self.assertEqual(meta["id"], "geocpuresearch/geocpu-v48-t5-probe-20261109")
+            self.assertEqual(meta["dataset_sources"], ["geocpuresearch/geocpu-v48-eval-assets-20261108",
+                                                       "geocpuresearch/geocpu-v47-eval-parent40500-20261109",
+                                                       "geocpuresearch/geocpu-v48-eval-code-20261108"])
+            nb = json.loads((Path(td) / meta["code_file"]).read_text(encoding="utf-8"))
+            src = {c["id"]: "".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code"}
+            for s in src.values():
+                ast.parse(s)
+            lines = {l.split(" = ")[0]: l.split(" = ", 1)[1] for l in src["setup"].splitlines() if l.startswith(("JOBS = ", "DEFAULT_ARGS = "))}
+            jobs = ast.literal_eval(lines["JOBS"])
+            self.assertEqual([j[2] for j in jobs], [30500, 40500, 61500])
+            self.assertEqual(ast.literal_eval(lines["DEFAULT_ARGS"]), ["--tasks", "t5probe"])
+            self.assertIn("k % N_GPU", src["setup"])                                           # three jobs share two GPUs
+            self.assertIn("--ckpt-roots", src["setup"])                                        # checkpoints come from two datasets
+            self.assertNotIn("kaggle_compare.py\"), \"--out\"", src["report"])
 
     def test_the_two_jobs_use_the_checkpoints_the_runner_tests_rehearse(self):
         text = (HERE / "make_kaggle_notebook.py").read_text(encoding="utf-8")

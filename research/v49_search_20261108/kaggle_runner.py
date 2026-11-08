@@ -66,16 +66,18 @@ def locate(roots, name: str) -> Path:
     raise FileNotFoundError(f"{name}[.bin] not found under {[str(r) for r in roots]}")
 
 
-def build_study(inp: Path, study: Path, run: str, step: int, prefix: str, zips=None) -> Path:
-    """The folder layout eval_candidate expects, built from the flat files of the Kaggle dataset(s)."""
+def build_study(inp: Path, study: Path, run: str, step: int, prefix: str, zips=None, ckpt_roots=None) -> Path:
+    """The folder layout eval_candidate expects, built from the flat files of the Kaggle dataset(s).
+    The checkpoint files are looked up in `inp` first and then in every folder of `ckpt_roots` (checkpoints may live in several datasets)."""
     roots = [Path(r) for r in ([inp] + list(zips or []))]
     link(locate(roots, BUNDLE), study / BUNDLE)
     link(locate(roots, CODE_ZIP), study / "GeoCPU_practical_training_logging_20261107" / CODE_ZIP)
+    ck_roots = [Path(inp)] + [Path(r) for r in (ckpt_roots or [])]
     ck = study / run / "checkpoints"
-    link(inp / f"{prefix}_checkpoint_step_{step}.pt", ck / f"checkpoint_step_{step}.pt")
-    link(inp / f"{prefix}_receipt_step_{step}.json", ck / f"receipt_step_{step}.json")
-    link(inp / f"{prefix}_training_saved.json", study / run / "training_saved.json")
-    link(inp / f"{prefix}_input_manifest.json", study / run / "input_manifest.json")
+    link(locate(ck_roots, f"{prefix}_checkpoint_step_{step}.pt"), ck / f"checkpoint_step_{step}.pt")
+    link(locate(ck_roots, f"{prefix}_receipt_step_{step}.json"), ck / f"receipt_step_{step}.json")
+    link(locate(ck_roots, f"{prefix}_training_saved.json"), study / run / "training_saved.json")
+    link(locate(ck_roots, f"{prefix}_input_manifest.json"), study / run / "input_manifest.json")
     return study
 
 
@@ -127,6 +129,42 @@ def make_mcq_scorer(model, vocab, arm="learned"):
     return score
 
 
+def make_probe_scorer(model, vocab, arm="learned"):
+    """Teacher-forced logits over A/B/C at given character offsets of a full text (prompt + gold response): one forward pass per text.
+    Same tokenisation, padding and autocast policy as make_mcq_scorer. The token that FOLLOWS the prefix must be the gold letter (asserted),
+    so a mis-aligned offset can never produce a number."""
+    import torch
+    from qwenputer_controller_v30 import canonical_normalize_text
+    ids = [vocab[c] for c in "ABC"]
+    dev = next(model.parameters()).device
+    use_amp = dev.type == "cuda"
+
+    def tok(s):
+        return [vocab[c] for c in canonical_normalize_text(s) if c in vocab]
+
+    def score(texts, offsets):
+        seqs = [tok(t) or [0] for t in texts]
+        where = []
+        for t, offs, seq in zip(texts, offsets, seqs):
+            row = []
+            for o in offs:
+                n = len(tok(t[:o]))
+                assert 0 < n < len(seq) and seq[n] == vocab[t[o]], "decisive offset is not aligned with the token sequence"
+                row.append(n - 1)                                  # the logits at n-1 predict the token n
+            where.append(row)
+        max_len = max(32, int(math.ceil(max(len(s) for s in seqs) / 32.0)) * 32)
+        x = torch.zeros((len(seqs), max_len), dtype=torch.long)
+        valid = torch.zeros((len(seqs), max_len), dtype=torch.bool)
+        for r, s in enumerate(seqs):
+            x[r, :len(s)] = torch.tensor(s, dtype=torch.long)
+            valid[r, :len(s)] = True
+        with torch.no_grad(), torch.amp.autocast(device_type=dev.type, enabled=use_amp, dtype=torch.bfloat16):
+            out = model(x.to(dev), valid.to(dev), arm=arm)
+        return [[out.logits[r, p, ids].float().cpu().tolist() for p in where[r]] for r in range(len(seqs))]
+    score.use_amp = use_amp
+    return score
+
+
 def environment_report() -> dict:
     info = {"python": sys.version.split()[0]}
     try:
@@ -150,6 +188,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", type=Path, required=True)
     ap.add_argument("--zips", type=Path, nargs="*", default=[], help="extra folders searched for the two ZIP files (name or name.bin)")
+    ap.add_argument("--ckpt-roots", type=Path, nargs="*", default=[], help="extra folders searched for the checkpoint/receipt/manifest files")
     ap.add_argument("--study", type=Path, required=True)
     ap.add_argument("--run", required=True)
     ap.add_argument("--step", type=int, required=True)
@@ -168,7 +207,7 @@ def main(argv=None):
     sys.path.insert(0, str(args.code))
     import robust_eval as R
 
-    study = build_study(args.input, args.study, args.run, args.step, args.prefix, zips=args.zips)
+    study = build_study(args.input, args.study, args.run, args.step, args.prefix, zips=args.zips, ckpt_roots=args.ckpt_roots)
     work = extract_code(study / "GeoCPU_practical_training_logging_20261107" / CODE_ZIP, Path(tempfile.mkdtemp(prefix="geocpu_code_")))
     sys.path.insert(0, str(work))
     import eval_candidate as E
@@ -267,9 +306,29 @@ def main(argv=None):
                                   "searched": sum(r["search_calls"] > 0 for r in rows)}
         print("T6_DONE", json.dumps(summary["tasks"]["t6"], ensure_ascii=False), flush=True)
 
+    def run_t5probe():
+        """Teacher-forced decisive characters of T5 (see t5_probe.py): no generation, no cap, no answer extractor."""
+        import t5_probe as TP
+        items = R.read_jsonl(data / "eval_v41_logical_instruction_operators_heldout.jsonl")
+        if args.limit:
+            items = items[:args.limit]
+        templates = TP.load_templates(args.code / "t5_templates.json")
+        probes = TP.build_all(items, templates)
+        scorer = make_probe_scorer(model, vocab)
+        t_probe = time.time()
+
+        def progress(done, total):
+            print(f"T5PROBE_PROGRESS {done}/{total} sequences, {round(time.time() - t_probe)} s", flush=True)
+        rows = TP.score_all(probes, scorer, batch=args.mcq_batch, progress=progress, cache_path=args.out / "t5probe_rows.jsonl")
+        res = TP.summarize(rows)
+        (args.out / "t5probe.json").write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
+        summary["tasks"]["t5probe"] = {"n_sequences": len(rows), "accuracy": res["accuracy"], "follows_number_rule": res["follows_number_rule"],
+                                       "chain_S1_S2_FIN_all_correct": res["chain_S1_S2_FIN_all_correct"]}
+        print("T5PROBE_DONE", json.dumps(summary["tasks"]["t5probe"], ensure_ascii=False), flush=True)
+
     summary["environment"] = environment_report()
     print("ENVIRONMENT", json.dumps(summary["environment"], ensure_ascii=False), flush=True)
-    runners = {"mcq": run_mcq, "t5": run_t5, "t6": run_t6}
+    runners = {"mcq": run_mcq, "t5": run_t5, "t6": run_t6, "t5probe": run_t5probe}
     for name in tasks:
         guarded(name, runners[name])
     summary["complete"] = not failed

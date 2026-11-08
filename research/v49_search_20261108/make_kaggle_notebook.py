@@ -24,14 +24,19 @@ VARIANTS = {
     "main": {"slug": "geocpu-v48-robust-eval-20261108", "title": "GeoCPU v48 robust eval 20261108",
              "datasets": [DATASET, DATASET_CODE], "sentinel": "v48_61500_checkpoint_step_61500.pt",
              "jobs": [("v47_30500", "v47_from28000_to30500_curriculum_v1", 30500), ("v48_61500", "v48_A100_from40500_20261108T045428Z", 61500)]},
-    "parent40500": {"slug": "geocpu-v47-parent40500-robust-eval-20261109", "title": "GeoCPU v47 parent 40500 robust eval 20261109",
+    "parent40500": {"slug": "geocpu-v47-parent-40500-robust-eval-20261109", "title": "GeoCPU v47 parent 40500 robust eval 20261109",
                     "datasets": [DATASET_PARENT, DATASET_CODE], "sentinel": "v47_40500_checkpoint_step_40500.pt",
                     "jobs": [("v47_40500", "practical_20261107_10k_multistep_40500", 40500)]},
 }
+VARIANTS["probe"] = {"slug": "geocpu-v48-t5-probe-20261109", "title": "GeoCPU v48 T5 probe 20261109",
+                     "datasets": [DATASET, DATASET_PARENT, DATASET_CODE], "sentinel": "v48_61500_checkpoint_step_61500.pt",
+                     "default_args": ["--tasks", "t5probe"],
+                     "jobs": [("v47_30500", "v47_from28000_to30500_curriculum_v1", 30500), ("v47_40500", "practical_20261107_10k_multistep_40500", 40500),
+                              ("v48_61500", "v48_A100_from40500_20261108T045428Z", 61500)]}
 CFG = VARIANTS[VARIANT]
 SLUG = CFG["slug"]
 
-files = {n: (HERE / n).read_text(encoding="utf-8") for n in ("robust_eval.py", "kaggle_runner.py", "kaggle_compare.py")}
+files = {n: (HERE / n).read_text(encoding="utf-8") for n in ("robust_eval.py", "kaggle_runner.py", "kaggle_compare.py", "t5_probe.py", "t5_templates.json")}
 
 cell_setup = '''# 1. setup: write the code, find the inputs, verify the pinned archives, look at the GPUs
 import hashlib, json, os, shutil, subprocess, sys, time
@@ -46,6 +51,7 @@ import kaggle_runner as K
 hits = list(Path("/kaggle/input").rglob("__SENTINEL__"))
 assert hits, "the checkpoint dataset is not attached (looked for __SENTINEL__)"
 INPUT = hits[0].parent
+CKPT_ROOTS = sorted({p.parent for p in Path("/kaggle/input").rglob("v4*_checkpoint_step_*.pt")})
 ZIP_ROOTS = [p.parent for p in Path("/kaggle/input").rglob(K.BUNDLE + ".bin")] or [INPUT]
 bundle, code_zip = K.locate([*ZIP_ROOTS, INPUT], K.BUNDLE), K.locate([*ZIP_ROOTS, INPUT], K.CODE_ZIP)
 assert K.file_sha256(bundle) == K.BASE_BUNDLE_SHA256, f"base bundle bytes differ from the pin: {bundle}"
@@ -53,22 +59,23 @@ assert K.file_sha256(code_zip) == K.CODE_ZIP_SHA256, f"evaluation code bytes dif
 for f in sorted(INPUT.glob("v4*_*")):
     print(f"{f.name:60s} {f.stat().st_size:>14,d}")
 print("bundle", bundle, bundle.stat().st_size, "| code", code_zip, code_zip.stat().st_size)
-print("input:", INPUT, "| zips:", ZIP_ROOTS)
+print("input:", INPUT, "| checkpoint folders:", CKPT_ROOTS, "| zips:", ZIP_ROOTS)
 gpus = subprocess.run(["nvidia-smi", "--query-gpu=index,name,memory.total", "--format=csv,noheader"], capture_output=True, text=True).stdout
 print(gpus)
 N_GPU = len([l for l in gpus.splitlines() if l.strip()])
 assert N_GPU >= 1, "no GPU"
 JOBS = __JOBS__
+DEFAULT_ARGS = __DEFAULT_ARGS__
 
 
 def launch(out_dir, extra=()):
     out_dir.mkdir(parents=True, exist_ok=True)
     procs = []
     for k, (prefix, run, step) in enumerate(JOBS):
-        env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(k if N_GPU > 1 else 0), PYTHONUNBUFFERED="1", PYTHONUTF8="1")
-        cmd = [sys.executable, "-u", str(CODE / "kaggle_runner.py"), "--input", str(INPUT), "--zips", *map(str, ZIP_ROOTS),
+        env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(k % N_GPU), PYTHONUNBUFFERED="1", PYTHONUTF8="1")
+        cmd = [sys.executable, "-u", str(CODE / "kaggle_runner.py"), "--input", str(INPUT), "--ckpt-roots", *map(str, CKPT_ROOTS), "--zips", *map(str, ZIP_ROOTS),
                "--study", f"/kaggle/working/study_{prefix}", "--run", run, "--step", str(step), "--prefix", prefix,
-               "--out", str(out_dir / prefix), "--code", str(CODE), *extra]
+               "--out", str(out_dir / prefix), "--code", str(CODE), *DEFAULT_ARGS, *extra]
         log = open(out_dir / f"{prefix}.log", "w", encoding="utf-8")
         procs.append((prefix, subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env), log))
         if N_GPU <= 1:                  # a single GPU: one after the other
@@ -100,7 +107,7 @@ def wait(procs, out_dir, deadline=None, every=120):
             print((out_dir / f"{prefix}.log").read_text(encoding="utf-8", errors="replace")[-4000:])
     return bad
 '''.replace("__FILES__", json.dumps(files, ensure_ascii=False)).replace("__SENTINEL__", CFG["sentinel"]).replace(
-    "__JOBS__", repr([tuple(j) for j in CFG["jobs"]]))
+    "__JOBS__", repr([tuple(j) for j in CFG["jobs"]])).replace("__DEFAULT_ARGS__", repr(list(CFG.get("default_args", []))))
 
 cell_smoke = '''# 2. smoke test on the real GPUs: 2 items per task (+ the longest JMMLU prompt), tiny generation caps. Must pass before the full run.
 SMOKE = Path("/kaggle/working/out_smoke")
@@ -143,7 +150,7 @@ for prefix, *_ in JOBS:
 shutil.rmtree(SMOKE, ignore_errors=True)
 assert not bad, f"failed: children={bad}; see out/*.log"
 '''
-if len(CFG["jobs"]) == 1:
+if len(CFG["jobs"]) != 2:
     cell_report = cell_report_single
 
 
