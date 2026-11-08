@@ -209,62 +209,53 @@ def assess_exposure(reference,preview,tolerance=0.15):
 
 def cpu_plan_with_replay_floor_repair(train, scratch, prep, source, original, reference,
                                       minimum_updates, maximum_updates):
-    """Choose the cheapest *passing* phase before GPU; never relax an old floor."""
+    """Bounded CPU repair; a single sampler pass checks ALL step budgets."""
     from replay_floor_repair import next_weights, write_weighted_candidate
+    from multibudget_preflight import preview_budgets, assert_preview_parity
 
     base_train = train
     weights = {}
+    budgets = list(range(minimum_updates,maximum_updates+1,1000))
     latest_review = None
-    latest_stats = {"replay_replicas_added": 0, "source_training_weights": {}}
+    latest_stats = {"replay_replicas_added":0, "source_training_weights":{}}
+    common = dict(meta=source/"base_metadata.json",
+                  normalizer_source=source/"qwenputer_controller_v30.py",
+                  base_sampler_source=source/"runtime_cotraining_v41_247M.py",
+                  runtime_source=original/"training/runtime_30500.py")
     for attempt in range(5):
         if weights:
-            train = scratch / f"train_v48_replay_reweighted_{attempt}.jsonl"
-            latest_stats = write_weighted_candidate(base_train, train, weights)
+            train = scratch/f"train_v48_replay_reweighted_{attempt}.jsonl"
+            latest_stats = write_weighted_candidate(base_train,train,weights)
         else:
             train = base_train
-
-        def preview_for(steps):
-            plan = prep.preview_plan(
-                train, meta=source/"base_metadata.json",
-                normalizer_source=source/"qwenputer_controller_v30.py",
-                base_sampler_source=source/"runtime_cotraining_v41_247M.py",
-                runtime_source=original/"training/runtime_30500.py",
-                steps=steps, repeat=1, min_new=1000)
-            return plan, assess_exposure(reference, plan)
-
-        # Test the whole allowed phase once, not 11 successive failing scans.
-        max_plan, max_review = preview_for(maximum_updates)
-        latest_review = max_review
-        print("V48_CPU_REPLAY_FLOOR_AUDIT " + json.dumps({
-            "attempt": attempt, "steps": maximum_updates,
-            "passed": max_review["passed"],
-            "old_source_declines": max_review["old_source_declines"],
-            "new_source_supervised_tokens": max_review["new_source_supervised_tokens"],
-            "replay_weights": weights,
-            "replay_replica_rows": latest_stats["replay_replicas_added"],
-            "gpu_updates": 0}, ensure_ascii=False), flush=True)
-
-        if max_review["passed"]:
-            # Find the smallest admissible training cost; no GPU is used here.
-            for steps in range(minimum_updates, maximum_updates+1, 1000):
-                plan, review = ((max_plan, max_review) if steps == maximum_updates
-                                else preview_for(steps))
-                if review["passed"]:
-                    return train, steps, plan, review, latest_stats
-            raise AssertionError("A passing maximum phase was not reachable")
-
-        if not max_review["old_source_declines"]:
+        snapshots = preview_budgets(prep,train,budgets=budgets,repeat=1,min_new=1000,**common)
+        if attempt == 0:
+            # Actual original private dataset, tested against untouched v47 oracle.
+            assert_preview_parity(prep,snapshots,train,compare_steps=budgets[0],**common)
+        reviews = {steps:assess_exposure(reference,snapshots[steps]) for steps in budgets}
+        passing = [steps for steps in budgets
+                   if snapshots[steps]["passed"] and reviews[steps]["passed"]]
+        latest_review = reviews[budgets[-1]]
+        print("V48_CPU_REPLAY_FLOOR_AUDIT "+json.dumps({
+            "attempt":attempt,"steps_scanned":budgets,
+            "passing_steps":passing,
+            "max_budget_old_source_declines":latest_review["old_source_declines"],
+            "new_source_supervised_tokens":latest_review["new_source_supervised_tokens"],
+            "replay_weights":weights,
+            "replay_replica_rows":latest_stats["replay_replicas_added"],
+            "gpu_updates":0},ensure_ascii=False),flush=True)
+        if passing:
+            steps=passing[0]
+            return train,steps,snapshots[steps],reviews[steps],latest_stats
+        if not latest_review["old_source_declines"]:
             raise RuntimeError(
                 "Old source floors pass but new domain balance fails; "
                 "do not use GPU until curriculum is fixed")
-        if attempt == 4:
+        if attempt==4:
             break
-        weights = next_weights(max_review["old_source_declines"], weights)
-
-    raise RuntimeError(
-        "CPU replay balancing exhausted without satisfying old-source floors; "
-        "GPU training has NOT started. Remaining deficits: " +
-        json.dumps(latest_review["old_source_declines"], ensure_ascii=False))
+        weights=next_weights(latest_review["old_source_declines"],weights)
+    raise RuntimeError("CPU replay balancing exhausted; GPU has NOT started. Remaining deficits: "+
+                       json.dumps(latest_review["old_source_declines"],ensure_ascii=False))
 
 
 def patched_runtime(oldroot,source):
