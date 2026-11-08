@@ -64,6 +64,8 @@ jobs:
           python -m unittest discover -s research/v48_balanced_augmentation_20261108 -p 'test_t4_runtime_patch.py' -v
       - name: Test no-reduction exposure gate
         run: python -m unittest discover -s research/v48_balanced_augmentation_20261108 -p 'test_exposure_gate.py' -v
+      - name: Test CPU-only old-source floor repair and budget selection
+        run: python -m unittest discover -s research/v48_balanced_augmentation_20261108 -p 'test_replay_floor_repair.py' -v
       - name: Commit generated licensed selfauthored data
         if: github.event_name == 'pull_request'
         run: |
