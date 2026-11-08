@@ -59,6 +59,9 @@ jobs:
                   ast.parse("".join(cell["source"]))
           print("Colab bootstrap cell passed static validation; GPU not executed")
           PY
+      - name: Test T4 mixed-precision full-budget training patch
+        run: |
+          python -m unittest discover -s research/v48_balanced_augmentation_20261108 -p 'test_t4_runtime_patch.py' -v
       - name: Test no-reduction exposure gate
         run: python -m unittest discover -s research/v48_balanced_augmentation_20261108 -p 'test_exposure_gate.py' -v
       - name: Commit generated licensed selfauthored data

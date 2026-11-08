@@ -214,6 +214,10 @@ def patched_runtime(oldroot,source):
         raise ValueError("runtime group replacement sites changed")
     patched=text.replace('"practical_multistep_v1"',f'"{V48_GROUP}"')
     patched=patched.replace("KL(parent30500/replay)","KL(parent40500/replay)")
+    # Full budget on 16-GiB T4: switch autocast to fp16 with loss scaling,
+    # checkpoint activations, and allow A100->T4 only at the guarded new phase.
+    from t4_runtime_patch import patch_runtime
+    patched=patch_runtime(patched)
     ast.parse(patched)
     runtime=source/"runtime_v48_40500.py"
     runtime.write_text(patched,encoding="utf-8")
@@ -228,7 +232,7 @@ def command_for(source,local,corpus,train,runtime,output,stop):
       "--resume_state",str(local/"train_state_step_40500.pt"),
       "--output_dir",str(local),
       "--max_steps",str(stop),"--stop_at_step",str(stop),
-      "--batch_size","64","--step_tokens","36864",
+      "--batch_size","64","--step_tokens","36864","--chunk_tokens","16384",
       "--phase_lr","3e-6","--phase_floor","3e-6",
       "--phase_start","40500","--phase_warmup","0",
       "--skip_final_eval","--mask_tool_output","--save_optimizer","--numina_repeat","1",
@@ -293,7 +297,12 @@ def main():
        "steps":steps,"start_step":40500,"stop_step":stop,
        "sampler_preview":preview,"exposure_gate":review,
        "runtime_sha256":digest(runtime),"gpu_training_started":False,
-       "final_benchmark_status":"not_executed"}
+       "final_benchmark_status":"not_executed",
+       "hardware_target":"NVIDIA T4 16-GiB VRAM, High-RAM host",
+       "logical_step_token_budget":36864,
+       "max_initial_activation_chunk_tokens":16384,
+       "numerics_note":"FP16 autocast + dynamic loss scaling; no skipped optimizer updates permitted",
+       "activation_checkpointing":True}
     if args.preflight_report:
         new_json(args.preflight_report,report)
     print("V48_PREFLIGHT_PASS "+json.dumps({"start":40500,"stop":stop,
@@ -302,7 +311,15 @@ def main():
     if not args.execute:
         return
     oldtrain.refuse_active_work(study)
-    torch=oldtrain.check_a100()
+    import torch
+    if not torch.cuda.is_available():
+        raise RuntimeError('T4 GPU is required; CPU-only runtime cannot train this model')
+    gpu_name = torch.cuda.get_device_name(0)
+    gpu_bytes = torch.cuda.get_device_properties(0).total_memory
+    if 'T4' not in gpu_name or gpu_bytes < 14 * (1024 ** 3):
+        raise RuntimeError(f'Choose NVIDIA T4 High-RAM Colab: detected {gpu_name}, {gpu_bytes/2**30:.1f} GiB VRAM')
+    print(f'[T4 High-RAM] GPU {gpu_name} / VRAM {gpu_bytes/2**30:.1f} GiB; '
+          'physical VRAM stays 16 GiB, host RAM supports checkpoint loading', flush=True)
     oldtrain.PARENT_STEP=40500
     oldtrain.CHECKPOINT_INTERVAL=5000
     oldtrain.PARENT_ARTIFACTS={"checkpoint":PINNED_PARENT_MODEL,"optimizer":PINNED_PARENT_OPT,"state":PINNED_PARENT_STATE}
