@@ -1,0 +1,13 @@
+{
+  "id": "REPLACE_OWNER/numina-tir-offline-verifier",
+  "title": "Private offline CPU Numina TIR verifier",
+  "code_file": "kaggle_entrypoint.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": false,
+  "dataset_sources": ["REPLACE_OWNER/REPLACE_PUBLIC_INPUT_DATASET"],
+  "competition_sources": [],
+  "kernel_sources": []
+}

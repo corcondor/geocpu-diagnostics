@@ -1,0 +1,20 @@
+{
+  "schema": "geocpu_v43_python_same_prompt_target_diagnostic_v1",
+  "original_v43_zip_sha256": "0102dc9b01b4b795c3123b18cefc7a8734e47a06dd85292af464d3232704d198",
+  "converted_source_sha256": "53387b2987df02d91b51b4afc8ab2369cc0e53b9e4bdd0cfd480c3586de7f3db",
+  "counts": {
+    "same_prompt_pairs": 24836,
+    "different_raw_target_pairs": 24836,
+    "different_supervised_token_pairs": 24836,
+    "different_first_token_pairs": 0,
+    "different_within_first_16_tokens_pairs": 8,
+    "common_prefix_tokens_sum": 701455
+  },
+  "by_source": {
+    "Algebraic_Composite_Aligned": 9828,
+    "Comparative_Conditional_Aligned": 15000,
+    "swe_alu_accumulate_sum": 8
+  },
+  "scope": "Read-only candidate-pair comparison under the original v43 tokenizer, normalization, native EOS, and 2048-position cap. These Python candidates were not part of the old v43 training run.",
+  "training_updates": 0
+}

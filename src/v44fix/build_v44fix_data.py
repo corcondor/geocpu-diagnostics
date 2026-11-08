@@ -19,9 +19,10 @@ Public buckets are deduplicated and their repeats capped; every bucket reports u
   python build_v44fix_data.py --public-dir /content/public_curriculum --v43-train train_v43_knowledge_unified.jsonl \\
       --eval-dir data --vocab base_metadata.json --out-dir /content/v44fix_data
 """
-import argparse, hashlib, json, random, re
+import argparse, hashlib, json, math, random, re
 from collections import Counter, defaultdict
 from pathlib import Path
+from tir_engine_v44r1 import PYTHON_BLOCK
 
 try:  # the v43 training loader normalizes full_text before tokenizing; check vocabulary the same way
     from qwenputer_controller_v30 import canonical_normalize_text as normalize
@@ -32,12 +33,89 @@ except Exception:  # pragma: no cover
 ALU_RE = re.compile(r"<(SET|ADD|SUB|MUL|DIV|MOD|INC|DEC|CMP|AND|OR|XOR|BXOR|NOT|SHL|SHR|LOAD|STORE|JMP|JZ|JNZ|MOV)\b")
 SEARCH_RE = re.compile(r"<SEARCH[ \t]")
 PY_FENCE = re.compile(r"(?m)^```python")
+FENCE_HEADER = re.compile(r"(?m)^```([^\n`]*)\n")
 MAX_CHARS = 2046  # v43 positions=2048; the loader appends EOS only when len < max_len
 GPT_HEAD, GPT_TAIL = "ユーザー: ", "\nアシスタント: "
 
 
+def _tir_body_and_segments(source, source_segments):
+    """Keep the tool text as input while preserving its non-training spans."""
+    if not isinstance(source_segments, list) or not source_segments:
+        raise ValueError("missing_tool_segments")
+    cursor, tool_spans = 0, []
+    for segment in source_segments:
+        if not isinstance(segment, dict):
+            raise ValueError("invalid_tool_segments")
+        start, end = segment.get("start"), segment.get("end")
+        role, train = segment.get("role"), segment.get("train")
+        if (type(start) is not int or type(end) is not int or start != cursor
+                or not start < end <= len(source)):
+            raise ValueError("invalid_tool_segments")
+        if (role, train) not in (("assistant", True), ("tool", False)):
+            raise ValueError("invalid_tool_segments")
+        if role == "tool":
+            tool_spans.append((start, end))
+        cursor = end
+    if cursor != len(source) or not tool_spans:
+        raise ValueError("invalid_tool_segments")
+
+    pieces, edits, cursor = [], [], 0
+    for match in FENCE_HEADER.finditer(source):
+        label = match.group(1).strip().lower()
+        replacement = "```python\n" if label in ("py", "python") else match.group(0)
+        pieces.extend((source[cursor:match.start()], replacement))
+        if replacement != match.group(0):
+            edits.append((match.start(), match.end(), len(replacement) - len(match.group(0))))
+        cursor = match.end()
+    pieces.append(source[cursor:])
+    normalized = "".join(pieces)
+
+    def shifted(position):
+        delta = 0
+        for start, end, change in edits:
+            if start < position < end:
+                raise ValueError("tool_boundary_inside_fence_header")
+            if end <= position:
+                delta += change
+        return position + delta
+
+    # V43 needs a separator after the prompt. A leading code fence must also
+    # start on its own line for the runtime's anchored PYTHON_BLOCK matcher.
+    leading_spaces = len(normalized) - len(normalized.lstrip(" "))
+    leading_fence = normalized[leading_spaces:].startswith("```python\n")
+    prefix = " \n" if leading_fence else ("" if normalized.startswith(" ") else " ")
+    trim = leading_spaces if leading_fence else 0
+    body = prefix + normalized[trim:]
+    offset = len(prefix) - trim
+    adjusted = [(shifted(start) + offset, shifted(end) + offset) for start, end in tool_spans]
+    if (any(not 0 <= start < end <= len(body) for start, end in adjusted)
+            or len(list(PYTHON_BLOCK.finditer(body))) != len(adjusted)):
+        raise ValueError("runtime_python_fence_mismatch")
+    return body, adjusted
+
+
+def _segments_from_tools(length, tools):
+    segments, cursor = [], 0
+    for start, end in tools:
+        if start > cursor:
+            segments.append({"start": cursor, "end": start, "role": "assistant", "train": True})
+        segments.append({"start": start, "end": end, "role": "tool", "train": False})
+        cursor = end
+    if cursor < length:
+        segments.append({"start": cursor, "end": length, "role": "assistant", "train": True})
+    return segments
+
+
 def sha(*parts):
     return hashlib.sha256("\x00".join(parts).encode("utf-8")).hexdigest()
+
+
+def file_sha(path):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for block in iter(lambda: stream.read(8 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def norm_q(text):
@@ -63,23 +141,45 @@ def gpt_question(rec):
 
 
 def convert(rec):
-    """GPT public record -> ((prompt, target), question) in v43 format, or (None, reason)."""
+    """GPT public record -> ((prompt, target, segments), question), or (None, reason)."""
     bucket, target, q = rec.get("bucket"), rec.get("target"), gpt_question(rec)
     if q is None or not isinstance(target, str):
         return None, "schema"
     body = " " + target.lstrip(" ")
     if bucket == "tir":
+        provenance = rec.get("provenance")
+        if not isinstance(provenance, dict) or provenance.get("verification") != "executed_all_blocks_in_this_problem":
+            return None, "tir_observation_not_locally_executed"
         ans = last_boxed(target)
         if not ans:
             return None, "tir_no_boxed_answer"
-        return (("問題: " + q.strip() + "\n思考:", body.rstrip() + "\n答え: " + ans), q), None
+        try:
+            body, tools = _tir_body_and_segments(target, rec.get("target_segments"))
+        except ValueError as error:
+            return None, "tir_" + str(error)
+        receipts = provenance.get("tool_blocks")
+        if (not isinstance(receipts, list) or len(receipts) != len(tools)
+                or any(not isinstance(receipt, dict)
+                       or receipt.get("verification") != "executed_all_blocks_in_this_problem_stdout_exact"
+                       for receipt in receipts)):
+            return None, "tir_missing_or_unverified_tool_receipt"
+        code_blocks = list(PYTHON_BLOCK.finditer(body))
+        for (start, end), code_block, receipt in zip(tools, code_blocks, receipts):
+            if (hashlib.sha256(code_block.group(1).encode("utf-8")).hexdigest()
+                    != receipt.get("code_sha256")
+                    or hashlib.sha256(body[start:end].encode("utf-8")).hexdigest()
+                    != receipt.get("observation_sha256")):
+                return None, "tir_receipt_text_mismatch"
+        answer = body + "\n答え: " + ans
+        return (("問題: " + q.strip() + "\n思考:", answer,
+                 _segments_from_tools(len(answer), tools)), q), None
     if bucket == "code":
-        return (("指示: " + q.strip() + "\n回答:", body), q), None
+        return (("指示: " + q.strip() + "\n回答:", body, []), q), None
     if bucket == "japanese":
         if q.startswith("本文:\n") and "\n質問:\n" in q:
             ctx, question = q[len("本文:\n"):].split("\n質問:\n", 1)
-            return (("指示: " + question.strip() + "\n文脈: " + ctx.strip() + "\n回答:", body), question), None
-        return (("指示: " + q.strip() + "\n回答:", body), q), None
+            return (("指示: " + question.strip() + "\n文脈: " + ctx.strip() + "\n回答:", body, []), question), None
+        return (("指示: " + q.strip() + "\n回答:", body, []), q), None
     return None, "bucket_not_public"
 
 
@@ -101,6 +201,8 @@ def main():
     out = Path(args.out_dir); out.mkdir(parents=True, exist_ok=True)
     vocab = set(k for k in json.loads(Path(args.vocab).read_text(encoding="utf-8"))["vocab"] if len(k) == 1)
     mix = {k: int(v) for k, v in (p.split("=") for p in args.mix.split(","))}
+    if not math.isfinite(args.max_repeat) or args.max_repeat < 1:
+        raise SystemExit("--max-repeat must be finite and at least one")
 
     eval_q = set()
     for p in Path(args.eval_dir).glob("*.jsonl"):
@@ -125,7 +227,7 @@ def main():
             conv, why = convert(rec)
             if why:
                 rejects[f"{b}:{why}"] += 1; continue
-            (prompt, target), q = conv
+            (prompt, target, segments), q = conv
             full = prompt + target
             if prompt.startswith("ユーザー:") or "\nアシスタント:" in prompt:
                 rejects[f"{b}:still_v44_format"] += 1; continue
@@ -137,6 +239,7 @@ def main():
                 rejects[f"{b}:evaluation_overlap"] += 1; continue
             pools[b][sha(prompt, target)] = {"prompt": prompt, "target": target, "full_text": full,
                                              "source": f"v44fix_public_{b}", "bucket": b,
+                                             "target_segments": segments,
                                              "provenance": rec.get("provenance", {})}
 
     # anchor: v43 rows verbatim, RAW list (keeps v43's intentional repetition, e.g. SEARCH 66 unique x 29,000)
@@ -163,7 +266,15 @@ def main():
             rng.shuffle(pool)
             if not pool:
                 raise SystemExit(f"bucket {b} is empty; refusing to build a mixture without it ({dict(rejects)})")
+            if b == "tir":
+                minimum_unique = math.ceil(n / args.max_repeat)
+                if len(pool) < minimum_unique:
+                    raise SystemExit(f"verified TIR pool too small: {len(pool)} unique rows, "
+                                     f"need at least {minimum_unique} for {n} exposures with repeat cap "
+                                     f"{args.max_repeat}; rejections={dict(rejects)}")
             n_exp = min(n, int(len(pool) * args.max_repeat))
+            if b == "tir" and n_exp != n:
+                raise SystemExit(f"verified TIR exposure shortfall: {n_exp} of {n}; refusing training mixture")
             chosen = [pool[i % len(pool)] for i in range(n_exp)]
             unique = len(pool)
         rows += chosen
@@ -171,7 +282,13 @@ def main():
                      "repeat_factor_vs_pool": round(n_exp / len(pool), 3),
                      "alu_rows": sum(bool(ALU_RE.search(r["target"])) for r in chosen),
                      "search_rows": sum(bool(SEARCH_RE.search(r["target"])) for r in chosen),
-                     "python_fence_rows": sum(bool(PY_FENCE.search(r["target"])) for r in chosen)}
+                     "python_fence_rows": sum(bool(PY_FENCE.search(r["target"])) for r in chosen),
+                     "tool_observation_chars": sum(segment["end"] - segment["start"]
+                         for row in chosen for segment in row.get("target_segments", [])
+                         if segment["role"] == "tool")}
+        if b == "tir":
+            report[b]["minimum_verified_unique_rows"] = math.ceil(n / args.max_repeat)
+            report[b]["all_selected_observations_locally_executed"] = True
     anchor_search_share = report["anchor"]["search_rows"] / max(1, report["anchor"]["exposures"])
     anchor_src = Counter(r["source"] for r in rows if r["bucket"] == "anchor")
     rng.shuffle(rows)
@@ -214,7 +331,13 @@ def main():
                 "anchor_source_shares_vs_v43": {s: [round(anchor_src[s] / max(1, report["anchor"]["exposures"]), 4),
                                                     round(c / len(raw), 4)] for s, c in v43_src.most_common(25)},
                 "max_repeat_cap_public": args.max_repeat, "seed": args.seed,
-                "train_sha256": hashlib.sha256((out / "train.jsonl").read_bytes()).hexdigest()}
+                "input_sha256": {
+                    "converter": file_sha(__file__),
+                    "public_train": file_sha(Path(args.public_dir) / "train.jsonl"),
+                    "v43_train": file_sha(args.v43_train),
+                    "vocab": file_sha(args.vocab)},
+                "train_sha256": file_sha(out / "train.jsonl"),
+                "heldout_sha256": file_sha(out / "tir_heldout.jsonl")}
     (out / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(manifest, ensure_ascii=False, indent=1), flush=True)
     if v44_format_rows:

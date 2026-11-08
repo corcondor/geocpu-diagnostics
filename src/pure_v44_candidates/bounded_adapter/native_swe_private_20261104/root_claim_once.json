@@ -1,0 +1,18 @@
+{
+  "additional_billing": false,
+  "checked_utc": "2026-11-04T00:00:44.892781+00:00",
+  "conservative_new_hold_device_seconds": 3840,
+  "hard_stop_utc": "2026-11-04T03:00:00+00:00",
+  "kernel_id": "geocpuresearch/geocpu-v43-native-swe200-proof-20261104-v1",
+  "known_previous_statuses": {
+    "geocpuresearch/geocpu-v43-missing-only-resume-b4-20261103": "COMPLETE",
+    "geocpuresearch/geocpu-v43-v44fix-ffn2-column-delta-cpu-20261103": "ERROR",
+    "geocpuresearch/geocpu-v44fix-missing-only-resume-b4-v4-20261103": "ERROR"
+  },
+  "metadata_sha256": "1f988308545f7b1c0100800cc64fd752f533d4cdc2dd41b782e1dd27e8336baa",
+  "official_minimum_device_seconds": 108000.0,
+  "official_reserved_device_seconds": 0.0,
+  "official_used_device_seconds": 36497.451,
+  "schema": "geocpu_v43_native_swe200_root_claim_20261104_v1",
+  "source_sha256": "f2c931df8702284c7154953e3e11d65f78f26a8ff0badb94bb4643943c4a76ba"
+}

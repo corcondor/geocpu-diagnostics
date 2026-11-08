@@ -1,41 +1,62 @@
-# GeoCPU v44fix — Colab で回す手順（A100 推奨）
+# GeoCPU v44fix TIR consistency: isolated Colab gate
 
-読むだけの入力：`MyDrive/GeoCPU_Frontier_CoTraining_v43/`（v43 の zip と `checkpoint_step_15000.pt`）。
-書き出し先：`MyDrive/GeoCPU_v44fix_20261103/run_1/` だけ。v43・v44 の元ファイルには一切書き込まない。
+This branch retains the v43 neural model and ALU while adding Python TIR. It is
+separate from the pure-Python/no-ALU v44 branch. Neither the v43 source ZIP nor
+its step-15000 checkpoint is modified.
 
-## セル1：ゲート（まずこれだけ）
-公開データ準備 → v43 形式への変換と混合 → v43 の基準評価 → 1000 ステップ試運転（15000→16000）→ 合否判定。
-途中で切れても、もう一度実行すれば終わった段階は飛ばして続きから再開する。
+The distribution is `GeoCPU_v44fix_TIR_consistency_bundle.zip`, verified by the
+SHA-256 value in the accompanying one-cell launcher. The package also verifies
+every extracted member against `release_manifest.json` before importing code.
 
-```python
-import os, sys, zipfile
-if not os.path.exists('/content/drive/MyDrive'):
-    from google.colab import drive; drive.mount('/content/drive')
-ZIP = '/content/drive/MyDrive/GeoCPU_v44fix_20261103/GeoCPU_v44fix_bundle.zip'
-W = '/content/v44fix'
-os.makedirs(W, exist_ok=True)
-zipfile.ZipFile(ZIP).extractall(W)          # コードは毎回上書き、data/ は残る
-os.chdir(W); sys.path.insert(0, W)
-import importlib, colab_v44fix; importlib.reload(colab_v44fix)
-result = colab_v44fix.main(full=False)
-```
+Training is blocked (`training_ready=false`) in this distribution. Public
+Numina Python blocks must first be verified in a disposable, credential-free
+environment with network disabled and no Drive mount. The bundled Python
+worker is not a security sandbox. The resulting curriculum and offline
+verification receipt must be reviewed, then the receipt SHA-256 must be pinned
+in a new distribution. Colab accepts only that pinned receipt, the exact
+source lock and source file hashes, evaluation and vocabulary hashes, the v43
+anchor hash, and matching output hashes. It never executes public code during
+Stage A. The old `GeoCPU_v44fix_20261103/run_1` data is never reused.
 
-最後に `GATE PASSED` か `GATE FAILED` が出る。合否の根拠は `run_1/gate_16000.json`、基準（v43）は `run_1/gate_baseline_v43.json`。
+Model-generated Python at evaluation time also needs an OS security boundary
+before a Colab run with Drive mounted. The isolated worker now has a Linux
+4 GiB address-space and 60-second CPU limit, but those resource caps do not
+isolate credentials, files, or network access. This release therefore remains
+blocked even if its source files compile and its CPU fixtures pass.
+The public preparation worker also has a cumulative 60-second CPU cap. The
+current verify-all loop keeps one worker across problems, so a future isolated
+verifier must recycle it safely without carrying state between problems.
 
-合格条件（v43 比）：
-- SWE の正解率の低下が 5pt 以内
-- 状態追跡の正解率の低下が 5pt 以内
-- ALU 計算の正解の減少が8問中1問以内
-- 反復率の上昇が 10pt 以内
+After that prerequisite, the first cell builds a fresh mixture with tool
+observation spans, evaluates the v43 baseline, runs an independent 1,000-update
+gate trial, and evaluates the gate. It stops after PASS or FAIL. It writes only
+to `MyDrive/GeoCPU_v44fix_TIR_consistency_20261103/run_1/`.
 
-TIR（Python を使う数学）は記録するだけで、ゲートの条件には入れていない（1000 ステップではまだ育たないため）。
+The gate and full training are separate runs from the same pinned v43 parent.
+Passing the gate does not imply that the full run will keep its quality. Once
+the gate has passed, an explicit later invocation of `colab_v44fix.main(full=True)`
+starts the 15,000→25,000 run independently. Within each run, a completed
+checkpoint restores weights, AdamW, CPU/CUDA/Python/NumPy RNG and the pending
+batch order. A missing, corrupted or half-committed checkpoint stops the run
+for inspection; it is never treated as a successful continuation.
 
-## セル2：本番（セル1が PASS のときだけ）
-v43 の step15000 から 25000 まで、1万ステップを途切れずに学習する。終わったら v43 の 7 階層ベンチと最終判定まで自動で回す。
+The checkpoint format holds about 3 GB per completed step. One gate checkpoint
+and four full-run checkpoints need roughly 15 GB, plus a temporary write of
+about 3 GB. The entry checks that the Drive mount reports at least 18 GB free
+before data preparation or training. The reported mount capacity is only a
+preflight; a write failure still stops without accepting a partial checkpoint.
 
-```python
-result = colab_v44fix.main(full=True)
-```
+Before packaging, local CPU fixtures cover tool masking, executable Python
+fences, resumed sampler order and RNG, checkpoint hash/strict restore, gate
+cache keys, and rejection of every OOM update. The distribution receipt records
+file hashes; test results are reported separately. This document does not
+claim any Colab training or new model performance.
 
-## 失敗したとき
-`GATE FAILED` なら本番は自動で始まらない。`run_1/gate_16000.json` の `checks` で、どの条件で落ちたかを確認する。
+Data and evaluation scope: the public TIR answer following a tool result is
+still the author's answer, not an independently proved mathematical solution.
+The code and Japanese instruction buckets are also not independently checked
+for factual correctness. The retained v43 anchor has known prompt overlap
+with the aligned Tier-6 search set, so that score is retention diagnostics,
+not clean unseen generalization. Tier-1 through Tier-7 and the separate TIR
+gate must be reported separately. This hybrid does not yet implement the
+original pure-Python v44 Tier-1 through Tier-8 suite as one full evaluation.

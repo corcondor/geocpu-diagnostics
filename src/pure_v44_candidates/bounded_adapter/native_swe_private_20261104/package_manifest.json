@@ -1,0 +1,39 @@
+{
+  "embedded_source": {
+    "adapter.py": {
+      "bytes": 8824,
+      "sha256": "3f9c3e2bf676f2e53eb66d57f0a8152297ca01fafe608738fe3f9cd3c0a4fe68"
+    },
+    "admission.py": {
+      "bytes": 28764,
+      "sha256": "0fbcf14fc08a6d3a0120c0ba063e598e7e1f26e4f62e8419333522f13fdfcd59"
+    },
+    "v43_native_swe_capture_readonly.py": {
+      "bytes": 18824,
+      "sha256": "6bcf453c32cacff89d3e6b3062162c3ae43f6027fe8f6b3336c8c2c8740fc12d"
+    }
+  },
+  "files": {
+    "bootstrap.py": {
+      "bytes": 29552,
+      "sha256": "f2c931df8702284c7154953e3e11d65f78f26a8ff0badb94bb4643943c4a76ba"
+    },
+    "kernel-metadata.json": {
+      "bytes": 566,
+      "sha256": "1f988308545f7b1c0100800cc64fd752f533d4cdc2dd41b782e1dd27e8336baa"
+    }
+  },
+  "generation_limit": 2048,
+  "hard_stop_utc": "2026-11-04T03:00:00+00:00",
+  "input_checkpoint_sha256": "a4b95d7d0f486146196271b3b1fbc6a1b6b3342d8fadd590320fc3842c1e80e5",
+  "input_metadata_sha256": "7efa8dea9a0100e2250f72805c89cca7a281efec30b4479795743814756cdcd5",
+  "input_source_zip_sha256": "0102dc9b01b4b795c3123b18cefc7a8734e47a06dd85292af464d3232704d198",
+  "max_wall_seconds": 1800,
+  "original_evaluator_sha256": "c3589b97f531b6460a95907e56284df5f20be990eff1a4d2e56a921b4c705899",
+  "original_swe_sha256": "0bf62099ea2a41c8eb35c1ebdc2584f2c164ae3c82f741ab3eca44113f70f8cd",
+  "schema": "geocpu_v43_native_swe200_private_package_v1",
+  "source_dataset": "geocpuresearch/geocpu-v43-v44fix-paired-eval-20261103",
+  "state": "STAGED_ONLY_NO_PROVIDER_VERSION_OR_CLAIM",
+  "swe_cases": 200,
+  "training_updates": 0
+}

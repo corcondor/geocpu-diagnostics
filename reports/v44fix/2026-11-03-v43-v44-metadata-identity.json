@@ -1,0 +1,42 @@
+{
+  "scope": "Read-only parent/child checkpoint metadata comparison; tensor payloads were not loaded and generation was not run.",
+  "v43_checkpoint": {
+    "path": "G:/マイドライブ/GeoCPU_Frontier_CoTraining_v43/checkpoints/checkpoint_step_15000.pt",
+    "expected_sha256_from_existing_receipt": "a4b95d7d0f486146196271b3b1fbc6a1b6b3342d8fadd590320fc3842c1e80e5",
+    "whole_file_rehashed_in_this_audit": false,
+    "embedded_meta_vocab_sha256": "7a2d6816bcd09d92d3803b6772d389e6e7c40b3d9f83c376839c30603ed57bdf",
+    "embedded_meta_vocab_entries": 3898,
+    "embedded_config_max_positions": 2048
+  },
+  "pure_v44_checkpoint": {
+    "path": "G:/マイドライブ/GeoCPU_Frontier_CoTraining_v44_PythonTIR_Hotfix_20261103/run_1/training/checkpoint_step_25000_aa6c44ab47a14297b5c6481a5fb1374d_27867b30ef624c8985a22b81ae7789fa.pt",
+    "expected_sha256_from_existing_receipt": "28308d0445829b8bf137f801f98b7573f80e699fb00e97d56a15523158ee984a",
+    "whole_file_rehashed_in_this_audit": false,
+    "embedded_meta_vocab_sha256": "7a2d6816bcd09d92d3803b6772d389e6e7c40b3d9f83c376839c30603ed57bdf",
+    "embedded_meta_vocab_entries": 3898,
+    "embedded_config_max_positions": 8192
+  },
+  "v43_source_zip": {
+    "path": "G:/マイドライブ/GeoCPU_Frontier_CoTraining_v43/Grand_cotraining_v43.zip",
+    "sha256": "0102dc9b01b4b795c3123b18cefc7a8734e47a06dd85292af464d3232704d198",
+    "metadata_member": "base_metadata.json",
+    "metadata_member_bytes": 69983,
+    "metadata_member_sha256": "7efa8dea9a0100e2250f72805c89cca7a281efec30b4479795743814756cdcd5"
+  },
+  "hotfix_source_receipt_path": "G:/マイドライブ/GeoCPU_Frontier_CoTraining_v44_PythonTIR_Release_20261103/run_1/neural_source_receipt.json",
+  "hotfix_receipt_metadata_sha256": "ca53934facb94bd17cb7bb881bdf223edbc653eb90f62fdda3b7663e64f3e677",
+  "static_comparison": {
+    "method": "Read only the data.pkl ZIP member of each checkpoint with pickletools.genops, extract the 3898 vocab character-to-ID pairs and simple config scalar fields without executing pickle or reading tensor storage.",
+    "vocab_id_differences_parent_vs_child": 0,
+    "vocab_id_differences_parent_vs_v43_zip": 0,
+    "config_value_differences_parent_vs_child": {
+      "max_positions": [2048, 8192]
+    },
+    "source_metadata_transform": "Replace the single byte substring \"max_positions\": 2048 with \"max_positions\": 8192; all other metadata bytes retained.",
+    "source_metadata_transform_count": 1,
+    "transformed_metadata_bytes": 69983,
+    "transformed_metadata_sha256": "ca53934facb94bd17cb7bb881bdf223edbc653eb90f62fdda3b7663e64f3e677",
+    "transform_matches_hotfix_receipt": true
+  },
+  "conclusion": "The source metadata file SHA difference is exactly the documented context extension. It does not indicate vocabulary-ID remapping. No answer-quality or causality conclusion follows from this metadata check."
+}

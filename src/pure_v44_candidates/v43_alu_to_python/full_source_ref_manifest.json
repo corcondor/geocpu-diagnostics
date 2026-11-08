@@ -1,0 +1,14 @@
+{
+  "source_ref_schema": "{kind:'v43_zip_member',file,line,raw_sha256}",
+  "zip_member": "data/train_v43_knowledge_unified.jsonl",
+  "line_number_base": 1,
+  "raw_sha256_definition": "SHA256 of exact JSONL line bytes including its newline",
+  "source_rows_through_line_1based": 268032,
+  "verified_snapshot_rows": 24836,
+  "source_ref_attached": 24836,
+  "unresolved": {},
+  "ambiguous_key_groups": 0,
+  "enriched_output_sha256": "53387b2987df02d91b51b4afc8ab2369cc0e53b9e4bdd0cfd480c3586de7f3db",
+  "status": "completed verified output",
+  "warning": "Only source_ref_attached rows are unambiguously linked to original ZIP lines."
+}

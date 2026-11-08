@@ -4,15 +4,31 @@
 (prompt/target/full_text/source/bucket/language/target_segments/provenance; NO "question" field)."""
 import json, re, subprocess, sys, tempfile, unittest
 from pathlib import Path
+from gpt.prepare_public_v44 import normalize_tir
 
 ROOT = Path(__file__).parent.resolve()
-V43_SAMPLE = ROOT / "test_assets" / "v43_train_sample.jsonl"
 
 
 def gpt_row(bucket, content, target):
     prompt = "ユーザー: " + content + "\nアシスタント: "
+    segments = []
+    provenance = {"public_repo": "test"}
+    if bucket == "tir":
+        provenance["verification"] = "executed_all_blocks_in_this_problem"
+        if "```python\n" in target:
+            class ArithmeticExecutor:
+                def reset(self):
+                    return {"reset": True}
+
+                def execute(self, code):
+                    expression = code.strip().removeprefix("print(").removesuffix(")")
+                    answer = eval(expression, {"__builtins__": {}}, {})
+                    return {"success": True, "stdout": f"{answer}\n", "stderr": "", "error": None}
+
+            target, segments, receipts = normalize_tir(target, executor=ArithmeticExecutor())
+            provenance["tool_blocks"] = receipts
     return {"prompt": prompt, "target": target, "full_text": prompt + target, "source": "public_x", "bucket": bucket,
-            "language": "ja", "target_segments": [], "provenance": {"public_repo": "test"}}
+            "language": "ja", "target_segments": segments, "provenance": provenance}
 
 
 class BuildV44FixDataTests(unittest.TestCase):
@@ -21,9 +37,21 @@ class BuildV44FixDataTests(unittest.TestCase):
         cls.tmp = Path(tempfile.mkdtemp())
         pub, ev = cls.tmp / "public", cls.tmp / "eval"
         pub.mkdir(); ev.mkdir()
+        cls.v43_path = cls.tmp / "v43_train_sample.jsonl"
+        cls.v43 = []
+        for i in range(20):
+            prompt = f"指示: 元の問題{i}\n回答:"
+            target = " <SEARCH fact>" if i % 2 == 0 else " <SET R0 1>"
+            cls.v43.append({"prompt": prompt, "target": target, "full_text": prompt + target,
+                            "source": "fixture_v43"})
+        cls.v43_path.write_text("\n".join(json.dumps(row, ensure_ascii=False) for row in cls.v43) + "\n",
+                                encoding="utf-8")
         tir = [gpt_row("tir", f"Compute {i} + {i}.", f"We use Python.\n```python\nprint({i}+{i})\n```\n```output\n{2*i}\n```\nSo the answer is $\\boxed{{{2*i}}}$.")
                for i in range(1, 6)]
         rows = tir + tir  # GPT's mixture repeats rows; the builder must dedup public rows
+        unverified = gpt_row("tir", "Compute 99 + 99.", "```python\nprint(99+99)\n```\n```output\n198\n```\n$\\boxed{198}$")
+        unverified["provenance"]["verification"] = "public_author_recorded_not_executed_here"
+        rows.append(unverified)
         rows.append(gpt_row("tir", "No boxed here.", "Just text."))
         rows.append(gpt_row("code", "Write a C function.", "```c\nint f(void){return 1;}\n```"))
         rows.append(gpt_row("japanese", "本文:\n富士山は日本一高い山です。\n質問:\n日本一高い山は？", "富士山です。"))
@@ -34,14 +62,13 @@ class BuildV44FixDataTests(unittest.TestCase):
         bad = gpt_row("japanese", "壊れた行", "x"); bad["prompt"] = "壊れた行"
         rows.append(bad)
         (pub / "train.jsonl").write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n", encoding="utf-8")
-        (pub / "dev.jsonl").write_text(json.dumps(gpt_row("tir", "Held out 7 * 3.", "x\n$\\boxed{21}$"), ensure_ascii=False) + "\n", encoding="utf-8")
+        (pub / "dev.jsonl").write_text(json.dumps(gpt_row("tir", "Held out 7 * 3.", "```python\nprint(7*3)\n```\n```output\n21\n```\n$\\boxed{21}$"), ensure_ascii=False) + "\n", encoding="utf-8")
         (pub / "test.jsonl").write_text("", encoding="utf-8")
         (ev / "eval_x.jsonl").write_text(json.dumps({"prompt": "評価に使う質問です。"}, ensure_ascii=False) + "\n", encoding="utf-8")
-        cls.v43 = [json.loads(l) for l in V43_SAMPLE.read_text(encoding="utf-8").splitlines()]
         cls.out = cls.tmp / "out"
-        r = subprocess.run([sys.executable, str(ROOT / "build_v44fix_data.py"), "--public-dir", str(pub), "--v43-train", str(V43_SAMPLE),
+        r = subprocess.run([sys.executable, str(ROOT / "build_v44fix_data.py"), "--public-dir", str(pub), "--v43-train", str(cls.v43_path),
                             "--eval-dir", str(ev), "--vocab", str(ROOT / "base_metadata.json"), "--out-dir", str(cls.out),
-                            "--mix", "anchor=2000,tir=100,code=100,japanese=100", "--max-repeat", "2.0"],
+                            "--mix", "anchor=2000,tir=10,code=100,japanese=100", "--max-repeat", "2.0"],
                            capture_output=True, text=True, encoding="utf-8", cwd=str(ROOT))
         assert r.returncode == 0, r.stdout + r.stderr
         cls.manifest = json.loads((cls.out / "manifest.json").read_text(encoding="utf-8"))
@@ -76,9 +103,12 @@ class BuildV44FixDataTests(unittest.TestCase):
         self.assertEqual(rj.get("japanese:evaluation_overlap"), 1)
         self.assertEqual(rj.get("japanese:out_of_vocab_char"), 1)
         self.assertEqual(rj.get("japanese:schema"), 1)
+        self.assertEqual(rj.get("tir:tir_observation_not_locally_executed"), 1)
         b = self.manifest["buckets"]
         self.assertEqual(b["tir"]["unique_rows"], 5)
-        self.assertEqual(b["tir"]["exposures"], 10)           # 100 requested, capped at 5 * 2.0
+        self.assertEqual(b["tir"]["exposures"], 10)
+        self.assertEqual(b["tir"]["minimum_verified_unique_rows"], 5)
+        self.assertTrue(b["tir"]["all_selected_observations_locally_executed"])
         for k in ("tir", "code", "japanese"):
             self.assertLessEqual(b[k]["repeat_factor_vs_pool"], 2.0)
 
@@ -98,6 +128,17 @@ class BuildV44FixDataTests(unittest.TestCase):
         self.assertEqual(held[0]["answer"], "21")
         self.assertTrue(held[0]["prompt"].startswith("問題: Held out"))
         self.assertTrue(held[0]["reference"].startswith(" "))
+
+    def test_verified_tir_pool_shortfall_stops_build(self):
+        out = self.tmp / "underfilled"
+        r = subprocess.run([sys.executable, str(ROOT / "build_v44fix_data.py"),
+                            "--public-dir", str(self.tmp / "public"), "--v43-train", str(self.v43_path),
+                            "--eval-dir", str(self.tmp / "eval"), "--vocab", str(ROOT / "base_metadata.json"),
+                            "--out-dir", str(out), "--mix", "anchor=20,tir=12,code=2,japanese=2",
+                            "--max-repeat", "2.0"], capture_output=True, text=True, encoding="utf-8", cwd=str(ROOT))
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("verified TIR pool too small: 5 unique rows, need at least 6 for 12 exposures", r.stderr)
+        self.assertFalse((out / "train.jsonl").exists())
 
 
 if __name__ == "__main__":

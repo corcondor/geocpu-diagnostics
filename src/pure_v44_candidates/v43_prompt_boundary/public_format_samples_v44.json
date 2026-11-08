@@ -1,0 +1,50 @@
+{
+  "numina": {
+    "repo_id": "project-numina/NuminaMath-TIR",
+    "revision": "77a91d7b7a1a98ac4b1beb7d86c09d156b935dcd",
+    "source_api": "https://datasets-server.huggingface.co/first-rows?dataset=project-numina%2FNuminaMath-TIR&config=default&split=train",
+    "response_sha256": "d8162946a3781d907099c4b516a5ee4dd76932cfd63b59cad49017c4558304cf",
+    "sample": {
+      "problem": "What is the coefficient of $x^2y^6$ in the expansion of $\\left(\\frac{3}{5}x-\\frac{y}{2}\\right)^8$?  Express your answer as a common fraction.",
+      "solution": "To determine the coefficient of \\(x^2y^6\\) in the expansion of \\(\\left(\\frac{3}{5}x - \\frac{y}{2}\\right)^8\\), we can use the binomial theorem.\n\nThe binomial theorem states:\n\\[\n(a + b)^n = \\sum_{k=0}^{n} \\binom{n}{k} a^{n-k} b^k\n\\]\n\nIn this case, \\(a = \\frac{3}{5}x\\), \\(b = -\\frac{y}{2}\\), and \\(n = 8\\).\n\nWe are interested in the term that contains \\(x^2y^6\\). In the general term of the binomial expansion:\n\\[\n\\binom{8}{k} \\left(\\frac{3}{5}x\\right)^{8-k} \\left(-\\frac{y}{2}\\right)^k\n\\]\n\nTo get \\(x^2\\), we need \\(8 - k = 2\\), thus \\(k = 6\\).\n\nSubstituting \\(k = 6\\) into the expression:\n\\[\n\\binom{8}{6} \\left(\\frac{3}{5}x\\right)^{8-6} \\left(-\\frac{y}{2}\\right)^6 = \\binom{8}{6} \\left(\\frac{3}{5}x\\right)^2 \\left(-\\frac{y}{2}\\right)^6\n\\]\n\nNow, we will compute each part of this expression.\n\n1. Calculate the binomial coefficient \\(\\binom{8}{6}\\).\n2. Compute \\(\\left(\\frac{3}{5}\\right)^2\\).\n3. Compute \\(\\left(-\\frac{y}{2}\\right)^6\\).\n4. Combine everything together to get the coefficient of \\(x^2y^6\\).\n\nLet's compute these in Python.\n```python\nfrom math import comb\n\n# Given values\nn = 8\nk = 6\n\n# Calculate the binomial coefficient\nbinom_coeff = comb(n, k)\n\n# Compute (3/5)^2\na_term = (3/5)**2\n\n# Compute (-1/2)^6\nb_term = (-1/2)**6\n\n# Combine terms to get the coefficient of x^2y^6\ncoefficient = binom_coeff * a_term * b_term\nprint(coefficient)\n```\n```output\n0.1575\n```\nThe coefficient of \\(x^2y^6\\) in the expansion of \\(\\left(\\frac{3}{5}x - \\frac{y}{2}\\right)^8\\) is \\(0.1575\\). To express this as a common fraction, we recognize that:\n\n\\[ 0.1575 = \\frac{1575}{10000} = \\frac{63}{400} \\]\n\nThus, the coefficient can be expressed as:\n\n\\[\n\\boxed{\\frac{63}{400}}\n\\]",
+      "messages": [
+        {
+          "content": "What is the coefficient of $x^2y^6$ in the expansion of $\\left(\\frac{3}{5}x-\\frac{y}{2}\\right)^8$?  Express your answer as a common fraction.",
+          "role": "user"
+        },
+        {
+          "content": "To determine the coefficient of \\(x^2y^6\\) in the expansion of \\(\\left(\\frac{3}{5}x - \\frac{y}{2}\\right)^8\\), we can use the binomial theorem.\n\nThe binomial theorem states:\n\\[\n(a + b)^n = \\sum_{k=0}^{n} \\binom{n}{k} a^{n-k} b^k\n\\]\n\nIn this case, \\(a = \\frac{3}{5}x\\), \\(b = -\\frac{y}{2}\\), and \\(n = 8\\).\n\nWe are interested in the term that contains \\(x^2y^6\\). In the general term of the binomial expansion:\n\\[\n\\binom{8}{k} \\left(\\frac{3}{5}x\\right)^{8-k} \\left(-\\frac{y}{2}\\right)^k\n\\]\n\nTo get \\(x^2\\), we need \\(8 - k = 2\\), thus \\(k = 6\\).\n\nSubstituting \\(k = 6\\) into the expression:\n\\[\n\\binom{8}{6} \\left(\\frac{3}{5}x\\right)^{8-6} \\left(-\\frac{y}{2}\\right)^6 = \\binom{8}{6} \\left(\\frac{3}{5}x\\right)^2 \\left(-\\frac{y}{2}\\right)^6\n\\]\n\nNow, we will compute each part of this expression.\n\n1. Calculate the binomial coefficient \\(\\binom{8}{6}\\).\n2. Compute \\(\\left(\\frac{3}{5}\\right)^2\\).\n3. Compute \\(\\left(-\\frac{y}{2}\\right)^6\\).\n4. Combine everything together to get the coefficient of \\(x^2y^6\\).\n\nLet's compute these in Python.\n```python\nfrom math import comb\n\n# Given values\nn = 8\nk = 6\n\n# Calculate the binomial coefficient\nbinom_coeff = comb(n, k)\n\n# Compute (3/5)^2\na_term = (3/5)**2\n\n# Compute (-1/2)^6\nb_term = (-1/2)**6\n\n# Combine terms to get the coefficient of x^2y^6\ncoefficient = binom_coeff * a_term * b_term\nprint(coefficient)\n```\n```output\n0.1575\n```\nThe coefficient of \\(x^2y^6\\) in the expansion of \\(\\left(\\frac{3}{5}x - \\frac{y}{2}\\right)^8\\) is \\(0.1575\\). To express this as a common fraction, we recognize that:\n\n\\[ 0.1575 = \\frac{1575}{10000} = \\frac{63}{400} \\]\n\nThus, the coefficient can be expressed as:\n\n\\[\n\\boxed{\\frac{63}{400}}\n\\]",
+          "role": "assistant"
+        }
+      ]
+    }
+  },
+  "japanese": {
+    "repo_id": "kunishou/databricks-dolly-15k-ja",
+    "revision": "6391034b0126850543299cda071dc6281c31a6fb",
+    "source_api": "https://datasets-server.huggingface.co/first-rows?dataset=kunishou%2Fdatabricks-dolly-15k-ja&config=default&split=train",
+    "response_sha256": "65699967ccb0dad0a2f997c5b120b8c3ff06a03565c24a51151125319ceb03f5",
+    "sample": {
+      "output": "ヴァージン・オーストラリア航空は、2000年8月31日にヴァージン・ブルー航空として、2機の航空機で単一路線の運航を開始しました。",
+      "input": "ヴァージン・オーストラリア航空（Virgin Australia Airlines Pty Ltd）はオーストラリアを拠点とするヴァージン・ブランドを冠する最大の船団規模を持つ航空会社です。2000年8月31日に、ヴァージン・ブルー空港として、2機の航空機、1つの空路を運行してサービスを開始しました。2001年9月のアンセット・オーストラリア空港の崩壊後、オーストラリアの国内市場で急速に地位を確立しました。その後はブリスベン、メルボルン、シドニーをハブとして、オーストラリア国内の32都市に直接乗り入れるまでに成長しました。",
+      "index": "0",
+      "category": "closed_qa",
+      "instruction": "ヴァージン・オーストラリア航空はいつから運航を開始したのですか？"
+    }
+  },
+  "code": {
+    "repo_id": "ise-uiuc/Magicoder-OSS-Instruct-75K",
+    "revision": "5f839b1f368a76b161028bb9edff055db34022b2",
+    "source_api": "https://datasets-server.huggingface.co/first-rows?dataset=ise-uiuc%2FMagicoder-OSS-Instruct-75K&config=default&split=train",
+    "response_sha256": "b94ffff347dda4f9dc82dc2fd8223801063c455f3188e8562cb972d98bdbe364",
+    "sample": {
+      "lang": "cpp",
+      "raw_index": 101533,
+      "index": 4626,
+      "seed": "  int n;\n  cin >> n;\n  vector<int> a(n + 1), b(n + 1);\n  for (int i = 1; i <= n; ++i) cin >> a[i] >> b[i];\n  auto c = convolution(a, b);\n  for (int i = 1; i <= 2 * n; ++i) cout << c[i] << endl;\n}\n",
+      "openai_fingerprint": "fp_eeff13170a",
+      "problem": "You are given two arrays, A and B, each of length n. You need to perform a convolution operation on these arrays and output the resulting array.\n\nThe convolution of two arrays A and B is defined as follows:\n- Let C be the resulting array of length 2n-1, where C[i] = Σ(A[j] * B[i-j]) for j = max(0, i-n+1) to min(i, n-1).\n\nWrite a function or method to perform the convolution operation and return the resulting array C.\n\nFunction Signature: \n```cpp\nvector<int> convolution(vector<int> a, vector<int> b)\n```\n\nInput:\n- Two arrays a and b of length n (1 <= n <= 10^5), where each element of the array is an integer (-10^9 <= a[i], b[i] <= 10^9).\n\nOutput:\n- Return the resulting array C after performing the convolution operation.\n\nExample:\nInput:\na = [1, 2, 3]\nb = [4, 5, 6]\n\nOutput:\nconvolution(a, b) -> [4, 13, 28, 27, 18]",
+      "solution": "```cpp\n#include <iostream>\n#include <vector>\nusing namespace std;\n\nvector<int> convolution(vector<int> a, vector<int> b) {\n    int n = a.size();\n    vector<int> c(2 * n - 1, 0);\n    for (int i = 0; i < 2 * n - 1; ++i) {\n        for (int j = max(0, i - n + 1); j <= min(i, n - 1); ++j) {\n            c[i] += a[j] * b[i - j];\n        }\n    }\n    return c;\n}\n\nint main() {\n    vector<int> a = {1, 2, 3};\n    vector<int> b = {4, 5, 6};\n    vector<int> result = convolution(a, b);\n    for (int i = 0; i < result.size(); ++i) {\n        cout << result[i] << \" \";\n    }\n    return 0;\n}\n```"
+    }
+  }
+}

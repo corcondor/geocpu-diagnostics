@@ -1,0 +1,45 @@
+{
+  "batch_size": 64,
+  "first_250_updates": {
+    "microbatch_boundaries_equal_updates": 250,
+    "old_active_targets": 2210260,
+    "python_active_targets": 22253,
+    "python_actual_target_fraction": 0.009967691117588117,
+    "python_replaced_slots": 78,
+    "python_rows_by_original_family": {
+      "Algebraic_Composite_Aligned": 21,
+      "Comparative_Conditional_Aligned": 57
+    },
+    "same_unreplaced_old_slots": 15922,
+    "updates": 250
+  },
+  "full_1000_updates": {
+    "microbatch_boundaries_equal_updates": 1000,
+    "old_active_targets": 8916129,
+    "python_active_targets": 89828,
+    "python_actual_target_fraction": 0.009974287019136333,
+    "python_replaced_slots": 311,
+    "python_rows_by_original_family": {
+      "Algebraic_Composite_Aligned": 110,
+      "Comparative_Conditional_Aligned": 201
+    },
+    "same_unreplaced_old_slots": 63689,
+    "updates": 1000
+  },
+  "independent_replay_verification": "BYPASSED_FOR_READ_ONLY_AUDIT_ONLY",
+  "inputs": {
+    "converted_sha256": "53387b2987df02d91b51b4afc8ab2369cc0e53b9e4bdd0cfd480c3586de7f3db",
+    "hybrid_data_sha256": "05e1a2a822af7e8b45f3f50ec673fb331936b0734f65661148a7f28c6eb3e90d",
+    "source_pools_sha256": "3fe47ea59e678f39776b1ee484a1fb874689f3761bc2edc5f1bdbfd695192afd",
+    "train_stage_sha256": "dbf05af1f5f59ef554b9858b2ec3c40ffaaf45ca612a3ee18c8c8baccd51af33",
+    "v43_zip_sha256": "0102dc9b01b4b795c3123b18cefc7a8734e47a06dd85292af464d3232704d198"
+  },
+  "max_micro_tokens": 24576,
+  "pool_rows": {
+    "old": 258463,
+    "python": 22268
+  },
+  "schema": "geocpu_hybrid_real_pool_plan_readonly_audit_v1",
+  "seed": 20261103,
+  "training_updates": 0
+}

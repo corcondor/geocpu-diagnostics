@@ -1,0 +1,41 @@
+{
+  "source_zip": "G:\\マイドライブ\\GeoCPU_Frontier_CoTraining_v43\\Grand_cotraining_v43.zip",
+  "source_zip_sha256": "0102dc9b01b4b795c3123b18cefc7a8734e47a06dd85292af464d3232704d198",
+  "verified_original_cpu_source_sha256": {
+    "qwenputer_controller_v30.py": "e452bd0c5cf4c745b3de2276acbdcc67a4022f5329e4d8513a87587a8cb36e8e",
+    "cpu_circuit_v30.py": "fe3a5692136c9c055bae17eeeed395bea0516bdac3b51124c0c5b0cb768437d2"
+  },
+  "source_member": "data/train_v43_knowledge_unified.jsonl",
+  "bounded_rows_examined": 268032,
+  "max_accepted": 30000,
+  "counts": {
+    "eval_prompt_exact_excluded": 7000,
+    "accepted": 24836,
+    "source_not_selected": 233209,
+    "over_tool_call_limit": 2625,
+    "unverified_task_form": 362
+  },
+  "elapsed_wall_seconds": 1985.859,
+  "accepted_sources": {
+    "Algebraic_Composite_Aligned": 9828,
+    "Comparative_Conditional_Aligned": 15000,
+    "swe_alu_accumulate_sum": 8
+  },
+  "bundled_eval_prompt_counts": {
+    "data/eval_v42_search_retrieval_aligned.jsonl": 200,
+    "data/eval_v42_search_retrieval_heldout.jsonl": 200,
+    "data/eval_swe_step_control_heldout.jsonl": 200,
+    "data/eval_v38_decomposed_state_bench200.jsonl": 200,
+    "data/eval_v33_state_tracking_heldout.jsonl": 188,
+    "data/jamcqa_manifest_test.jsonl": 2309,
+    "data/benchmark_8100_manifest.jsonl": 8100,
+    "data/eval_v41_logical_instruction_operators_heldout.jsonl": 400
+  },
+  "bundled_eval_unique_exact": 11388,
+  "converted_sample_sha256": "8eb50593fb661e6a13a1aa1a694591e40b7c6ea3753eb4d443ee2a1922f39ae3",
+  "limitations": [
+    "Exact and NFKC-normalized prompt overlap only; semantic-family leakage is not certified.",
+    "Only three source families and nine simple ALU opcodes are considered.",
+    "CPU trace and independently recomputed final answer must agree; no training or model test performed."
+  ]
+}

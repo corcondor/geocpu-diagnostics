@@ -1,0 +1,233 @@
+{
+  "files": {
+    "COLAB_CELLS.md": {
+      "bytes": 3951,
+      "sha256": "aee90c81021018bba37e9278d9344ddc4b532b13e798c4cee757e184ebb8219e"
+    },
+    "Colab_launch_cotraining_v42.py": {
+      "bytes": 8661,
+      "sha256": "364b6c3cf6e096f3a33820046eb7ed094b1e40fec559f3fbe7ba00d73356af54"
+    },
+    "Colab_launch_cotraining_v43.py": {
+      "bytes": 8173,
+      "sha256": "39e4295cd24f72c6eae6b7b2f671de161875caa6a83799e98f193916207adc04"
+    },
+    "GeoCPU_CED_v1.py": {
+      "bytes": 22987,
+      "sha256": "7e8cc8ffc9ae84a2fb9165bcb8c2cdb47eee30f3394cbea343c836659f086d2d"
+    },
+    "GeoCPU_CED_v2.py": {
+      "bytes": 7105,
+      "sha256": "2b515d4a922e606b57b13fe3ee15f57bc58369ce38c2c17b0c07959ed517c9f9"
+    },
+    "base_metadata.json": {
+      "bytes": 69983,
+      "sha256": "7efa8dea9a0100e2250f72805c89cca7a281efec30b4479795743814756cdcd5"
+    },
+    "build_tir_consistency_package.py": {
+      "bytes": 6810,
+      "sha256": "3c47d047107e7708a11169e2363f29637f49dcf30eb41b8084382592e18a1fc6"
+    },
+    "build_v44fix_data.py": {
+      "bytes": 17495,
+      "sha256": "928f0c487e36a8ca34b9ec74e2a0ed944ee13bd0272694dbf6b47c294a8f9d27"
+    },
+    "check_real_parity.py": {
+      "bytes": 2660,
+      "sha256": "b3be12465fa46085a220d74d4d8c98a33e7fbaa0d8ef13890b0d02d439c6538a"
+    },
+    "colab_v44fix.py": {
+      "bytes": 20742,
+      "sha256": "5e3b2b58be79b362d211dfb63f6f892468ad9ece921f6d16140f25e5987c3694"
+    },
+    "cpu_circuit_v30.py": {
+      "bytes": 15787,
+      "sha256": "fe3a5692136c9c055bae17eeeed395bea0516bdac3b51124c0c5b0cb768437d2"
+    },
+    "data/eval_swe_step_control_heldout.jsonl": {
+      "bytes": 82008,
+      "sha256": "0bf62099ea2a41c8eb35c1ebdc2584f2c164ae3c82f741ab3eca44113f70f8cd"
+    },
+    "data/eval_v33_state_tracking_heldout.jsonl": {
+      "bytes": 254614,
+      "sha256": "6406c92c106512d2046368d6acba2dfb2ff24181301a14e975d76700ab7ab7b5"
+    },
+    "data/eval_v38_decomposed_state_bench200.jsonl": {
+      "bytes": 116506,
+      "sha256": "e96db14ba2b6ec620d42bcaf598199da814d93cef971c334889bd88147567cd1"
+    },
+    "data/knowledge_corpus_v42.jsonl": {
+      "bytes": 3796,
+      "sha256": "f38016be829db51f046d33c99cdde550bdd92e9fd4560113ba57e25feeaf9edf"
+    },
+    "data/knowledge_corpus_v43.jsonl": {
+      "bytes": 5518,
+      "sha256": "3118998dc32687868757227d7939d29e0180cad69892256a2747cf89659d826a"
+    },
+    "eval_benchmark_full_8100.py": {
+      "bytes": 18047,
+      "sha256": "a570ca0640519a15ab3df8174a08ed36c7b73d78260bdfc1dbf7b3ce5dcdbb14"
+    },
+    "eval_jamcqa_official.py": {
+      "bytes": 10420,
+      "sha256": "3563979400837d86a72bae9c48ec1083c6345afa97c7e740f9a74e40e2ec8b75"
+    },
+    "eval_logical_instruction_operators.py": {
+      "bytes": 7958,
+      "sha256": "0f70a0a4896a9e8f04319137027f01fe6318272ffbe7e439f623813b4d14a8f6"
+    },
+    "eval_step_control_heldout.py": {
+      "bytes": 11322,
+      "sha256": "c3589b97f531b6460a95907e56284df5f20be990eff1a4d2e56a921b4c705899"
+    },
+    "eval_v38_decomposed_state_bench.py": {
+      "bytes": 5557,
+      "sha256": "f70d4d97a1aa7766749dc2aa2879e00432e72972c4cd00e343b50f1da528646b"
+    },
+    "eval_v42_search_retrieval.py": {
+      "bytes": 6780,
+      "sha256": "7c43049ef386c9c14aeff9c31c0b1132f69b1ab07735e4305ecba4eef7adb983"
+    },
+    "eval_v43_ab_benchmark.py": {
+      "bytes": 10537,
+      "sha256": "03bd7dc20bec44cf8006d9b021b1b76c5aa2b4bf88d5c917e0835b494ecf2721"
+    },
+    "executor_worker_v44r1.py": {
+      "bytes": 8020,
+      "sha256": "b3a8f35d8d56857cfa7eaa50f0dc3d31a42eea9eaf1692ad6c01ff938f02f44d"
+    },
+    "fast_encoder_scan.py": {
+      "bytes": 8230,
+      "sha256": "7f2f75f33fe37add6396d881d11d4e964a9db31154c6960b6b63704bec8214c8"
+    },
+    "gate_eval_v44fix.py": {
+      "bytes": 13793,
+      "sha256": "249998caa063804575d7680f3211de5e54603deb2ddb973d1bbb5dd48f8690d5"
+    },
+    "gpt/__pycache__/prepare_public_v44.cpython-312.pyc": {
+      "bytes": 43945,
+      "sha256": "7803270ad67e962a1b1197e811cc693c0195da9b3ff956f9889f42491a586345"
+    },
+    "gpt/__pycache__/resource_limited_worker_v44r1.cpython-312.pyc": {
+      "bytes": 1905,
+      "sha256": "26c39d2c0ebf7748bf701bd1262cca1312fccfe884538ad07b0ed75a57ffacc0"
+    },
+    "gpt/__pycache__/tir_engine_v44r1.cpython-312.pyc": {
+      "bytes": 27254,
+      "sha256": "edfceb57ee6f43d36277c61e7c22845b4810c25e1d56bf7b639dbbf6c2bf1c2c"
+    },
+    "gpt/executor_worker_v44r1.py": {
+      "bytes": 8020,
+      "sha256": "b3a8f35d8d56857cfa7eaa50f0dc3d31a42eea9eaf1692ad6c01ff938f02f44d"
+    },
+    "gpt/prepare_public_v44.py": {
+      "bytes": 34986,
+      "sha256": "8b06fee0a47d7bdfe59e90774452b1135daf7fbdf9301af48bdf0156019d1db8"
+    },
+    "gpt/public_source_lock_v44.json": {
+      "bytes": 2434,
+      "sha256": "f72eb60ad2a93ede9cd80633aa7531dbac069f5ef40dbd8d881cffdfee17db2c"
+    },
+    "gpt/resource_limited_worker_v44r1.py": {
+      "bytes": 1180,
+      "sha256": "d8563d23ddc86277fa87aa17cdbc78decc5e2022215b5d20e7cf107e13fc4294"
+    },
+    "gpt/tir_engine_v44r1.py": {
+      "bytes": 15118,
+      "sha256": "375d0844b616f3913b942db11edd425e78bf6ed13b8fa803c7e3ea183739538e"
+    },
+    "integrated_model_v30.py": {
+      "bytes": 37639,
+      "sha256": "c391d893ce3906fb0f9b1dcfa3bdad3825ff1d68229ef05dde1751f06569d156"
+    },
+    "integrated_model_v42.py": {
+      "bytes": 9925,
+      "sha256": "d5400a28efc54fb22c90ca380bcd93c7d7dd35be69d0b91cc4c8b15674fc7e4e"
+    },
+    "integrated_model_v44fix.py": {
+      "bytes": 14488,
+      "sha256": "dcfcfe4b4ceea7ca9dc18699094631ec6da645639ab860a563378cf8abe297df"
+    },
+    "local_search_engine_v42.py": {
+      "bytes": 9688,
+      "sha256": "d1c3cb1791fdda0f48f394e926d4a8812fa956c8ff5597898c67da1ddc506ace"
+    },
+    "official_dc_reference_v22.py": {
+      "bytes": 12299,
+      "sha256": "6d219aec4bf06b63327545da762ed98f54c896c85247515b024ce181be82e94e"
+    },
+    "qwenputer_controller_v30.py": {
+      "bytes": 9537,
+      "sha256": "e452bd0c5cf4c745b3de2276acbdcc67a4022f5329e4d8513a87587a8cb36e8e"
+    },
+    "resource_limited_worker_v44r1.py": {
+      "bytes": 1180,
+      "sha256": "d8563d23ddc86277fa87aa17cdbc78decc5e2022215b5d20e7cf107e13fc4294"
+    },
+    "resume_v44fix.py": {
+      "bytes": 11913,
+      "sha256": "2cbc9a5e28e1705bac0400f6efc83d2771c847ea48944eef30cf98665b09d002"
+    },
+    "runtime_cotraining_v41_247M.py": {
+      "bytes": 31260,
+      "sha256": "05004c957cb63e57acde88eae410f2d0d2e42df36e6e7de758659c5b5133c22f"
+    },
+    "runtime_cotraining_v42_search.py": {
+      "bytes": 18746,
+      "sha256": "419c8db72659968cc190b62a242778256d38b8862db00812a191a2dda38c6824"
+    },
+    "runtime_cotraining_v43_knowledge.py": {
+      "bytes": 18961,
+      "sha256": "ac2f5c361aec669f50b3b58acea3b4e7901a4c36890b024de5b3bba04420902e"
+    },
+    "runtime_v44fix.py": {
+      "bytes": 22970,
+      "sha256": "b34ee22b8926302aa656753f26d6dfb5037f25310f6dcbe2903450b1a0cbd22e"
+    },
+    "test_build_v44fix_data.py": {
+      "bytes": 8965,
+      "sha256": "08cab4ca9f323d421a25906ee52f039a62ecc19523996a8c0c6502a1142ff024"
+    },
+    "test_colab_stage_v44fix.py": {
+      "bytes": 13336,
+      "sha256": "a65ff8b41179118a807d21e2f5f614ed2dcea47d660936ddeeaf5d71b84c8489"
+    },
+    "test_e2e_gpt_prepare.py": {
+      "bytes": 6491,
+      "sha256": "445478fdbd2ea8bf0502a030cbd8679265a6bbee1c3b302caddc6a9476944c55"
+    },
+    "test_generate_v44fix.py": {
+      "bytes": 6084,
+      "sha256": "c7c16715399ca2dc93195effcc89abeea23290ef811027e323a595a13c1af855"
+    },
+    "test_resume_v44fix.py": {
+      "bytes": 6961,
+      "sha256": "1303366792c9c961f7cfc8ac31b2cc5d6c37328b72c251a93480ee28a50ee700"
+    },
+    "test_tir_consistency_v44fix.py": {
+      "bytes": 7503,
+      "sha256": "d5e125807dc9399daf39ae4b99360d9fec682918ac859cc9721f6a798d4e3e28"
+    },
+    "test_tool_authority_v44fix.py": {
+      "bytes": 4995,
+      "sha256": "60f331a743b302fb890875e7517d2d666188b8680dfc743589cd0f0edfbb1da6"
+    },
+    "tir_engine_v44r1.py": {
+      "bytes": 15118,
+      "sha256": "375d0844b616f3913b942db11edd425e78bf6ed13b8fa803c7e3ea183739538e"
+    },
+    "tir_masking_v44fix.py": {
+      "bytes": 4214,
+      "sha256": "4046f6551c10cc00b198efb5d1d2597c62a5dfbe787a55fd06c28d0096decbff"
+    }
+  },
+  "mode": "independent_gate_then_separate_full_run",
+  "output_folder": "GeoCPU_v44fix_TIR_consistency_20261103/run_1",
+  "schema": "geocpu_v44fix_tir_consistency_release_v1",
+  "training_admission": "Colab must first execute and validate every selected public TIR observation; no such run is claimed by this release",
+  "training_executed_in_packaging": false,
+  "training_ready": false,
+  "v43_checkpoint_bytes": 990545719,
+  "v43_checkpoint_sha256": "a4b95d7d0f486146196271b3b1fbc6a1b6b3342d8fadd590320fc3842c1e80e5",
+  "v43_source_zip_sha256": "0102dc9b01b4b795c3123b18cefc7a8734e47a06dd85292af464d3232704d198"
+}

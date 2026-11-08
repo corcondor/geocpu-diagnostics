@@ -23,6 +23,24 @@ from qwenputer_controller_v30 import CPUState, canonical_normalize_text, COMMAND
 from tir_engine_v44r1 import PythonExecutor, PYTHON_BLOCK, FORGED_OUTPUT, observation_text
 
 
+_PYTHON_OPEN = re.compile(r'(?m)^```python[ \t]*\r?\n')
+_FENCE_CLOSE = re.compile(r'(?m)^```[ \t]*(?:\r?\n|$)')
+
+
+def _inside_model_python_fence(model_text: str, scan: int) -> bool:
+    """Do not interpret ALU/SEARCH-looking strings inside model-authored code."""
+    pending = model_text[scan:]
+    opening = _PYTHON_OPEN.search(pending)
+    return bool(opening and not _FENCE_CLOSE.search(pending, opening.end()))
+
+
+def _model_python_action(model_text: str, scan: int):
+    """Inspect sampled text only; tool and search observations have no authority."""
+    if FORGED_OUTPUT.search(model_text[scan:]):
+        return True, None
+    return False, PYTHON_BLOCK.search(model_text, scan)
+
+
 class IntegratedModelV44Fix(IntegratedModelV42):
 
     def generate_v44fix(
@@ -102,7 +120,7 @@ class IntegratedModelV44Fix(IntegratedModelV42):
         generated_tokens: List[int] = []
         full_text = prompt
         model_text = ""          # characters the MODEL sampled (no injected observations), for reporting
-        py_scan = 0              # generated-text index right after the last injected python observation
+        py_scan = 0              # model-text index after the last executed Python block
         in_cmd = False
         cmd_buffer = ""
         ended_with_eos = False
@@ -160,7 +178,7 @@ class IntegratedModelV44Fix(IntegratedModelV42):
                     model_text += char
 
                     # ---- tool 1/2: ALU and SEARCH, unchanged from v42 ----
-                    if char == '<':
+                    if char == '<' and not _inside_model_python_fence(model_text, py_scan):
                         in_cmd = True
                         cmd_buffer = "<"
                     elif in_cmd:
@@ -191,14 +209,13 @@ class IntegratedModelV44Fix(IntegratedModelV42):
                                 continue
 
                     # ---- tool 3: Python, same trigger/observation protocol as tir_engine_v44r1 ----
-                    # Scanned on the generated text INCLUDING injected observations, from the end of the last
-                    # observation, so a ```python block that follows an observation directly is still found.
+                    # Only model-sampled characters can authorize code execution. Injected SEARCH,
+                    # ALU, and Python observations are context, never executable instructions.
                     if enable_python and not in_cmd:
-                        gen_text = full_text[prompt_char_len:]
-                        if FORGED_OUTPUT.search(gen_text[py_scan:]):
+                        forged, match = _model_python_action(model_text, py_scan)
+                        if forged:
                             stop_reason = "model_generated_observation"
                             break
-                        match = PYTHON_BLOCK.search(gen_text, py_scan)
                         if match:
                             if len(python_trace) >= max_python_calls:
                                 stop_reason = "python_call_limit"
@@ -212,15 +229,19 @@ class IntegratedModelV44Fix(IntegratedModelV42):
                                     stop_reason = "tool_worker_startup_error"
                                     break
                             result = tool.execute(match.group(1))
+                            python_trace.append({"code": match.group(1), "success": bool(result.get("success")),
+                                                 "stdout": result.get("stdout", ""), "error": result.get("error")})
                             obs = observation_text(result)
+                            normalized_obs = canonical_normalize_text(obs)
+                            if any(char not in vocab for char in normalized_obs):
+                                stop_reason = "tool_output_unencodable"
+                                break
                             if state.compact_prefix.shape[1] + len(obs) >= self.config.max_positions - 5:
                                 stop_reason = "context_limit"
                                 break
                             state, injected = inject(state, obs, normalize=True)
                             full_text += injected
-                            python_trace.append({"code": match.group(1), "success": bool(result.get("success")),
-                                                 "stdout": result.get("stdout", ""), "error": result.get("error")})
-                            py_scan = len(full_text) - prompt_char_len
+                            py_scan = len(model_text)
                             if not result.get("worker_alive", True):   # e.g. killed by a timeout
                                 if owned_executor:
                                     tool.close()

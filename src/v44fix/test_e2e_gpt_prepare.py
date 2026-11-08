@@ -10,9 +10,6 @@ GPT = ROOT / "gpt"
 sys.path.insert(0, str(GPT))
 import prepare_public_v44 as P  # noqa: E402
 
-V43_SAMPLE = ROOT / "test_assets" / "v43_train_sample.jsonl"
-
-
 def write_jsonl(p, rows):
     p.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n", encoding="utf-8")
 
@@ -50,20 +47,44 @@ class EndToEndGptPrepare(unittest.TestCase):
         lock_path.write_text(json.dumps(lock, ensure_ascii=False), encoding="utf-8")
         ev = tmp / "eval"; ev.mkdir()
         write_jsonl(ev / "eval_dummy.jsonl", [{"prompt": "unrelated evaluation question"}])
+        v43_path = tmp / "v43_train_sample.jsonl"
+        anchors = []
+        for i in range(20):
+            prompt, target = f"指示: 昔の言語問題{i}\n回答:", " 春です。"
+            anchors.append({"prompt": prompt, "target": target, "full_text": prompt + target,
+                            "source": "fixture_language_anchor"})
+        write_jsonl(v43_path, anchors)
+
+        class FixtureExecutor:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+            def reset(self):
+                return {"reset": True}
+
+            def execute(self, code):
+                expression = code.strip().removeprefix("print(").removesuffix(")")
+                answer = eval(expression, {"__builtins__": {}}, {})
+                return {"success": True, "stdout": f"{answer}\n", "stderr": "", "error": None}
 
         pub = tmp / "public"
-        man = P.prepare_public_curriculum(pub, ROOT / "base_metadata.json", ev, V43_SAMPLE, source_files=files,
-                                          source_lock_path=lock_path, verify_sample_count=0,
+        man = P.prepare_public_curriculum(pub, ROOT / "base_metadata.json", ev, v43_path, source_files=files,
+                                          source_lock_path=lock_path, verify_all=True,
+                                          executor_factory=FixtureExecutor,
                                           target_counts={"tir": 20, "code": 8, "japanese": 8, "anchor": 8})
         self.assertTrue(man["training_eligible"], man.get("admission_blockers"))
+        self.assertTrue(man["tool_verification"]["all_observations_locally_executed"])
         rec = json.loads((pub / "train.jsonl").read_text(encoding="utf-8").splitlines()[0])
         self.assertNotIn("question", rec)                       # the real writer's schema
         self.assertTrue(rec["prompt"].startswith("ユーザー: "))
 
         out = tmp / "out"
-        r = subprocess.run([sys.executable, str(ROOT / "build_v44fix_data.py"), "--public-dir", str(pub), "--v43-train", str(V43_SAMPLE),
+        r = subprocess.run([sys.executable, str(ROOT / "build_v44fix_data.py"), "--public-dir", str(pub), "--v43-train", str(v43_path),
                             "--eval-dir", str(ev), "--vocab", str(ROOT / "base_metadata.json"), "--out-dir", str(out),
-                            "--mix", "anchor=500,tir=20,code=8,japanese=8"],
+                            "--mix", "anchor=500,tir=10,code=8,japanese=8"],
                            capture_output=True, text=True, encoding="utf-8", cwd=str(ROOT))
         self.assertEqual(r.returncode, 0, r.stdout[-3000:] + r.stderr[-3000:])
         m = json.loads((out / "manifest.json").read_text(encoding="utf-8"))

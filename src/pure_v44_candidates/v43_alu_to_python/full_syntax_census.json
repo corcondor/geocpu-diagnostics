@@ -1,0 +1,30 @@
+{
+  "source_zip_sha256": "0102dc9b01b4b795c3123b18cefc7a8734e47a06dd85292af464d3232704d198",
+  "train_member": "data/train_v43_knowledge_unified.jsonl",
+  "rows_scanned": 268032,
+  "counts": {
+    "eval_prompt_exact_excluded": 7000,
+    "syntactic_candidate_unverified": 24836,
+    "source_not_selected": 233209,
+    "over_tool_call_limit": 2625,
+    "unverified_task_form": 362
+  },
+  "syntactic_candidates_by_source": {
+    "Algebraic_Composite_Aligned": 9828,
+    "Comparative_Conditional_Aligned": 15000,
+    "swe_alu_accumulate_sum": 8
+  },
+  "bundled_eval_unique_prompts": 11388,
+  "bundled_eval_file_counts": {
+    "data/eval_v42_search_retrieval_aligned.jsonl": 200,
+    "data/eval_v42_search_retrieval_heldout.jsonl": 200,
+    "data/eval_swe_step_control_heldout.jsonl": 200,
+    "data/eval_v38_decomposed_state_bench200.jsonl": 200,
+    "data/eval_v33_state_tracking_heldout.jsonl": 188,
+    "data/jamcqa_manifest_test.jsonl": 2309,
+    "data/benchmark_8100_manifest.jsonl": 8100,
+    "data/eval_v41_logical_instruction_operators_heldout.jsonl": 400
+  },
+  "elapsed_wall_seconds": 134.144,
+  "warning": "Syntactic candidates have NOT passed original CPU, Python executor, vocabulary, EOS, or model tests."
+}

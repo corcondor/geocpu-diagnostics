@@ -1,0 +1,12 @@
+{
+  "bootstrap_sha256": "a9bf126897e19ba9215282282c3f052875a9ce648def48f7adc0b6002d1e111a",
+  "generation_limit": 2048,
+  "hard_stop_utc": "2026-11-03T18:00:00+00:00",
+  "max_wall_seconds": 1800,
+  "package_zip_sha256": "242c702073dc9496ad70a61d4ec460ad17626f530de1049732a1deb4cf5af2aa",
+  "parent_sha256": "a4b95d7d0f486146196271b3b1fbc6a1b6b3342d8fadd590320fc3842c1e80e5",
+  "source_zip_sha256": "0102dc9b01b4b795c3123b18cefc7a8734e47a06dd85292af464d3232704d198",
+  "status": "STATIC_PACKAGE_AND_LOCAL_INPUTS_VERIFIED_NO_GPU_RUN",
+  "swe_cases": 200,
+  "training_updates": 0
+}

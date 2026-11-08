@@ -1,0 +1,274 @@
+{
+ "v43_step15000": {
+  "load": {
+   "missing": 0,
+   "unexpected": 0,
+   "missing_are_alu_ram_only": true,
+   "fixed_circuits_intact": true,
+   "load_sec": 252.6
+  },
+  "summary": {
+   "swe": {
+    "correct": 12,
+    "n": 12,
+    "used_alu": 12
+   },
+   "alu": {
+    "correct": 2,
+    "n": 4,
+    "used_alu": 4
+   }
+  },
+  "rows": [
+   {
+    "task": "swe",
+    "ok": true,
+    "cpu": 24,
+    "eos": true,
+    "text": "<SET R0 1186> => [R0=1186] <SET R1 7> => [R1=7] <SET R2 0> => [R2=0] <ADD R0 R0 R2> => [R0=1186] <ADD R2 R2 19> => [R2=19] <DEC R1> => [R1=6] <ADD R0 R0 R2> => "
+   },
+   {
+    "task": "swe",
+    "ok": true,
+    "cpu": 12,
+    "eos": true,
+    "text": "<SET R0 674> => [R0=674] <SET R1 5> => [R1=5] <MUL R0 R0 3> => [R0=2022] <DEC R1> => [R1=4] <MUL R0 R0 3> => [R0=6066] <DEC R1> => [R1=3] <MUL R0 R0 3> => [R0=1"
+   },
+   {
+    "task": "swe",
+    "ok": true,
+    "cpu": 11,
+    "eos": true,
+    "text": "<SET R0 802> => [R0=802] <SET R1 3> => [R1=3] <ADD R0 R0 22> => [R0=824] <MOD R0 R0 19> => [R0=7] <DEC R1> => [R1=2] <ADD R0 R0 22> => [R0=29] <MOD R0 R0 19> =>"
+   },
+   {
+    "task": "swe",
+    "ok": true,
+    "cpu": 12,
+    "eos": true,
+    "text": "<SET R0 670> => [R0=670] <SET R1 5> => [R1=5] <ADD R0 R0 0> => [R0=670] <DEC R1> => [R1=4] <SUB R0 R0 5> => [R0=665] <DEC R1> => [R1=3] <ADD R0 R0 6> => [R0=671"
+   },
+   {
+    "task": "swe",
+    "ok": true,
+    "cpu": 6,
+    "eos": true,
+    "text": "<SET R0 788> => [R0=788] <MOD R2 R0 2> => [R2=0] <MUL R3 20 3> => [R3=60] <SET R1 1> => [R1=1] <ADD R0 R0 R3> => [R0=848] <DEC R1> => [R1=0] 848"
+   },
+   {
+    "task": "swe",
+    "ok": true,
+    "cpu": 6,
+    "eos": true,
+    "text": "<SET R0 1105> => [R0=1105] <SET R1 1> => [R1=1] <SET R2 0> => [R2=0] <ADD R0 R0 R2> => [R0=1105] <ADD R2 R2 28> => [R2=28] <DEC R1> => [R1=0] 1105"
+   },
+   {
+    "task": "swe",
+    "ok": true,
+    "cpu": 12,
+    "eos": true,
+    "text": "<SET R0 584> => [R0=584] <SET R1 5> => [R1=5] <MUL R0 R0 2> => [R0=1168] <DEC R1> => [R1=4] <MUL R0 R0 2> => [R0=2336] <DEC R1> => [R1=3] <MUL R0 R0 2> => [R0=4"
+   },
+   {
+    "task": "swe",
+    "ok": true,
+    "cpu": 23,
+    "eos": true,
+    "text": "<SET R0 661> => [R0=661] <SET R1 7> => [R1=7] <ADD R0 R0 31> => [R0=692] <MOD R0 R0 19> => [R0=8] <DEC R1> => [R1=6] <ADD R0 R0 31> => [R0=39] <MOD R0 R0 19> =>"
+   },
+   {
+    "task": "swe",
+    "ok": true,
+    "cpu": 16,
+    "eos": true,
+    "text": "<SET R0 1022> => [R0=1022] <SET R1 7> => [R1=7] <ADD R0 R0 0> => [R0=1022] <DEC R1> => [R1=6] <SUB R0 R0 5> => [R0=1017] <DEC R1> => [R1=5] <ADD R0 R0 6> => [R0"
+   },
+   {
+    "task": "swe",
+    "ok": true,
+    "cpu": 6,
+    "eos": true,
+    "text": "<SET R0 713> => [R0=713] <MOD R2 R0 2> => [R2=1] <MUL R3 29 7> => [R3=203] <SET R1 1> => [R1=1] <ADD R0 R0 R3> => [R0=916] <DEC R1> => [R1=0] 916"
+   },
+   {
+    "task": "swe",
+    "ok": true,
+    "cpu": 24,
+    "eos": true,
+    "text": "<SET R0 913> => [R0=913] <SET R1 7> => [R1=7] <SET R2 0> => [R2=0] <ADD R0 R0 R2> => [R0=913] <ADD R2 R2 19> => [R2=19] <DEC R1> => [R1=6] <ADD R0 R0 R2> => [R0"
+   },
+   {
+    "task": "swe",
+    "ok": true,
+    "cpu": 16,
+    "eos": true,
+    "text": "<SET R0 1018> => [R0=1018] <SET R1 7> => [R1=7] <MUL R0 R0 5> => [R0=5090] <DEC R1> => [R1=6] <MUL R0 R0 5> => [R0=25450] <DEC R1> => [R1=5] <MUL R0 R0 5> => [R"
+   },
+   {
+    "task": "alu",
+    "ok": true,
+    "cpu": 3,
+    "eos": true,
+    "text": "演算の順序に従って計算します。まず掛け算を実行します。<MUL R0 87 14> => [R0=1218] 次に23を足します。<ADD R0 R0 23> => [R0=1241] 最後に13で割った余りを計算します。<MOD R0 R0 13> => [R0=6] 計算結果は6です。答え: 6"
+   },
+   {
+    "task": "alu",
+    "ok": true,
+    "cpu": 3,
+    "eos": true,
+    "text": "演算の順序に従って計算します。まず掛け算を実行します。<MUL R0 56 9> => [R0=504] 次に31を足します。<ADD R0 R0 31> => [R0=535] 最後に7で割った余りを計算します。<MOD R0 R0 7> => [R0=3] 計算結果は3です。答え: 3"
+   },
+   {
+    "task": "alu",
+    "ok": false,
+    "cpu": 3,
+    "eos": true,
+    "text": "演算の順序に従って計算します。まず掛け算を実行します。<MUL R0 123 2> => [R0=246] 次に45を足します。<ADD R0 R0 45> => [R0=291] 最後に2で割った余りを計算します。<MOD R0 R0 2> => [R0=1] 計算結果は1です。答え: 1"
+   },
+   {
+    "task": "alu",
+    "ok": false,
+    "cpu": 3,
+    "eos": true,
+    "text": "演算の順序に従って計算します。まず掛け算を実行します。<MUL R0 95 12> => [R0=1140] 次に40を足します。<ADD R0 R0 40> => [R0=1180] 最後に9で割った余りを計算します。<MOD R0 R0 9> => [R0=1] 計算結果は1です。答え: 1"
+   }
+  ],
+  "sec": 1412.8
+ },
+ "v44_step25000": {
+  "load": {
+   "missing": 30,
+   "unexpected": 0,
+   "missing_are_alu_ram_only": true,
+   "fixed_circuits_intact": true,
+   "load_sec": 280.4
+  },
+  "summary": {
+   "swe": {
+    "correct": 0,
+    "n": 12,
+    "used_alu": 0
+   },
+   "alu": {
+    "correct": 0,
+    "n": 4,
+    "used_alu": 2
+   }
+  },
+  "rows": [
+   {
+    "task": "swe",
+    "ok": false,
+    "cpu": 0,
+    "eos": false,
+    "text": "1186\nR = 1186\nR = 1186\nR = 1186\nR = 1186\nR = 1186\nR = 1186\nR = 1186\nR = 1186\nR = 1186\nR = 1186\nR = 1186\nR = 1186\nR = 1186\nR = 1186\nR = 1186\nR = 1186\nR = 1186\nR "
+   },
+   {
+    "task": "swe",
+    "ok": false,
+    "cpu": 0,
+    "eos": false,
+    "text": "674\nR = 674\nR = 674\nR = 674\nR ="
+   },
+   {
+    "task": "swe",
+    "ok": false,
+    "cpu": 0,
+    "eos": false,
+    "text": "R + 22\nR = R + 22\nR = R + 22\nR = R + 22\nR = R + 22\nR = R + 22\nR = R + 22\nR = R + 22\nR = R + 22\nR = R + 22\nR = R + 22\nR = R + 22\nR = R + 22\nR = R + 22\nR = R + 22"
+   },
+   {
+    "task": "swe",
+    "ok": false,
+    "cpu": 0,
+    "eos": false,
+    "text": "R + R + R + R + R + R + R + R +"
+   },
+   {
+    "task": "swe",
+    "ok": false,
+    "cpu": 0,
+    "eos": false,
+    "text": "788\nR = 788\nR = 788\nR = 788\nR ="
+   },
+   {
+    "task": "swe",
+    "ok": false,
+    "cpu": 0,
+    "eos": false,
+    "text": "1105\nR = 1105\nR = 1105\nR = 1105\nR = 1105\nR = 1105\nR = 1105\nR = 1105\nR = 1105\nR = 1105\nR = 1105\nR = 1105\nR = 1105\nR = 1105\nR = 1105\nR = 1105\nR = 1105\nR = 1105\nR "
+   },
+   {
+    "task": "swe",
+    "ok": false,
+    "cpu": 0,
+    "eos": false,
+    "text": "584\nR = 584\nR = 584\nR = 584\nR ="
+   },
+   {
+    "task": "swe",
+    "ok": false,
+    "cpu": 0,
+    "eos": false,
+    "text": "661\nR = 661\nR = 661\nR = 661\nR ="
+   },
+   {
+    "task": "swe",
+    "ok": false,
+    "cpu": 0,
+    "eos": false,
+    "text": "R + R + R + R + R + R + R + R +"
+   },
+   {
+    "task": "swe",
+    "ok": false,
+    "cpu": 0,
+    "eos": false,
+    "text": "713 * R + 29 * R + 29 * R + 29 * R1 * R1 + 29 * R1 * R1 + 29 * R1 * R1 + 29 * R1 * R1 + 29 * R1 * R1 + 29 * R1 * R1 + 29 * R1 * R1 + 29 * R1 * R1 + 29 * R1 * R1"
+   },
+   {
+    "task": "swe",
+    "ok": false,
+    "cpu": 0,
+    "eos": false,
+    "text": "913\nR = 913\nR = 913\nR = 913\nR ="
+   },
+   {
+    "task": "swe",
+    "ok": false,
+    "cpu": 0,
+    "eos": false,
+    "text": "5\nR = 5\nR = 5\nR = 5\nR = 5\nR = 5\nR = 5\nR = 5\nR = 5\nR = 5\nR = 5\nR = 5\nR = 5\nR = 5\nR = 5\nR = 5\nR = 5\nR = 5\nR = 5\nR = 5\nR = 5\nR = 5\nR = 5\nR = 5\nR = 5\nR = 5\nR = 5\nR "
+   },
+   {
+    "task": "alu",
+    "ok": false,
+    "cpu": 0,
+    "eos": true,
+    "text": "演算の順序に従って計算します。まず掛け算を実行します。<ん析> => 0は、酸素運転 (演算)とャンプに従って計算します。まず、帰結した後、帰結した後、帰結した後、帰結した後、帰結した後、帰結した後、帰結した後、帰結した後、この後、帰結した後、この後、帰結した後、この後、この後、この記号は終了しました。"
+   },
+   {
+    "task": "alu",
+    "ok": false,
+    "cpu": 3,
+    "eos": false,
+    "text": "演算の順序に従って計算します。まず掛け算を実行します。<SET R0 1> => [R0=1] または減算の1 に対し、乗算の1に対して5変化されます。<SET R1> => [R1=0] 調約> の約 が成り立つ。\n\n【解説】\n論理的同値性に基づき厳密に導出されます。<SET R1> => [R1=0] 調理現象 R1=0] を取り消す。\n\n【Let's program in Python co"
+   },
+   {
+    "task": "alu",
+    "ok": false,
+    "cpu": 1,
+    "eos": false,
+    "text": "演算の順序に従って計算します。まず掛け算を実行します。<SET R0 123> => [R0=123] <= sp.pi <= sp.pi <= sp.pi <= sp.pi <= sp.pi <= sp.pi <= sp.pi <= sp.pi <= sp.pi <= sp.pi <= sp.pi <= sp.pi <= sp.pi <= sp.pi <= sp.pi <= sp.pi <= s"
+   },
+   {
+    "task": "alu",
+    "ok": false,
+    "cpu": 0,
+    "eos": false,
+    "text": "演算の順序に従って計算します。まず掛け算を実行します。<ん析>&得意の記述は、任意の8行です。答え: 【思考の連鎖書用の8つの有理由【因】\n1. 有理の由来の8つの有理由の個数を含む。\n2. したがって合計を合法則に合わせて実行します。\n3. したがって合法行為の8つの証明がある。\n</ 1. 立証明の書式化の確定。\n<ん証明の証明書の証明書の証明書の証明書の証明書の証明書の証明書の証明書の証明書"
+   }
+  ],
+  "sec": 1306.4
+ }
+}

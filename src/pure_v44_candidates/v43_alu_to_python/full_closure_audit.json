@@ -1,0 +1,28 @@
+{
+  "status": "complete_cpu_python_and_source_row_closure",
+  "source_train_rows": 268032,
+  "accepted_rows": 24836,
+  "accepted_sources": {
+    "Algebraic_Composite_Aligned": 9828,
+    "Comparative_Conditional_Aligned": 15000,
+    "swe_alu_accumulate_sum": 8
+  },
+  "excluded_reasons": {
+    "eval_prompt_exact_excluded": 7000,
+    "source_not_selected": 233209,
+    "over_tool_call_limit": 2625,
+    "unverified_task_form": 362
+  },
+  "original_cpu_python_full_trace_checked": true,
+  "full_v44_supervision_checked": true,
+  "source_ref_rows": 24836,
+  "source_ref_unresolved": {},
+  "original_zip_sha256": "0102dc9b01b4b795c3123b18cefc7a8734e47a06dd85292af464d3232704d198",
+  "verified_output_sha256": "8eb50593fb661e6a13a1aa1a694591e40b7c6ea3753eb4d443ee2a1922f39ae3",
+  "source_ref_output_sha256": "53387b2987df02d91b51b4afc8ab2369cc0e53b9e4bdd0cfd480c3586de7f3db",
+  "verified_output_bytes": 43114828,
+  "source_ref_output_bytes": 47599878,
+  "training_updates": 0,
+  "gpu_jobs": 0,
+  "caution": "Only the three allowlisted source families were considered; no capability gain was tested."
+}

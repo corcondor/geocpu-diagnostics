@@ -1,0 +1,20 @@
+{
+  "code_file": "bootstrap.py",
+  "competition_sources": [],
+  "dataset_sources": [
+    "geocpuresearch/geocpu-v43-v44fix-paired-eval-20261103"
+  ],
+  "enable_gpu": true,
+  "enable_internet": false,
+  "enable_tpu": false,
+  "id": "geocpuresearch/geocpu-v43-native-swe200-proof-20261103-v1",
+  "is_private": true,
+  "kernel_sources": [],
+  "kernel_type": "script",
+  "keywords": [],
+  "language": "python",
+  "machine_shape": "NvidiaTeslaT4",
+  "model_sources": [],
+  "session_timeout_seconds": 2400,
+  "title": "GeoCPU v43 native SWE200 read-only proof 20261103"
+}

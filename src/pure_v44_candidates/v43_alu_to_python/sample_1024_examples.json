@@ -1,0 +1,23 @@
+[
+  {
+    "original_source": "Algebraic_Composite_Aligned",
+    "prompt": "問題: 数式 (93 * 12 + 15) を 11 で割った余りを求めよ。\n思考:",
+    "target_prefix": " 演算の順序に従って計算します。まず掛け算を実行します。\n```python\nR = [0] * 8\nR[0] = (93 * 12) & 0xFFFFFFFF\nprint(f\"[R0={R[0]}]\")\n```\n\n```output\n[R0=1116]\n```\n 次に15を足します。\n```python\nR[0] = (R[0] + 15) & 0xFFFFFFFF\nprint(f\"[R0={R[0]}]\")\n```\n\n```output\n[R0=1131]\n```\n 最後",
+    "target_suffix": "]}]\")\n```\n\n```output\n[R0=1131]\n```\n 最後に11で割った余りを計算します。\n```python\nR[0] = (R[0] % (11 if 11 != 0 else 1)) & 0xFFFFFFFF\nprint(f\"[R0={R[0]}]\")\n```\n\n```output\n[R0=9]\n```\n 計算結果は9です。答え: 9",
+    "tool_observations": 3
+  },
+  {
+    "original_source": "Comparative_Conditional_Aligned",
+    "prompt": "問題: トレイにはリンゴが571個、ナップサックにはミカンが595個入っています。どちらに何個多く入っていますか？\n思考:",
+    "target_prefix": " トレイの個数をR0、ナップサックの個数をR1に設定します。\n```python\nR = [0] * 8\nR[0] = 571\nprint(f\"[R0={R[0]}]\")\n```\n\n```output\n[R0=571]\n```\n \n```python\nR[1] = 595\nprint(f\"[R1={R[1]}]\")\n```\n\n```output\n[R1=595]\n```\n 大きい方から小さい方を引いて差を計算します。\n```python\nR[2] = (R[1] - R[0]",
+    "target_suffix": "ut\n[R1=595]\n```\n 大きい方から小さい方を引いて差を計算します。\n```python\nR[2] = (R[1] - R[0]) & 0xFFFFFFFF\nprint(f\"[R2={R[2]}]\")\n```\n\n```output\n[R2=24]\n```\n 差は24個であり、ナップサックの方が多いです。答え: ナップサックに24個多く入っています。",
+    "tool_observations": 3
+  },
+  {
+    "original_source": "swe_alu_accumulate_sum",
+    "prompt": "タスク: SWE プログラム実行・状態トレース\n以下のコードを実行した直後の変数 R0 の正確な最終値を答えよ。\n```python\nR0 = 73\nfor i in range(1):\n    R0 += i * 2\n```\n最終値 R0 =",
+    "target_prefix": " \n```python\nR = [0] * 8\nR[0] = 73\nprint(f\"[R0={R[0]}]\")\n```\n\n```output\n[R0=73]\n```\n \n```python\nR[1] = 1\nprint(f\"[R1={R[1]}]\")\n```\n\n```output\n[R1=1]\n```\n \n```python\nR[2] = 0\nprint(f\"[R2={R[2]}]\")\n```\n\n```output\n[R2=0]\n```\n \n```python\nR[0] = ",
+    "target_suffix": "python\nR[2] = (R[2] + 2) & 0xFFFFFFFF\nprint(f\"[R2={R[2]}]\")\n```\n\n```output\n[R2=2]\n```\n \n```python\nR[1] = (R[1] - 1) & 0xFFFFFFFF\nprint(f\"[R1={R[1]}]\")\n```\n\n```output\n[R1=0]\n```\n 73",
+    "tool_observations": 6
+  }
+]
