@@ -303,6 +303,8 @@ def main():
     parser.add_argument("--minimum-updates",type=int,default=10000)
     parser.add_argument("--maximum-updates",type=int,default=20000)
     parser.add_argument("--preflight-report",type=Path)
+    parser.add_argument("--approved-preflight",type=Path,
+                        help="CPU-only approved manifest from the SAME pinned input; skips expensive GPU-side sampler preview")
     parser.add_argument("--execute",action="store_true",help="Only this flag permits GPU training")
     args=parser.parse_args()
     if args.minimum_updates<1000 or args.maximum_updates<args.minimum_updates or args.maximum_updates>20000:
@@ -320,18 +322,64 @@ def main():
     train,metadata=build_v48_dataset(parent_data,scratch,oldroot,source,prep,heldouts)
     runtime=patched_runtime(oldroot,source)
     comparison=reference_exposure(parent)
-    train, steps, preview, review, repair = cpu_plan_with_replay_floor_repair(
-        train, scratch, prep, source, original, comparison,
-        args.minimum_updates, args.maximum_updates)
-    metadata["input_sha256"] = digest(train)
-    metadata["replay_floor_replica_rows"] = repair["replay_replicas_added"]
-    metadata["replay_source_training_weights"] = repair["source_training_weights"]
-    metadata["total_training_rows"] = (
-        423348 + metadata["rows_with_training_weights"]
-        + repair["replay_replicas_added"])
+    if args.approved_preflight:
+        # The CPU phase has already checked exact supervised-token exposure.
+        # The GPU phase independently rebuilds the candidate, verifies its
+        # SHA256, old 40500 parent, patched runtime and the frozen source floors.
+        from replay_floor_repair import write_weighted_candidate
+        approval=load_json(require_file(args.approved_preflight))
+        if (approval.get("event")!="v48_preflight"
+            or approval.get("preflight_revision")!="cpu_fast_v1"
+            or approval.get("start_step")!=40500
+            or approval.get("parent_checkpoint_sha256")!=PINNED_PARENT_MODEL
+            or approval.get("parent_train_sha256")!=PINNED_PARENT_TRAIN
+            or approval.get("runtime_sha256")!=digest(runtime)):
+            raise ValueError("CPU approval is missing, stale, or bound to different code/weights")
+        prior=approval.get("train",{})
+        if (prior.get("new_unique_examples")!=4096
+            or prior.get("repeat_factor_by_domain")!=metadata["repeat_factor_by_domain"]
+            or prior.get("reference_target_tokens_by_domain")!=metadata["reference_target_tokens_by_domain"]):
+            raise ValueError("Candidate curriculum differs from CPU approval")
+        weights=prior.get("replay_source_training_weights",{})
+        if weights:
+            repaired=scratch/"train_v48_approved_replay.jsonl"
+            repair=write_weighted_candidate(train,repaired,weights)
+            train=repaired
+        else:
+            repair={"replay_replicas_added":0,"source_training_weights":{}}
+        metadata["input_sha256"]=digest(train)
+        metadata["replay_floor_replica_rows"]=repair["replay_replicas_added"]
+        metadata["replay_source_training_weights"]=repair["source_training_weights"]
+        metadata["total_training_rows"]=423348+metadata["rows_with_training_weights"]+repair["replay_replicas_added"]
+        if (metadata["input_sha256"]!=prior.get("input_sha256")
+            or metadata["replay_floor_replica_rows"]!=prior.get("replay_floor_replica_rows")
+            or metadata["total_training_rows"]!=prior.get("total_training_rows")):
+            raise ValueError("Prepared training bytes differ from approved CPU preflight")
+        steps=int(approval["steps"])
+        if not args.minimum_updates<=steps<=args.maximum_updates or steps%1000:
+            raise ValueError("CPU-approved update budget is outside the caller limits")
+        preview=approval["sampler_preview"]
+        review=assess_exposure(comparison,preview)
+        if not (review["passed"] and approval.get("exposure_gate")==review
+                and preview.get("steps")==steps and preview.get("passed")):
+            raise ValueError("CPU-approved source floors or sampling contract do not match")
+        print("V48_APPROVED_CPU_PREFLIGHT_REUSED "+json.dumps({
+            "steps":steps,"training_sha256":metadata["input_sha256"],
+            "gpu_updates":0,"replay_weights":weights},ensure_ascii=False),flush=True)
+    else:
+        train,steps,preview,review,repair=cpu_plan_with_replay_floor_repair(
+            train,scratch,prep,source,original,comparison,
+            args.minimum_updates,args.maximum_updates)
+        metadata["input_sha256"]=digest(train)
+        metadata["replay_floor_replica_rows"]=repair["replay_replicas_added"]
+        metadata["replay_source_training_weights"]=repair["source_training_weights"]
+        metadata["total_training_rows"]=(
+            423348+metadata["rows_with_training_weights"]
+            +repair["replay_replicas_added"])
     stop=PINNED_STEP+steps
-    report={"event":"v48_preflight","model_updates":0,
+    report={"event":"v48_preflight","preflight_revision":"cpu_fast_v1","model_updates":0,
        "parent_run":PINNED_PARENT_RUN,"parent_checkpoint_sha256":PINNED_PARENT_MODEL,
+       "parent_train_sha256":PINNED_PARENT_TRAIN,
        "parent_train_sha256":PINNED_PARENT_TRAIN,"train":metadata,
        "steps":steps,"start_step":40500,"stop_step":stop,
        "sampler_preview":preview,"exposure_gate":review,
