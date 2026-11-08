@@ -207,6 +207,66 @@ def assess_exposure(reference,preview,tolerance=0.15):
         "new_sources_balanced_within_15pct":balanced,
         "old_source_count":len(before)}
 
+def cpu_plan_with_replay_floor_repair(train, scratch, prep, source, original, reference,
+                                      minimum_updates, maximum_updates):
+    """Choose the cheapest *passing* phase before GPU; never relax an old floor."""
+    from replay_floor_repair import next_weights, write_weighted_candidate
+
+    base_train = train
+    weights = {}
+    latest_review = None
+    latest_stats = {"replay_replicas_added": 0, "source_training_weights": {}}
+    for attempt in range(5):
+        if weights:
+            train = scratch / f"train_v48_replay_reweighted_{attempt}.jsonl"
+            latest_stats = write_weighted_candidate(base_train, train, weights)
+        else:
+            train = base_train
+
+        def preview_for(steps):
+            plan = prep.preview_plan(
+                train, meta=source/"base_metadata.json",
+                normalizer_source=source/"qwenputer_controller_v30.py",
+                base_sampler_source=source/"runtime_cotraining_v41_247M.py",
+                runtime_source=original/"training/runtime_30500.py",
+                steps=steps, repeat=1, min_new=1000)
+            return plan, assess_exposure(reference, plan)
+
+        # Test the whole allowed phase once, not 11 successive failing scans.
+        max_plan, max_review = preview_for(maximum_updates)
+        latest_review = max_review
+        print("V48_CPU_REPLAY_FLOOR_AUDIT " + json.dumps({
+            "attempt": attempt, "steps": maximum_updates,
+            "passed": max_review["passed"],
+            "old_source_declines": max_review["old_source_declines"],
+            "new_source_supervised_tokens": max_review["new_source_supervised_tokens"],
+            "replay_weights": weights,
+            "replay_replica_rows": latest_stats["replay_replicas_added"],
+            "gpu_updates": 0}, ensure_ascii=False), flush=True)
+
+        if max_review["passed"]:
+            # Find the smallest admissible training cost; no GPU is used here.
+            for steps in range(minimum_updates, maximum_updates+1, 1000):
+                plan, review = ((max_plan, max_review) if steps == maximum_updates
+                                else preview_for(steps))
+                if review["passed"]:
+                    return train, steps, plan, review, latest_stats
+            raise AssertionError("A passing maximum phase was not reachable")
+
+        if not max_review["old_source_declines"]:
+            raise RuntimeError(
+                "Old source floors pass but new domain balance fails; "
+                "do not use GPU until curriculum is fixed")
+        if attempt == 4:
+            break
+        weights = next_weights(max_review["old_source_declines"], weights)
+
+    raise RuntimeError(
+        "CPU replay balancing exhausted without satisfying old-source floors; "
+        "GPU training has NOT started. Remaining deficits: " +
+        json.dumps(latest_review["old_source_declines"], ensure_ascii=False))
+
+
 def patched_runtime(oldroot,source):
     source_runtime=require_file(oldroot/"runtime_practical_v1.py",PINNED_RUNTIME)
     text=source_runtime.read_text(encoding="utf-8")
@@ -269,27 +329,15 @@ def main():
     train,metadata=build_v48_dataset(parent_data,scratch,oldroot,source,prep,heldouts)
     runtime=patched_runtime(oldroot,source)
     comparison=reference_exposure(parent)
-    chosen=None
-    for steps in range(args.minimum_updates,args.maximum_updates+1,1000):
-        preview=prep.preview_plan(train,meta=source/"base_metadata.json",
-            normalizer_source=source/"qwenputer_controller_v30.py",
-            base_sampler_source=source/"runtime_cotraining_v41_247M.py",
-            runtime_source=original/"training/runtime_30500.py",
-            steps=steps,repeat=1,min_new=1000)
-        review=assess_exposure(comparison,preview)
-        print("V48_EXPOSURE_PREVIEW "+json.dumps({
-            "updates":steps, "passed":review["passed"],
-            "old_group_deficit_count":len(review["old_source_declines"]),
-            "new_tokens":review["new_source_supervised_tokens"],
-            "new_balanced":review["new_sources_balanced_within_15pct"]},
-            ensure_ascii=False),flush=True)
-        if review["passed"]:
-            chosen=(steps,preview,review)
-            break
-    if chosen is None:
-        raise RuntimeError("No safe budget found: old sources or new domain balance insufficient. "
-            "GPU training has NOT started; change curriculum weights rather than lowering floors.")
-    steps,preview,review=chosen
+    train, steps, preview, review, repair = cpu_plan_with_replay_floor_repair(
+        train, scratch, prep, source, original, comparison,
+        args.minimum_updates, args.maximum_updates)
+    metadata["input_sha256"] = digest(train)
+    metadata["replay_floor_replica_rows"] = repair["replay_replicas_added"]
+    metadata["replay_source_training_weights"] = repair["source_training_weights"]
+    metadata["total_training_rows"] = (
+        423348 + metadata["rows_with_training_weights"]
+        + repair["replay_replicas_added"])
     stop=PINNED_STEP+steps
     report={"event":"v48_preflight","model_updates":0,
        "parent_run":PINNED_PARENT_RUN,"parent_checkpoint_sha256":PINNED_PARENT_MODEL,
@@ -339,7 +387,9 @@ def main():
     new_json(output/"input_manifest.json",
         {"parent_sha256":PINNED_PARENT_TRAIN,"parent_rows_preserved":423348,
          "new_unique_rows":4096,"weighted_training_rows":metadata["rows_with_training_weights"],
-         "output_sha256":metadata["input_sha256"],"output_rows":423348+metadata["rows_with_training_weights"],
+         "output_sha256":metadata["input_sha256"],"output_rows":metadata["total_training_rows"],
+         "replay_replica_rows":metadata["replay_floor_replica_rows"],
+         "replay_source_weights":metadata["replay_source_training_weights"],
          "new_group":V48_GROUP,"source_repeat_weights":metadata["repeat_factor_by_domain"]})
     new_json(output/"fork_from_40500.json",
         {"step_start":40500,"step_stop":stop,"parent_sha256":PINNED_PARENT_MODEL,
