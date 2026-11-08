@@ -25,8 +25,10 @@ def make_input(td: Path) -> Path:
     """A flat 'Kaggle dataset' with real small files and a 1 KB stand-in for each checkpoint."""
     inp = td / "input"
     inp.mkdir()
-    shutil.copyfile(STUDY / "GeoCPU_v47_fullmodel_bundle_v1_READY.zip", inp / K.BUNDLE)
-    shutil.copyfile(STUDY / "GeoCPU_practical_training_logging_20261107" / K.CODE_ZIP, inp / K.CODE_ZIP)
+    # the two pinned ZIPs live in their own dataset as *.zip.bin: Kaggle unpacks every *.zip it is given
+    (td / "zips").mkdir()
+    shutil.copyfile(STUDY / "GeoCPU_v47_fullmodel_bundle_v1_READY.zip", td / "zips" / (K.BUNDLE + ".bin"))
+    shutil.copyfile(STUDY / "GeoCPU_practical_training_logging_20261107" / K.CODE_ZIP, td / "zips" / (K.CODE_ZIP + ".bin"))
     for prefix, (run, step) in RUNS.items():
         shutil.copyfile(STUDY / run / "checkpoints" / f"receipt_step_{step}.json", inp / f"{prefix}_receipt_step_{step}.json")
         shutil.copyfile(STUDY / run / "training_saved.json", inp / f"{prefix}_training_saved.json")
@@ -41,11 +43,11 @@ class Layout(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             td = Path(td)
             inp = make_input(td)
-            work = K.extract_code(inp / K.CODE_ZIP, td / "code")
+            work = K.extract_code(td / "zips" / (K.CODE_ZIP + ".bin"), td / "code")
             sys.path.insert(0, str(work))
             import eval_candidate as E
             for prefix, (run, step) in RUNS.items():
-                study = K.build_study(inp, td / f"study_{prefix}", run, step, prefix)
+                study = K.build_study(inp, td / f"study_{prefix}", run, step, prefix, zips=[td / "zips"])
                 ckpt, receipt = E.validate_checkpoint(study, run, step)
                 self.assertTrue(ckpt.is_file())
                 self.assertRegex(receipt["checkpoint_sha256"], r"^[0-9a-f]{64}$")
@@ -61,10 +63,10 @@ class Layout(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             td = Path(td)
             inp = make_input(td)
-            work = K.extract_code(inp / K.CODE_ZIP, td / "code")
+            work = K.extract_code(td / "zips" / (K.CODE_ZIP + ".bin"), td / "code")
             sys.path.insert(0, str(work))
             import eval_candidate as E
-            study = K.build_study(inp, td / "study", *RUNS["v48_61500"][:2], "v48_61500")
+            study = K.build_study(inp, td / "study", *RUNS["v48_61500"][:2], "v48_61500", zips=[td / "zips"])
             (td / "src").mkdir()
             source = E.prepare_source(study, td / "src")
             data = source / "data"
@@ -98,10 +100,10 @@ class Scorer(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             td = Path(td)
             inp = make_input(td)
-            work = K.extract_code(inp / K.CODE_ZIP, td / "code")
+            work = K.extract_code(td / "zips" / (K.CODE_ZIP + ".bin"), td / "code")
             sys.path.insert(0, str(work))
             import eval_candidate as E
-            study = K.build_study(inp, td / "study", *RUNS["v48_61500"][:2], "v48_61500")
+            study = K.build_study(inp, td / "study", *RUNS["v48_61500"][:2], "v48_61500", zips=[td / "zips"])
             (td / "src").mkdir()
             source = E.prepare_source(study, td / "src")
             sys.path.insert(0, str(source))
@@ -131,6 +133,41 @@ class Scorer(unittest.TestCase):
                 n = len([c for c in canonical_normalize_text(p) if c in vocab])
                 for j, letter in enumerate("ABCD"):
                     self.assertAlmostEqual(vec[j], (n - 1) + vocab[letter] * 0.001, places=2)
+
+
+class Inputs(unittest.TestCase):
+    def test_link_refuses_a_missing_source_instead_of_creating_a_dangling_symlink(self):
+        with tempfile.TemporaryDirectory() as td:
+            with self.assertRaises(FileNotFoundError):
+                K.link(Path(td) / "nope.zip", Path(td) / "out" / "nope.zip")
+            self.assertFalse((Path(td) / "out" / "nope.zip").is_symlink())
+
+    def test_locate_finds_the_bin_name_and_never_a_directory(self):
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            (td / "a" / "GeoCPU_v47_fullmodel_bundle_v1_READY.zip").mkdir(parents=True)             # Kaggle's unpacked directory
+            (td / "b").mkdir()
+            (td / "b" / "x.zip.bin").write_bytes(b"1")
+            self.assertEqual(K.locate([td / "a", td / "b"], "x.zip"), td / "b" / "x.zip.bin")
+            with self.assertRaises(FileNotFoundError):
+                K.locate([td / "a"], "GeoCPU_v47_fullmodel_bundle_v1_READY.zip")                  # only a directory is there
+
+    def test_an_unpacked_dataset_fails_loudly_at_setup(self):
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            inp = td / "input"
+            inp.mkdir()
+            (inp / K.BUNDLE.replace(".zip", "")).mkdir()                                            # what Kaggle did to the zips
+            for name in ("v47_30500_checkpoint_step_30500.pt",):
+                (inp / name).write_bytes(b"x")
+            with self.assertRaises(FileNotFoundError):
+                K.build_study(inp, td / "study", "run", 30500, "v47_30500")
+
+    def test_pins_are_the_ones_the_evaluation_code_uses(self):
+        self.assertEqual(K.BASE_BUNDLE_SHA256, "a25d312429d5b2ee43ec4b812e7a1fb948d0625fbfdfbe9cdf7fac54c075fb70")
+        if REAL:
+            self.assertEqual(K.file_sha256(STUDY / "GeoCPU_v47_fullmodel_bundle_v1_READY.zip"), K.BASE_BUNDLE_SHA256)
+            self.assertEqual(K.file_sha256(STUDY / "GeoCPU_practical_training_logging_20261107" / K.CODE_ZIP), K.CODE_ZIP_SHA256)
 
 
 class Dedupe(unittest.TestCase):

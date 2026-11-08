@@ -11,31 +11,50 @@ HERE = Path(__file__).resolve().parent
 
 
 class Notebook(unittest.TestCase):
+    def build(self, td):
+        subprocess.run([sys.executable, "-I", str(HERE / "make_kaggle_notebook.py"), td], check=True, capture_output=True)
+        meta = json.loads((Path(td) / "kernel-metadata.json").read_text(encoding="utf-8"))
+        nb = json.loads((Path(td) / meta["code_file"]).read_text(encoding="utf-8"))
+        return meta, nb
+
     def test_generated_kernel_is_consistent(self):
         with tempfile.TemporaryDirectory() as td:
-            subprocess.run([sys.executable, "-I", str(HERE / "make_kaggle_notebook.py"), td], check=True, capture_output=True)
-            meta = json.loads((Path(td) / "kernel-metadata.json").read_text(encoding="utf-8"))
-            nb = json.loads((Path(td) / meta["code_file"]).read_text(encoding="utf-8"))
+            meta, nb = self.build(td)
             self.assertTrue(meta["enable_gpu"] and not meta["enable_internet"] and meta["is_private"])
             self.assertEqual(meta["machine_shape"], "NvidiaTeslaT4")
-            self.assertEqual(meta["dataset_sources"], ["geocpuresearch/geocpu-v48-eval-assets-20261108"])
-            ns = {}
+            self.assertEqual(meta["dataset_sources"], ["geocpuresearch/geocpu-v48-eval-assets-20261108",
+                                                       "geocpuresearch/geocpu-v48-eval-code-20261108"])
+            sources = {}
             for cell in nb["cells"]:
                 if cell["cell_type"] != "code":
                     continue
                 src = "".join(cell["source"])
                 ast.parse(src)
-                if cell["id"] == "setup":
-                    ns["FILES_SRC"] = src
+                sources[cell["id"]] = src
+            self.assertEqual(list(sources), ["setup", "smoke", "run", "report"])
             # run only the assignment of FILES from the setup cell and compare with the files on disk
-            tree = ast.parse(ns["FILES_SRC"])
             files = None
-            for node in tree.body:
+            for node in ast.parse(sources["setup"]).body:
                 if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "FILES":
                     files = ast.literal_eval(node.value)
             self.assertEqual(set(files), {"robust_eval.py", "kaggle_runner.py", "kaggle_compare.py"})
             for name, text in files.items():
                 self.assertEqual(text, (HERE / name).read_text(encoding="utf-8"), name)
+
+    def test_stages_guard_the_expensive_part(self):
+        with tempfile.TemporaryDirectory() as td:
+            _, nb = self.build(td)
+            src = {c["id"]: "".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code"}
+            self.assertIn("K.BASE_BUNDLE_SHA256", src["setup"])                       # pins are checked before any child starts
+            self.assertIn("K.CODE_ZIP_SHA256", src["setup"])
+            self.assertIn('".bin"', src["setup"])                                     # zips come as *.zip.bin (Kaggle unpacks *.zip)
+            self.assertIn("--limit", src["smoke"])
+            self.assertIn("SMOKE OK", src["smoke"])
+            self.assertIn("assert not bad", src["smoke"])                             # a failing smoke test stops the kernel
+            self.assertIn("DEADLINE", src["run"])
+            self.assertIn("STATUS.txt", src["run"])
+            self.assertIn("r.stderr", src["report"])                                  # the compare traceback is never discarded
+            self.assertIn("assert not bad", src["report"])                            # a failed child makes the kernel fail visibly
 
     def test_the_two_jobs_use_the_checkpoints_the_runner_tests_rehearse(self):
         text = (HERE / "make_kaggle_notebook.py").read_text(encoding="utf-8")

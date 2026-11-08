@@ -150,17 +150,115 @@ class Runners(unittest.TestCase):
         s = R.t5_score({"target": "B"}, {"output_text": "…ということで B"})
         self.assertTrue(s["correct"] and not s["has_answer_marker"])        # tail letter, no marker: flagged
 
-    def test_t6_separates_retrieval_from_use(self):
+    @staticmethod
+    def real_generation(before, query, result, after, eos=True, n=40):
+        """Shaped exactly like generate_with_qwenputer_v42: the runtime appends ' => {result} ' to the output text."""
+        text = f"{before}<SEARCH {query}> => {result} {after}"
+        return {"output_text": text, "search_invocations": 1, "search_trace": [{"query": query, "result": result}],
+                "ended_with_eos": eos, "generated_tokens": list(range(n))}
+
+    def test_t6_injected_result_does_not_count_as_the_models_answer(self):
         item = {"target": "math.isqrt", "hop_type": "1_hop"}
-        hit = R.t6_score(item, {"output_text": "答えは math.isqrt", "search_invocations": 1,
-                                "search_trace": [{"query": "q", "result": "[RESULT: math.isqrt | 整数平方根]"}]})
-        self.assertTrue(hit["answer_retrieved"] and hit["used_after_retrieval"] and hit["answer_in_output"])
-        missed = R.t6_score(item, {"output_text": "分かりません", "search_invocations": 1,
-                                   "search_trace": [{"query": "q", "result": "[RESULT: 別の文書]"}]})
-        self.assertFalse(missed["answer_retrieved"] or missed["answer_in_output"])
-        retrieved_not_used = R.t6_score(item, {"output_text": "不明", "search_invocations": 1,
-                                               "search_trace": [{"query": "q", "result": "math.isqrt の説明"}]})
-        self.assertTrue(retrieved_not_used["answer_retrieved"] and not retrieved_not_used["used_after_retrieval"])
+        result = "[RESULT (src: local, date: 常駐): math.isqrt | 整数平方根を返す]"
+        junk = R.t6_score(item, self.real_generation("思考: 調べる ", "math.isqrt", result, "ほげほげ"))
+        self.assertTrue(junk["answer_retrieved"])
+        self.assertTrue(junk["answer_in_output"])                 # the legacy rule is fooled by the injected text ...
+        self.assertFalse(junk["answer_written"])                  # ... the honest measures are not
+        self.assertFalse(junk["used_after_retrieval"])
+        copy = R.t6_score(item, self.real_generation("思考: 調べる ", "x", result, "答え: math.isqrt。"))
+        self.assertTrue(copy["answer_retrieved"] and copy["answer_written"] and copy["used_after_retrieval"])
+
+    def test_t6_a_query_that_spells_the_answer_is_not_an_answer(self):
+        item = {"target": "math.isqrt", "hop_type": "1_hop"}
+        r = R.t6_score(item, self.real_generation("", "math.isqrt", "[RESULT: 別の文書]", "不明"))
+        self.assertFalse(r["answer_written"] or r["answer_retrieved"] or r["used_after_retrieval"])
+
+    def test_t6_answer_without_searching_and_without_retrieval(self):
+        item = {"target": "math.isqrt", "hop_type": "1_hop"}
+        r = R.t6_score(item, {"output_text": "答え: math.isqrt。", "search_invocations": 0, "search_trace": [], "ended_with_eos": True,
+                              "generated_tokens": [1, 2, 3]})
+        self.assertTrue(r["answer_written"] and r["answer_in_output"])
+        self.assertFalse(r["answer_retrieved"] or r["used_after_retrieval"])
+        self.assertEqual(r["n_tokens"], 3)
+
+    def test_t6_the_whole_generation_and_trace_are_saved(self):
+        item = {"target": "t", "hop_type": "1_hop"}
+        r = R.t6_score(item, self.real_generation("あ" * 500, "q", "[RESULT: t]", "い" * 500))
+        self.assertGreater(len(r["text"]), 1000)
+        self.assertEqual(r["trace"][0]["query"], "q")
+
+    def test_t5_records_how_the_generation_ended(self):
+        capped = R.t5_score({"target": "B"}, {"output_text": "長い考え", "tokens": list(range(192)), "ended_with_eos": False}, cap=192)
+        self.assertTrue(capped["hit_cap"] and not capped["ended_with_eos"] and capped["n_tokens"] == 192)
+        done = R.t5_score({"target": "B"}, {"output_text": "正解: B", "tokens": list(range(30)), "ended_with_eos": True}, cap=192)
+        self.assertFalse(done["hit_cap"])
+        self.assertFalse(R.t5_score({"target": "B"}, {"output_text": "x"}, cap=None)["hit_cap"])
+
+
+class McqRobustness(unittest.TestCase):
+    def test_cache_makes_a_restart_free_and_identical(self):
+        items = synthetic_items(40)
+        calls = []
+
+        def counted(ps):
+            calls.append(len(ps))
+            return content_scorer(items)(ps)
+        with tempfile.TemporaryDirectory() as td:
+            cache = Path(td) / "mcq_logits.jsonl"
+            first = R.mcq_rotation_eval(items, counted, cache_path=cache)
+            n_first = sum(calls)
+            self.assertEqual(n_first, 40 * 4)
+            second = R.mcq_rotation_eval(items, counted, cache_path=cache)
+            self.assertEqual(sum(calls), n_first)                          # nothing was scored again
+            self.assertEqual(first["debiased_correct"], second["debiased_correct"])
+            self.assertEqual(first["letter_logits"], second["letter_logits"])
+
+    def test_a_crash_midway_keeps_the_finished_batches(self):
+        items = synthetic_items(40)
+        good = content_scorer(items)
+        state = {"n": 0}
+
+        def flaky(ps):
+            state["n"] += 1
+            if state["n"] == 7:
+                raise RuntimeError("session died")
+            return good(ps)
+        with tempfile.TemporaryDirectory() as td:
+            cache = Path(td) / "c.jsonl"
+            with self.assertRaises(RuntimeError):
+                R.mcq_rotation_eval(items, flaky, batch=4, cache_path=cache)
+            kept = len(cache.read_text(encoding="utf-8").splitlines())
+            self.assertEqual(kept, 6 * 4)
+            calls = []
+            res = R.mcq_rotation_eval(items, lambda ps: (calls.append(len(ps)), good(ps))[1], batch=4, cache_path=cache)
+            self.assertEqual(sum(calls), 40 * 4 - kept)
+            self.assertEqual(res["debiased_accuracy"], 100.0)
+
+    def test_progress_is_reported(self):
+        items = synthetic_items(40)
+        seen = []
+        R.mcq_rotation_eval(items, content_scorer(items), batch=4, progress=lambda d, t: seen.append((d, t)), progress_every=10)
+        self.assertEqual(seen[-1], (160, 160))
+        self.assertTrue(all(t == 160 for _, t in seen))
+
+    def test_non_finite_rows_are_counted_wrong_not_turned_into_A(self):
+        items = synthetic_items(40)
+        good = content_scorer(items)
+
+        def broken(ps):
+            out = good(ps)
+            out[0] = [float("nan")] * 4
+            return out
+        res = R.mcq_rotation_eval(items, broken, batch=4)
+        self.assertGreater(res["nonfinite"], 0)
+        self.assertEqual(res["picked_letter_share"]["A"], res["picked_letter_share"]["A"])     # no NaN leaked into the shares
+        self.assertLess(res["debiased_accuracy"], 100.0)
+
+    def test_ties_are_counted(self):
+        items = synthetic_items(8)
+        res = R.mcq_rotation_eval(items, lambda ps: [[2.0, 2.0, 0.0, 0.0] for _ in ps])
+        self.assertEqual(res["ties"], 8 * 4)
+        self.assertEqual(res["picked_letter_share"]["A"], 1.0)           # ties resolve to the first letter, like argmax
 
 
 if __name__ == "__main__":
