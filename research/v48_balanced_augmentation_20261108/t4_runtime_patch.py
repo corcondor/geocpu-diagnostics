@@ -112,7 +112,7 @@ def patch_runtime(source: str) -> str:
         "              f'activation microchunk starts={chunk_start:,} tokens', flush=True)\n")
 
     out=replace_once(out,
-        "                         \"source_exposures\": exposure_counts, \"chunk\": policy.describe()}\n",
+        "                        \"source_exposures\": exposure_counts, \"chunk\": policy.describe()}\n",
         "                         \"source_exposures\": exposure_counts, \"chunk\": policy.describe(),\n"
         "                         \"amp_dtype\": str(amp_dtype), \"amp_scaler_enabled\": scaler.is_enabled()}\n")
 
