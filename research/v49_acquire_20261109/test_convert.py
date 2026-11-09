@@ -25,7 +25,8 @@ sys.path.insert(0, str(HERE))
 import convert as C                                              # noqa: E402
 
 FIX = HERE / "fixtures"
-CK = C.Checks(use_external=False)
+CK = C.Checks(use_external=False, run_code=False)               # vocabulary / OOV / row checks; never runs code
+CKX = C.Checks(vocab=CK.vocab)                                   # the real executor-profile sandbox (light self-test passed, or this line raises)
 FENCE = C.FENCE
 
 try:
@@ -124,39 +125,57 @@ class TestHelpers(unittest.TestCase):
             q.write_text("\n".join(json.dumps(o) for o in objs[:3]) + "\n\n", encoding="utf-8")
             self.assertEqual(list(C.iter_json_array(q)), objs[:3])
 
-    def test_static_check_allow_list(self):
-        ok = lambda code: C.static_code_check(code)                      # noqa: E731
-        self.assertEqual(ok("import math\nprint(math.sqrt(4))")[0], True)
-        self.assertEqual(ok("import re\nprint(re.compile('a').pattern)")[0], True)      # attribute .compile is fine
-        for code, why in [("import os\nprint(1)", "import_not_allowed:os"), ("import subprocess", "import_not_allowed:subprocess"),
-                          ("x = input()", "uses_input"), ("open('a')", "uses_file_io"), ("eval('1')", "forbidden_call:eval"),
-                          ("exec('1')", "forbidden_call:exec"), ("import random\nprint(random.random())", "nondeterministic:random"),
-                          ("import datetime\nprint(datetime.datetime.now())", "nondeterministic:datetime"),
-                          ("print().__class__.__subclasses__()", "forbidden_attr:__subclasses__"), ("def (", "syntax_error"),
-                          ("from . import x", "import_not_allowed:relative"), ("__import__('os')", "forbidden_call:__import__")]:
-            self.assertEqual(ok(code), (False, why), code)
-        self.assertEqual(ok("import random\nrandom.seed(1)\nprint(random.randint(1, 3))")[0], True)
+    def test_static_check_is_the_executor_profile(self):
+        ok = lambda code: CKX.static_check(code)                         # noqa: E731
+        self.assertEqual(ok("import math\nprint(math.sqrt(4))"), (True, ""))
+        # what the model's own executor refuses is refused here too (the earlier 'wide' profile accepted all of these)
+        for code, why in [("import os\nprint(1)", "import:os"), ("import subprocess", "import:subprocess"), ("x = input()", "name:input"),
+                          ("open('a')", "name:open"), ("eval('1')", "name:eval"), ("exec('1')", "name:exec"),
+                          ("import random\nprint(random.random())", "import:random"), ("import re\nprint(re.compile('a'))", "import:re"),
+                          ("import json\nprint(json.dumps(1))", "import:json"), ("import string\nprint(string.digits)", "import:string"),
+                          ("import dataclasses", "import:dataclasses"), ("class A:\n    pass\n", "class_def:"),
+                          ("import math\nmath.x = 1", "attr_store:"), ("print().__class__.__subclasses__()", "attr:__subclasses__"),
+                          ("def (", "syntax:"), ("from . import x", "import:None"), ("__import__('os')", "name:__import__"),
+                          ("from operator import attrgetter", "import_name:attrgetter"), ("g = (1 for _ in [1])\nprint(g.gi_frame)", "attr:gi_frame"),
+                          ("s = '{0._' + '_x}'\nprint(s.format(1))", "format_string:")]:
+            r = ok(code)
+            self.assertFalse(r[0], code)
+            self.assertTrue(r[1].startswith(why), (code, r[1]))
+        self.assertEqual(ok("from fractions import Fraction\nprint(Fraction(1, 3))"), (True, ""))
+        self.assertEqual(ok("print('{:>4}|{n}'.format(1, n=2))"), (True, ""))                  # str.format on a literal with plain fields
 
     def test_sandbox_runs_and_limits(self):
-        r = C.run_python_sandbox("print('こんにちは', 1 + 2)")
-        self.assertTrue(r["ok"])
-        self.assertEqual(r["stdout"], "こんにちは 3\n")
-        r = C.run_python_sandbox("print(sorted({'b', 'a', 'c'}))")                   # fixed hash seed -> reproducible
+        r = CKX.run_python("print('こんにちは', 1 + 2)")
+        self.assertEqual((r["ok"], r["stdout"]), (True, "こんにちは 3\n"))
+        r = CKX.run_python("print(sorted({'b', 'a', 'c'}))")                          # fixed hash seed -> reproducible
         self.assertEqual(r["stdout"], "['a', 'b', 'c']\n")
-        r = C.run_python_sandbox("print(1/0)")
+        r = CKX.run_python("print(1/0)")
         self.assertFalse(r["ok"])
-        self.assertEqual(r["reason"], "runtime_error:ZeroDivisionError")
-        r = C.run_python_sandbox("while True:\n    pass\n", timeout=1.0)
-        self.assertEqual((r["ok"], r["reason"]), (False, "timeout"))
-        r = C.run_python_sandbox("import sys\nprint(sys.stdin.read() == '')")           # stdin is closed
-        self.assertEqual(r["stdout"], "True\n")
+        self.assertTrue(r["reason"].startswith("exception:ZeroDivisionError"), r)
+        slow = C.Checks(vocab=CK.vocab, sandbox_timeout=1.0)
+        r = slow.run_python("while True:\n    pass\n")
+        self.assertEqual((r["ok"], r["reason"]), (False, "timeout:1.0s"))
+        r = CKX.run_python("import os\nprint(os.getcwd())")
+        self.assertFalse(r["ok"])
+        self.assertTrue(r["reason"].startswith("static:import:os"), r)
 
-    def test_coerce_sandbox_shapes(self):
-        self.assertEqual(C._coerce_sandbox({"ok": True, "stdout": "2\n"})["stdout"], "2\n")
-        self.assertEqual(C._coerce_sandbox((True, "2\n", ""))["ok"], True)
-        self.assertEqual(C._coerce_sandbox({"passed": False, "output": "x", "error": "boom"})["reason"], "boom")
-        with self.assertRaises(ValueError):
-            C._coerce_sandbox({"weird": 1})
+    def test_no_weaker_fallback(self):
+        # without the sibling sandbox, or with a failing self-test, running code is impossible - never silently weaker
+        with self.assertRaises(C.SandboxUnavailable):
+            C.Checks(vocab=CK.vocab, use_external=False, run_code=True)
+        ext = C._load_external_checks()
+        real = ext.sandbox_selftest
+        try:
+            ext.sandbox_selftest = lambda **kw: {"ok": False, "run_as": None, "checks": [{"name": "print(1 + 1)", "ok": False, "detail": "boom"}]}
+            with self.assertRaises(C.SandboxUnavailable) as cm:
+                C.Checks(vocab=CK.vocab)
+            self.assertIn("boom", str(cm.exception))
+        finally:
+            ext.sandbox_selftest = real
+        off = C.Checks(vocab=CK.vocab, use_external=False, run_code=False)
+        self.assertEqual((off.backends["sandbox"], off.run_python("print(1)")["reason"]), ("disabled", "sandbox_disabled"))
+        for name in ("run_python_sandbox", "static_code_check", "ALLOWED_MODULES"):
+            self.assertFalse(hasattr(C, name), name)
 
     def test_check_arithmetic(self):
         res = lambda t: [(s, ok) for s, ok in C.check_arithmetic(t)]      # noqa: E731
@@ -204,6 +223,10 @@ class TestHelpers(unittest.TestCase):
 
 
 # ====================================================================================================== (a) JaQuAD
+JQ_OK = {"id": "tr-ok-00-000", "title": "題", "question_type": "Syntactic variation", "question": "山田太郎の出身地はどこ?",
+         "context": "山田太郎は東京出身の作家である。花子は大阪で育った。", "answers": [{"text": "東京", "answer_start": 5, "answer_type": "Place"}]}
+
+
 class TestJaquad(RowAsserts):
     def test_fixture(self):
         files = [FIX / "jaquad_train_fixture.json"]
@@ -212,16 +235,42 @@ class TestJaquad(RowAsserts):
         recs = list(C.read_jaquad(files))
         rows = self.check_rows(list(spec.convert(recs, st, CK, spec)))
         s = self.check_stats(st)
-        self.assertGreaterEqual(len(rows), 3)
-        self.assertGreaterEqual(s["rejects"].get("oov_in_quote_or_answer", 0), 1)
-        for r in rows:
-            self.assertEqual(r["family"], "jaquad_human")
-            self.assertTrue(r["id"].startswith("v49acq_jaquad_tr-"))
-            self.assertIn(r["reference_final_answer"], r["quotes"][0])             # answer inside the one evidence sentence
-            self.assertTrue(r["target"].endswith(f"答え: {r['reference_final_answer']}。"))
-            self.assertEqual(r["loss_mask_spans"], [])
-            self.assertEqual(r["split"], C.split_of(r["group_key"]))
+        # the five real rows: three are 'Multiple sentence reasoning' (the answer sentence is not the whole evidence), two have a character
+        # outside the model vocabulary - none is a clean single-sentence row, so nothing is emitted from this fixture
+        self.assertEqual(rows, [])
+        self.assertEqual(s["rejects"], {"question_type_multiple_sentence": 3, "oov_in_quote_or_answer": 2})
+        self.assertEqual(s["question_types"], {"Multiple sentence reasoning": 3, "Syntactic variation": 2})
         self.assertEqual(len(list(C.read_jaquad(files, limit=2))), 2)
+        self.assertEqual([i for i, _ in C.read_jaquad(files, start=3)], [3, 4])                  # a shard keeps the global record index
+
+    def test_happy_path_rows(self):
+        rows, st = run("jaquad", [JQ_OK])
+        self.check_rows(rows)
+        r = rows[0]
+        self.assertEqual(r["family"], "jaquad_human")
+        self.assertTrue(r["id"].startswith("v49acq_jaquad_tr-"))
+        self.assertIn(r["reference_final_answer"], r["quotes"][0])                      # answer inside the one evidence sentence
+        self.assertTrue(r["target"].endswith(f"答え: {r['reference_final_answer']}。"))
+        self.assertEqual(r["loss_mask_spans"], [])
+        self.assertEqual(r["split"], C.split_of(r["group_key"]))
+
+    def test_card_example_and_evidence_checks(self):
+        # the dataset card's own validation example: the question names ビワタナゴ, the evidence sentence never does
+        card = {"id": "tr-card", "title": "イタセンパラ", "question": "ビワタナゴの正式名称は何?", "question_type": "Multiple sentence reasoning",
+                "context": "イタセンパラ(板鮮腹、Acheilognathuslongipinnis)は、コイ科のタナゴ亜科タナゴ属に分類される淡水魚の一種。\n別名はビワタナゴ(琵琶鱮、琵琶鰱)。",
+                "answers": [{"text": "イタセンパラ", "answer_start": 0, "answer_type": "Object"}]}
+        rows, st = run("jaquad", [card])
+        self.assertEqual((rows, dict(st.rejects)), ([], {"question_type_multiple_sentence": 1}))
+        # a type that is not filtered: the content n-gram check still stops a question whose words the evidence sentence does not contain
+        no_type = dict(card, question_type="Lexical variation (synonymy)", question="琵琶湖固有の鯉の名称は何?")
+        rows, st = run("jaquad", [no_type])
+        self.assertEqual((rows, dict(st.rejects)), ([], {"quote_shares_no_content_with_question": 1}))
+        ambiguous = dict(JQ_OK, question_type="Ambiguous")
+        rows, st = run("jaquad", [ambiguous])
+        self.assertEqual(dict(st.rejects), {"question_type_ambiguous": 1})
+        self.assertTrue(C.shares_content("太郎はどこで生まれた?", "太郎は東京で生まれた。"))
+        self.assertFalse(C.shares_content("何ですか?", "太郎は東京で生まれた。"))
+        self.assertFalse(C.shares_content("ビワタナゴの正式名称は何?", "イタセンパラは淡水魚の一種。"))
 
     def test_guards_and_rejects(self):
         base = {"id": "tr-000-00-000", "title": "題", "context": "太郎は東京で生まれた。\n花子は大阪で育った。", "question": "太郎はどこで生まれた?",
@@ -246,12 +295,14 @@ class TestJaquad(RowAsserts):
         recs = []
         for art in range(30):
             for q in range(3):
-                recs.append({"id": f"tr-{art:03d}-00-{q:03d}", "title": f"記事{art}", "context": "甲は乙である。丙は丁である。", "question": "甲は何?",
-                             "question_type": "x", "answers": [{"text": "乙", "answer_start": 2, "answer_type": "O"}]})
+                recs.append({"id": f"tr-{art:03d}-00-{q:03d}", "title": f"記事{art}", "context": "山田太郎は東京出身の作家である。花子は大阪で育った。",
+                             "question": "山田太郎の出身地はどこ?", "question_type": "x", "answers": [{"text": "東京", "answer_start": 5, "answer_type": "O"}]})
         rows, _ = run("jaquad", recs)
+        self.assertEqual(len(rows), 90)
         by = {}
         for r in rows:
             by.setdefault(r["group_key"], set()).add(r["split"])
+        self.assertEqual(len(by), 30)
         self.assertTrue(all(len(v) == 1 for v in by.values()))
 
 
@@ -259,11 +310,15 @@ class TestJaquad(RowAsserts):
 PY_PLAN = "以下のPythonコードは、1から10までの合計を計算して表示します。"
 
 
+PY_OK = msg("1から10までの合計を表示するPythonコードを書いて。", f"{PY_PLAN}\n{FENCE}python\nprint(sum(range(1, 11)))\n{FENCE}\n出力:\n{FENCE}\n55\n{FENCE}\n結果は55です。")
+RUST_OK = msg("Rustで挨拶を表示する関数を書いてください。", f"次のように書けます。\n{FENCE}rust\nfn main() {{\n    println!(\"こんにちは\");\n}}\n{FENCE}\nこれで標準出力に表示されます。")
+
+
 class TestCoding(RowAsserts):
     def test_fixture_through_parquet(self):
         if pa is None:
             self.skipTest("pyarrow missing")
-        recs = fixture("coding_fixture.json")
+        recs = fixture("coding_fixture.json") + [PY_OK, RUST_OK]            # the real python row of the fixture has no stored output (dropped); two clean rows added
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "data" / "train-00000-of-00001.parquet"
             p.parent.mkdir()
@@ -272,13 +327,15 @@ class TestCoding(RowAsserts):
             self.assertEqual(len(files), 1)
             spec = C.DATASETS["coding"]
             st = C.Stats("coding")
-            rows = self.check_rows(list(spec.convert(C.read_messages_parquet(files), st, CK, spec)))
+            rows = self.check_rows(list(spec.convert(C.read_messages_parquet(files), st, CKX, spec)), CKX)
             self.assertEqual(len(list(C.read_messages_parquet(files, limit=3))), 3)
+            self.assertEqual([i for i, _ in C.read_messages_parquet(files, start=len(recs) - 2)], [len(recs) - 2, len(recs) - 1])
         s = self.check_stats(st)
         fam = Counter(r["family"] for r in rows)
         self.assertGreaterEqual(fam["coding_pytool"], 1)
         self.assertGreaterEqual(fam["code_text"], 1)
-        for reason in ("row_too_long", "static:uses_input", "untagged_code_fence", "no_code_block"):
+        for reason in ("row_too_long", "static:name:input", "untagged_code_fence", "no_code_block", "english_row_too_long",
+                       "no_stored_output_to_corroborate"):
             self.assertIn(reason, s["rejects"], s["rejects"])
         for r in rows:
             if r["family"] == "coding_pytool":
@@ -288,9 +345,11 @@ class TestCoding(RowAsserts):
                 self.assertEqual(obs, f"\n{FENCE}output\n{r['expected_stdout']}{FENCE}\n")
                 self.assertEqual(r["tool_steps"][0]["stdout"], r["expected_stdout"])
                 # the observation really is what the stored code prints (re-run it)
-                again = C.run_python_sandbox(r["python_code"])
+                again = CKX.run_python(r["python_code"])
                 self.assertTrue(again["ok"])
                 self.assertEqual(again["stdout"].replace("\r\n", "\n"), r["expected_stdout"])
+                self.assertEqual(r["verification"], "stored_output_equals_sandbox")
+                self.assertEqual(r["sandbox_backend"], "checks.code_sandbox_check(profile=executor)")
                 self.assertIn(f"{FENCE}python\n{r['python_code']}\n{FENCE}", r["target"])
                 self.assertTrue(r["target"].endswith(f"答え: {r['reference_final_answer']}。"))
                 self.assertEqual(r["answer_type"], "output_last_line")
@@ -318,55 +377,80 @@ class TestCoding(RowAsserts):
         quiet = msg("quiet", f"{FENCE}python\nprint('x') if False else None\n{FENCE}")
         addr = msg("obj", f"{FENCE}python\nclass A: pass\nprint(A())\n{FENCE}")
         multi = msg("two lines", f"{FENCE}python\nprint('first')\nprint('last line')\n{FENCE}")
-        rows, st = run("coding", [ok, mism, nostore, contra, inp, osimp, err, silent, quiet, addr, multi])
+        multi = msg("two lines", f"{FENCE}python\nprint('first')\nprint('last line')\n{FENCE}\n出力:\n{FENCE}\nfirst\nlast line\n{FENCE}")
+        rows, st = run("coding", [ok, mism, nostore, contra, inp, osimp, err, silent, quiet, addr, multi], ck=CKX)
         s = self.check_stats(st)
-        self.check_rows(rows)
+        self.check_rows(rows, CKX)
         by_id = {r["id"]: r for r in rows}
-        r0, r2, r9 = by_id["v49acq_coding_0000000"], by_id["v49acq_coding_0000002"], by_id["v49acq_coding_0000010"]
+        r0, r10 = by_id["v49acq_coding_0000000"], by_id["v49acq_coding_0000010"]
         self.assertEqual(r0["verification"], "stored_output_equals_sandbox")
         self.assertEqual(r0["plan_line"], PY_PLAN[:-1])
         self.assertEqual(r0["reference_final_answer"], "55")
-        self.assertEqual(r2["verification"], "sandbox_only_no_stored_output")
-        self.assertEqual(r2["plan_line"], C.PLAN_FALLBACK)
-        self.assertEqual(r9["reference_final_answer"], "last line")
-        self.assertEqual(sorted(by_id), ["v49acq_coding_0000000", "v49acq_coding_0000002", "v49acq_coding_0000010"])
-        self.assertEqual(s["rejects"], {"stored_output_mismatch": 1, "prose_number_contradicts_output": 1, "static:uses_input": 1,
-                                        "static:import_not_allowed:os": 1, "sandbox_failed:runtime_error:ZeroDivisionError": 1,
-                                        "static:no_print": 1, "empty_stdout": 1, "address_in_stdout": 1})
-        self.assertEqual(s["verification"], {"stored_output_equals_sandbox": 1, "sandbox_only_no_stored_output": 2})
+        self.assertEqual(r10["reference_final_answer"], "last line")
+        self.assertEqual(r10["plan_line"], C.PLAN_FALLBACK)
+        self.assertEqual(sorted(by_id), ["v49acq_coding_0000000", "v49acq_coding_0000010"])
+        # a row that runs but has no stored output is NOT kept (default) - it is counted, so the report can say how many there were
+        self.assertEqual(s["rejects"], {"stored_output_mismatch": 1, "no_stored_output_to_corroborate": 2, "static:name:input": 1,
+                                        "static:import:os": 1, "sandbox_failed:exception:ZeroDivisionError: division by zero": 1,
+                                        "static:no_print": 1, "static:class_def:class definitions are disabled": 1, "empty_stdout": 1})
+        self.assertEqual(s["verification"], {"stored_output_equals_sandbox": 2})
+        self.assertEqual(s["python"], {"rows_kept_stored_output_equals_sandbox": 2, "ran_in_sandbox_but_had_no_stored_output": 2,
+                                       "note": s["python"]["note"]})
+        self.assertEqual(C.summarize(st, CKX)["backends"]["sandbox"], "checks.code_sandbox_check(profile=executor)")
 
     def test_policy_switches(self):
         nostore = msg("sum 1..10 in Python", f"Code:\n{FENCE}python\nprint(sum(range(1, 11)))\n{FENCE}\nThat prints the sum.")
-        strict = C.Checks(vocab=CK.vocab, use_external=False, python_require_stored_output=True)
-        rows, st = run("coding", [nostore], ck=strict)
+        rows, st = run("coding", [nostore], ck=CKX)                                   # the default: stored output required
         self.assertEqual((len(rows), dict(st.rejects)), (0, {"no_stored_output_to_corroborate": 1}))
+        lenient = C.Checks(vocab=CK.vocab, python_require_stored_output=False)
+        rows, st = run("coding", [nostore], ck=lenient)
+        self.assertEqual([r["verification"] for r in rows], ["sandbox_only_no_stored_output"])
+        contra = msg("sum 1..10 in Python", f"Code:\n{FENCE}python\nprint(sum(range(1, 11)))\n{FENCE}\nThe output is 66.")
+        rows, st = run("coding", [contra], ck=lenient)                                # no stored output, but the prose contradicts the output
+        self.assertEqual(dict(st.rejects), {"prose_number_contradicts_output": 1})
         off = C.Checks(vocab=CK.vocab, use_external=False, run_code=False)
         rows, st = run("coding", [nostore], ck=off)
         self.assertEqual(dict(st.rejects), {"sandbox_failed:sandbox_disabled": 1})
         self.assertEqual(off.backends["sandbox"], "disabled")
 
+    def test_english_rows_are_short_only(self):
+        short_en = msg("Write Rust code that prints hello.", f"Here it is:\n{FENCE}rust\nfn main() {{ println!(\"hello\"); }}\n{FENCE}")
+        long_en = msg("Write Rust code that prints hello.", "This program is explained in a lot of detail. " * 20 + f"\n{FENCE}rust\nfn main() {{ println!(\"hello\"); }}\n{FENCE}")
+        long_en_user = msg("Please write a Rust program " + "that prints hello and explains each step in detail " * 14, f"{FENCE}rust\nfn main() {{ println!(\"hello\"); }}\n{FENCE}")
+        ja_long = msg("Rustで挨拶を表示するプログラムを書いてください。", "このプログラムは詳しい説明つきです。" * 30 + f"\n{FENCE}rust\nfn main() {{ println!(\"hello\"); }}\n{FENCE}")
+        rows, st = run("coding", [short_en, long_en, long_en_user, ja_long])
+        s = self.check_stats(st)
+        self.assertEqual([r["id"] for r in rows], ["v49acq_coding_0000000", "v49acq_coding_0000003"])
+        self.assertEqual(s["rejects"], {"english_row_too_long": 2})
+        self.assertEqual((rows[0]["user_lang"], rows[0]["answer_lang"]), ("en", "en"))
+        self.assertEqual((rows[1]["user_lang"], rows[1]["answer_lang"]), ("ja", "ja"))              # language of the prose, not of the code
+        self.assertEqual(s["english_rows_total"], 1)
+        self.assertEqual(sorted(s["english"]), ["code_text"])
+        self.assertGreater(s["english"]["code_text"]["supervised_chars"], 0)
+        self.assertEqual(sum(s["supervised_chars"].values()), sum(len(r["target"]) for r in rows))
+
     def test_code_text_rows(self):
-        rust = msg("Rustで挨拶を表示する関数を書いてください。", f"次のように書けます。\n{FENCE}rust\nfn main() {{\n    println!(\"こんにちは\");\n}}\n{FENCE}\nこれで標準出力に表示されます。")
+        rust = RUST_OK
         untagged = msg("C", f"{FENCE}\nint x;\n{FENCE}")
         too_long = msg("long", f"{FENCE}cpp\n" + "int x;\n" * 400 + FENCE)
         pyfail = msg("p", f"{FENCE}python\nimport numpy\nprint(1)\n{FENCE}")
         text_only = msg("hi", "ただの説明です。")
         multiturn = {"messages": [{"role": "user", "content": "q"}, {"role": "assistant", "content": f"{FENCE}java\nint a;\n{FENCE}"},
                                   {"role": "user", "content": "more"}, {"role": "assistant", "content": "ok"}]}
-        rows, st = run("coding", [rust, untagged, too_long, pyfail, text_only, multiturn])
+        rows, st = run("coding", [rust, untagged, too_long, pyfail, text_only, multiturn], ck=CKX)
         s = self.check_stats(st)
-        self.check_rows(rows)
+        self.check_rows(rows, CKX)
         self.assertEqual([r["code_lang"] for r in rows], ["rust", "java"])
         self.assertEqual(rows[0]["answer_lang"], "ja")
         self.assertEqual(s["extra"]["multiturn_first_pair_only"], 1)
-        self.assertEqual(s["rejects"], {"untagged_code_fence": 1, "row_too_long": 1, "static:import_not_allowed:numpy": 1, "no_code_block": 1})
+        self.assertEqual(s["rejects"], {"untagged_code_fence": 1, "row_too_long": 1, "static:import:numpy": 1, "no_code_block": 1})
         self.assertEqual(s["code_text_languages"], {"rust": 1, "java": 1})
         self.assertEqual(rows[0]["target"], "\n" + rust["messages"][1]["content"])
 
     def test_masked_row_must_be_clean(self):
-        emoji_user = msg("print 1 \U0001F600", f"{FENCE}python\nprint(1)\n{FENCE}")
-        fullwidth_out = msg("print", f"{FENCE}python\nprint('１２')\n{FENCE}")
-        rows, st = run("coding", [emoji_user, fullwidth_out])
+        emoji_user = msg("print 1 \U0001F600", f"{FENCE}python\nprint(1)\n{FENCE}\n出力:\n{FENCE}\n1\n{FENCE}")
+        fullwidth_out = msg("print", f"{FENCE}python\nprint('１２')\n{FENCE}\n出力:\n{FENCE}\n１２\n{FENCE}")
+        rows, st = run("coding", [emoji_user, fullwidth_out], ck=CKX)
         self.assertEqual(len(rows), 0)
         self.assertEqual(dict(st.rejects), {"invalid_row:masked_row_not_clean": 2})
 
@@ -418,9 +502,19 @@ class TestTengentoppa(RowAsserts):
         self.assertEqual(rows[1]["target"], "\n答え: 日本の首都は東京です。")
         self.assertEqual(s["rejects"], {"row_too_long": 1, "refusal_opening": 2, "boilerplate_opening": 1, "latin_heavy": 1,
                                         "answer_not_terminated": 3, "empty_field": 1, "repetitive": 1, "bad_json_line": 1})
-        never = C.Checks(vocab=CK.vocab, use_external=False, tengentoppa_steps=False)
+        never = C.Checks(vocab=CK.vocab, use_external=False, run_code=False, tengentoppa_steps=False)
         rows, _ = run("tengentoppa", [good], ck=never)
         self.assertEqual(rows[0]["family"], "tengentoppa_answer")
+
+    def test_python_blocks_are_dropped_not_kept_unverified(self):
+        steps = "1. **まず** 条件を整理します。\n\n2. **次に** 理由を述べます。"
+        good = {"instruction": "合計を求めるコードを書いてください。", "reasoning": steps, "initial_answer": "x", "refined_answer": "合計は次のとおりです。"}
+        in_answer = dict(good, refined_answer=f"次のコードです。\n{FENCE}python\nprint(1 + 2)\n{FENCE}\n出力は3です。")
+        in_steps = dict(good, reasoning="1. 手順一\n" + f"{FENCE}py\nprint(1)\n{FENCE}\n2. 手順二")
+        rows, st = run("tengentoppa", [good, in_answer, in_steps])
+        self.assertEqual(dict(st.rejects), {"python_block_not_executed": 1})
+        self.assertEqual({r["id"]: r["family"] for r in rows}, {"v49acq_tengentoppa_0000000": "tengentoppa_steps", "v49acq_tengentoppa_0000002": "tengentoppa_answer"})
+        self.assertNotIn("print(1)", rows[1]["full_text"])                       # the steps with the python block were left out, the answer kept
 
     def test_jsonl_reader_streams(self):
         with tempfile.TemporaryDirectory() as d:
@@ -517,6 +611,26 @@ class TestHotpot(RowAsserts):
         rows, _ = run("hotpot", [hp(rid="a"), hp(rid="b")])
         self.assertEqual(rows[0]["group_key"], "hotpot:A")
         self.assertEqual(rows[0]["split"], rows[1]["split"])
+
+    def test_questions_sharing_a_supporting_paragraph_share_a_group(self):
+        if pa is None:
+            self.skipTest("pyarrow missing")
+        # q1 uses A+B, q2 uses B+C, q3 uses C+D (a chain: one component), q4 uses X+Y (separate); with the plain key min(title)
+        # q1 -> A, q2 -> B, q3 -> C: three groups that can land in different splits.  The union-find root joins them.
+        ex = {"X": ["X is a city."], "Y": ["Y is a lake."]}
+        recs = [hp(rid="q1", supp=(("A", 0), ("B", 0))), hp(rid="q2", supp=(("B", 0), ("C", 0))), hp(rid="q3", supp=(("C", 0), ("D", 0))),
+                hp(rid="q4", supp=(("X", 0), ("Y", 0)), extra=ex)]
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "distractor" / "train-00000-of-00001.parquet"
+            p.parent.mkdir()
+            pq.write_table(pa.Table.from_pylist(recs), p)
+            roots = C.build_hotpot_roots([p])
+            self.assertEqual({t: roots[t] for t in "ABCDXY"}, {"A": "A", "B": "A", "C": "A", "D": "A", "X": "X", "Y": "X"})
+            ck = C.Checks(vocab=CK.vocab, use_external=False, run_code=False)
+            ck.hotpot_roots = roots
+            rows, _ = run("hotpot", recs, ck=ck)
+        self.assertEqual([r["group_key"] for r in rows], ["hotpot:A", "hotpot:A", "hotpot:A", "hotpot:X"])
+        self.assertEqual(len({r["split"] for r in rows[:3]}), 1)
 
 
 # ====================================================================================================== (e) ToolACE
@@ -637,6 +751,14 @@ class TestWizard(RowAsserts):
         self.assertEqual(s["extra"]["multiturn_first_pair_only"], 1)
         self.assertEqual(rows[0]["final_number_guess"], 8.0)
 
+    def test_python_blocks_are_dropped(self):
+        with_py = msg("合計を求めてください。", f"次のコードです。\n{FENCE}python\nprint(3 + 4)\n{FENCE}\n出力は7です。")
+        other = msg("合計を求めてください。", "合計は次のとおりです。詳しい説明を以下に示します。この例では二つの数を足して、その結果を画面に表示します。実行すると結果が出ます。"
+                    + f"\n{FENCE}javascript\nconsole.log(3 + 4)\n{FENCE}\n出力は7です。")
+        rows, st = run("wizard", [with_py, other])
+        self.assertEqual(dict(st.rejects), {"python_block_not_executed": 1})
+        self.assertEqual([r["id"] for r in rows], ["v49acq_wizard_0000001"])
+
 
 # ====================================================================================================== validation, output, CLI
 class TestValidation(RowAsserts):
@@ -700,7 +822,7 @@ class TestValidation(RowAsserts):
 
 
 class TestExternalChecks(RowAsserts):
-    """convert.py delegates python execution to checks.code_sandbox_check(profile='wide') when the sibling module is usable."""
+    """convert.py delegates python execution to checks.code_sandbox_check(profile='executor'): the rules of the model's own executor."""
 
     def setUp(self):
         self.ext = C._load_external_checks()
@@ -709,7 +831,8 @@ class TestExternalChecks(RowAsserts):
 
     def test_backend_and_equivalence(self):
         ck = C.Checks(vocab=CK.vocab, use_external=True)
-        self.assertEqual(ck.backends["sandbox"], "checks.code_sandbox_check(profile=wide)")
+        self.assertEqual(ck.backends["sandbox"], "checks.code_sandbox_check(profile=executor)")
+        self.assertEqual(ck.backends["static_check"], "checks.static_check(profile=executor)")
         self.assertTrue(ck.backends["oov"].startswith("builtin per-row"))
         self.assertEqual(self.ext.RUNTIME_NORMALIZE, C.NORMALIZE)
         r = ck.run_python("print(sum(range(1, 11)))")
@@ -727,11 +850,14 @@ class TestExternalChecks(RowAsserts):
     def test_python_row_through_external_sandbox(self):
         ck = C.Checks(vocab=CK.vocab, use_external=True)
         ok = msg("1から10までの合計を表示するPythonコードを書いて。", f"{PY_PLAN}\n{FENCE}python\nprint(sum(range(1, 11)))\n{FENCE}\n出力:\n{FENCE}\n55\n{FENCE}")
-        cls = msg("class", f"{FENCE}python\nclass A:\n    def __init__(self):\n        self.x = 3\nprint(A().x)\n{FENCE}")
-        rows, st = run("coding", [ok, cls], ck=ck)
+        cls = msg("class", f"{FENCE}python\nclass A:\n    def __init__(self):\n        self.x = 3\nprint(A().x)\n{FENCE}\n出力:\n{FENCE}\n3\n{FENCE}")
+        seeded = msg("random", f"{FENCE}python\nimport random\nrandom.seed(1)\nprint(random.randint(1, 3))\n{FENCE}\n出力:\n{FENCE}\n2\n{FENCE}")
+        rows, st = run("coding", [ok, cls, seeded], ck=ck)
         self.check_rows(rows, ck)
-        self.assertEqual([r["reference_final_answer"] for r in rows], ["55", "3"])
-        self.assertEqual(rows[0]["sandbox_backend"], "checks.code_sandbox_check(profile=wide)")
+        # code the model's own executor refuses (a class, seeded random) is not turned into a row with a success=True observation
+        self.assertEqual([r["reference_final_answer"] for r in rows], ["55"])
+        self.assertEqual(dict(st.rejects), {"static:class_def:class definitions are disabled": 1, "static:import:random": 1})
+        self.assertEqual(rows[0]["sandbox_backend"], "checks.code_sandbox_check(profile=executor)")
         self.assertEqual(rows[0]["verification"], "stored_output_equals_sandbox")
 
     def test_vocab_fallback_goes_through_checks(self):
@@ -750,16 +876,18 @@ class TestEndToEnd(RowAsserts):
                 p = R / repo / rel
                 p.parent.mkdir(parents=True, exist_ok=True)
                 return p
-            put("SkelterLabsInc__JaQuAD", "data/train/jaquad_train_0000.json").write_bytes((FIX / "jaquad_train_fixture.json").read_bytes())
+            jq = fixture("jaquad_train_fixture.json")
+            jq["data"].append({"title": "題", "paragraphs": [{"context": JQ_OK["context"], "qas": [{k: JQ_OK[k] for k in ("id", "question", "question_type", "answers")}]}]})
+            put("SkelterLabsInc__JaQuAD", "data/train/jaquad_train_0000.json").write_text(json.dumps(jq, ensure_ascii=False), encoding="utf-8")
             put("SkelterLabsInc__JaQuAD", "data/dev/jaquad_dev_0000.json").write_text('{"data": []}', encoding="utf-8")
-            pq.write_table(pa.Table.from_pylist(fixture("coding_fixture.json")), put("llm-jp__Synthetic-JP-EN-Coding-Dataset", "data/train-00000-of-00001.parquet"))
+            pq.write_table(pa.Table.from_pylist(fixture("coding_fixture.json") + [PY_OK, RUST_OK]), put("llm-jp__Synthetic-JP-EN-Coding-Dataset", "data/train-00000-of-00001.parquet"))
             put("DeL-TaiseiOzaki__Tengentoppa-sft-qwen2.5-32b-reasoning-100k", "completed_sets.jsonl").write_bytes((FIX / "tengentoppa_fixture.jsonl").read_bytes())
             hp_rows = fixture("hotpot_fixture.json")
             pq.write_table(pa.Table.from_pylist(hp_rows), put("hotpotqa__hotpot_qa", "distractor/train-00000-of-00002.parquet"))
             pq.write_table(pa.Table.from_pylist(hp_rows[:1]), put("hotpotqa__hotpot_qa", "distractor/validation-00000-of-00001.parquet"))
             put("Team-ACE__ToolACE", "data.json").write_text(json.dumps(fixture("toolace_fixture.json"), ensure_ascii=False), encoding="utf-8")
             pq.write_table(pa.Table.from_pylist(fixture("wizard_fixture.json")), put("llm-jp__wizardlm8x22b-logical-math-coding-sft-ja", "data/train-00000-of-00002.parquet"))
-            code = C.main(["--dataset", "all", "--raw-dir", raw, "--out-dir", out, "--sample-dump", "5", "--no-external-checks"])
+            code = C.main(["--dataset", "all", "--raw-dir", raw, "--out-dir", out, "--sample-dump", "5"])          # the real sandbox, as on Colab
             self.assertEqual(code, 0)
             summ = json.loads((Path(out) / "convert_summary.json").read_text(encoding="utf-8"))
             self.assertEqual(sorted(summ), sorted(C.DATASETS))
@@ -780,14 +908,28 @@ class TestEndToEnd(RowAsserts):
             self.assertEqual([f["name"] for f in hot["raw_files"]], ["distractor/train-00000-of-00002.parquet"])
             jq = json.loads((Path(out) / "jaquad" / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual([f["name"] for f in jq["raw_files"]], ["data/train/jaquad_train_0000.json"])
+            cd = json.loads((Path(out) / "coding" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(cd["backends"]["sandbox"], "checks.code_sandbox_check(profile=executor)")
+            self.assertEqual(cd["verification"], {"stored_output_equals_sandbox": 1, "unverified_no_execution": 1})
+            for k in ("jaquad", "hotpot", "coding", "wizard"):
+                m = json.loads((Path(out) / k / "manifest.json").read_text(encoding="utf-8"))
+                self.assertIn("split_unit", m)
+                self.assertEqual(m["group_independent_dev_heldout"], k in ("jaquad", "hotpot"))
+            # a sandbox that cannot start stops the run instead of converting with something weaker
+            self.assertEqual(C.main(["--dataset", "coding", "--raw-dir", str(R / "llm-jp__Synthetic-JP-EN-Coding-Dataset"), "--out-dir", out + "_x",
+                                     "--no-external-checks"]), 4)
 
 
 class TestOutputAndCli(RowAsserts):
     def raw_jaquad(self, d):
-        src = FIX / "jaquad_train_fixture.json"
+        # the five real fixture rows (none is a clean single-sentence row any more) + ten clean hand-made articles, so that every split file has a chance
+        jq = fixture("jaquad_train_fixture.json")
+        for i in range(10):
+            jq["data"].append({"title": f"題{i}", "paragraphs": [{"context": JQ_OK["context"], "qas": [
+                {"id": f"tr-ok-{i:02d}-000", "question": JQ_OK["question"], "question_type": "Syntactic variation", "answers": JQ_OK["answers"]}]}]})
         dst = Path(d) / "data" / "train" / "jaquad_train_0000.json"
         dst.parent.mkdir(parents=True)
-        dst.write_bytes(src.read_bytes())
+        dst.write_text(json.dumps(jq, ensure_ascii=False), encoding="utf-8")
         dev = Path(d) / "data" / "dev" / "jaquad_dev_0000.json"
         dev.parent.mkdir(parents=True)
         dev.write_text(json.dumps({"data": [{"title": "DEV", "paragraphs": [{"context": "甲は乙である。", "qas": [
@@ -840,28 +982,80 @@ class TestOutputAndCli(RowAsserts):
     def test_cli(self):
         with tempfile.TemporaryDirectory() as raw, tempfile.TemporaryDirectory() as out:
             self.raw_jaquad(raw)
-            self.assertEqual(C.main(["--dataset", "jaquad", "--raw-dir", raw, "--out-dir", out, "--limit", "4", "--sample-dump", "0", "--no-external-checks"]), 0)
+            quiet = ["--no-sandbox", "--no-external-checks"]
+            self.assertEqual(C.main(["--dataset", "jaquad", "--raw-dir", raw, "--out-dir", out, "--limit", "4", "--sample-dump", "0"] + quiet), 0)
             m = json.loads((Path(out) / "jaquad" / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(m["n_in"], 4)
             self.assertEqual(m["limit"], 4)
-            self.assertEqual(C.main(["--dataset", "jaquad", "--raw-dir", raw, "--out-dir", out, "--limit", "4", "--sample-dump", "0", "--no-external-checks"]), 0)   # identical rerun
-            self.assertEqual(C.main(["--dataset", "jaquad", "--raw-dir", raw, "--out-dir", out, "--limit", "5", "--sample-dump", "0", "--no-external-checks"]), 3)   # differs -> refused
-            self.assertEqual(C.main(["--dataset", "nope", "--raw-dir", raw, "--out-dir", out, "--no-external-checks"]), 2)
-            self.assertEqual(C.main(["--dataset", "wizard", "--raw-dir", raw, "--out-dir", out, "--no-external-checks"]), 2)      # no raw files
+            self.assertEqual(C.main(["--dataset", "jaquad", "--raw-dir", raw, "--out-dir", out, "--limit", "4", "--sample-dump", "0"] + quiet), 0)   # identical rerun
+            self.assertEqual(C.main(["--dataset", "jaquad", "--raw-dir", raw, "--out-dir", out, "--limit", "5", "--sample-dump", "0"] + quiet), 3)   # differs -> refused
+            self.assertEqual(C.main(["--dataset", "nope", "--raw-dir", raw, "--out-dir", out] + quiet), 2)
+            self.assertEqual(C.main(["--dataset", "wizard", "--raw-dir", raw, "--out-dir", out] + quiet), 2)      # no raw files
         with tempfile.TemporaryDirectory() as raw, tempfile.TemporaryDirectory() as out:
             sub = Path(raw) / "SkelterLabsInc__JaQuAD"
             sub.mkdir()
             self.raw_jaquad(sub)
-            self.assertEqual(C.main(["--dataset", "all", "--raw-dir", raw, "--out-dir", out, "--limit", "3", "--sample-dump", "0", "--no-external-checks"]), 2)       # others missing
+            self.assertEqual(C.main(["--dataset", "all", "--raw-dir", raw, "--out-dir", out, "--limit", "3", "--sample-dump", "0", "--no-sandbox", "--no-external-checks"]), 2)   # others missing
             self.assertTrue((Path(out) / "jaquad" / "train.jsonl").exists())
 
     def test_summarize_is_json_and_complete(self):
         rows, st = run("jaquad", [r for _, r in C.read_jaquad([FIX / "jaquad_train_fixture.json"])])
         s = C.summarize(st, CK)
-        for k in ("dataset", "n_in", "n_out", "keep_rate", "rejects", "families", "splits", "family_splits", "balanced", "backends", "adoption", "license"):
+        for k in ("dataset", "n_in", "n_out", "keep_rate", "rejects", "families", "splits", "family_splits", "balanced", "backends", "adoption", "license",
+                  "split_unit", "group_independent_dev_heldout", "supervised_chars", "english", "english_rows_total"):
             self.assertIn(k, s)
         self.assertEqual(s["backends"]["oov"], "builtin")
+        self.assertEqual((s["group_independent_dev_heldout"], s["split_unit"][:5]), (True, "group"))
         json.dumps(s, ensure_ascii=False)
+
+    def test_row_level_datasets_say_their_dev_heldout_are_not_group_independent(self):
+        for key in ("coding", "tengentoppa", "toolace", "wizard"):
+            self.assertIn("NOT group-independent", C.SPLIT_UNIT[key], key)
+            s = C.summarize(C.Stats(key), CK)
+            self.assertFalse(s["group_independent_dev_heldout"], key)
+        for key in ("jaquad", "hotpot"):
+            self.assertNotIn("NOT", C.SPLIT_UNIT[key])
+
+
+class TestShards(RowAsserts):
+    """A dataset converted in shards (start <= index < stop) and merged equals the same dataset converted in one run."""
+
+    def test_shards_merge_to_the_single_run(self):
+        recs = [msg(f"{i}を表示するPythonコードを書いて。", f"{PY_PLAN}\n{FENCE}python\nprint({i} * 3)\n{FENCE}\n出力:\n{FENCE}\n{i * 3}\n{FENCE}") for i in range(1, 9)]
+        recs.insert(3, msg("bad", "ただの説明です。"))                                             # one reject, inside a shard
+        recs.insert(6, RUST_OK)
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            raw = td / "raw" / "data"
+            raw.mkdir(parents=True)
+            pq.write_table(pa.Table.from_pylist(recs), raw / "train-00000-of-00001.parquet")
+            whole = C.run_dataset("coding", td / "raw", td / "whole", CKX, sample_dump=4)
+            cuts = [(0, 3), (3, 7), (7, None)]
+            for i, (a, b) in enumerate(cuts):
+                s = C.run_dataset("coding", td / "raw", td / f"shard{i}", CKX, limit=b, start=a, sample_dump=0)
+                self.assertEqual(s["range"], {"start": a, "stop": b})
+                self.assertEqual(s["n_in"], (b if b else len(recs)) - a)
+            merged = C.merge_shards("coding", [td / "shard2", td / "shard0", td / "shard1"], td / "merged", sample_dump=4)       # any order
+            self.assertFalse(merged["refused_overwrite"])
+            for k in ("n_in", "n_out", "rejects", "families", "splits", "family_splits", "extra", "balanced", "supervised_chars", "english"):
+                self.assertEqual(merged[k], whole[k], k)
+            for name in ("train.jsonl", "dev.jsonl", "heldout.jsonl", "sample_dump.txt"):
+                self.assertEqual((td / "merged" / "coding" / name).read_bytes(), (td / "whole" / "coding" / name).read_bytes(), name)
+            m = json.loads((td / "merged" / "coding" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(m["range"]["shards"], [[0, 3], [3, 7], [7, None]])
+            self.assertEqual(m["files"], {n: {k: v for k, v in e.items() if k in ("rows", "bytes", "sha256")} for n, e in whole["files"].items()})
+            # a gap, an overlap or a missing tail is refused
+            with self.assertRaises(ValueError):
+                C.merge_shards("coding", [td / "shard0", td / "shard2"], td / "bad1")
+            with self.assertRaises(ValueError):
+                C.merge_shards("coding", [td / "shard0", td / "shard1"], td / "bad2")
+            with self.assertRaises(ValueError):
+                C.merge_shards("coding", [td / "shard1", td / "shard2"], td / "bad3")
+            # merging again is idempotent, and never overwrites
+            again = C.merge_shards("coding", [td / "shard0", td / "shard1", td / "shard2"], td / "merged", sample_dump=4)
+            self.assertFalse(again["refused_overwrite"])
+            self.assertTrue(all(v["status"] == "identical_existing" for v in again["files"].values()))
+
 
 
 if __name__ == "__main__":

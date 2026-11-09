@@ -5,7 +5,9 @@ Runs on a Google Colab CPU runtime (12 GB RAM) over files that were downloaded f
 streaming: a 1 GB JSONL, a 330 MB parquet and a 37 MB JSON array are read record by record.  Nothing here needs a secret.
 
     python convert.py --dataset jaquad|coding|tengentoppa|hotpot|toolace|wizard|all --raw-dir DIR --out-dir DIR [--limit N]
-                      [--vocab base_metadata.json] [--max-chars 1900] [--sample-dump 100] [--no-sandbox]
+                      [--start S] [--vocab base_metadata.json] [--max-chars 1900] [--sample-dump 100] [--no-sandbox]
+                      [--allow-unverified-python] [--require-os-containment]
+    (--start S --limit E converts the records with index S <= i < E: a SHARD of a long dataset; merge_shards() joins shards)
 
 Row contract = the existing families (see families/jglue_human/build_jglue_rows.py, families/python_a/common.py):
     id, source, license, split, training_category, family, structural_template, difficulty, _v46_group,
@@ -20,7 +22,11 @@ Rules every converter obeys (all re-checked by validate_row() on every emitted r
     symbol normaliser (otherwise the training runtime would discard the mask)
   * a row with more than 1 % characters outside the model vocabulary is dropped
   * validation / dev / test splits of the sources are never read (file finder + id guards)
-  * splits are by GROUP (hash of the group key; datasets without natural groups hash the row id): heldout 3 %, dev 1 %, train 96 %
+  * splits are by GROUP (hash of the group key): JaQuAD by article title, HotpotQA by connected component of supporting-paragraph
+    titles; the four synthetic datasets have NO natural group, so they split by ROW (SPLIT_UNIT says so in every manifest: their
+    dev / heldout files are not group-independent from train).  heldout 3 %, dev 1 %, train 96 %
+  * python rows are executed by checks.code_sandbox_check(profile="executor") only (no builtin fallback) and kept only when the answer's
+    own stored output equals the sandbox output
 
 Nothing is fetched here; --raw-dir holds files that were downloaded elsewhere.  Output files are only ever created, never
 overwritten: if a target exists with a different sha256 the new content is kept under a .new-<sha8> name and the run fails (exit 3).
@@ -35,9 +41,7 @@ import itertools
 import json
 import os
 import re
-import subprocess
 import sys
-import tempfile
 import textwrap
 import unicodedata
 import zlib
@@ -56,6 +60,15 @@ INSTR = "条件と根拠を順に考えてください。"
 FENCE = chr(96) * 3
 SPLIT_PCT = {"heldout": 3, "dev": 1}      # share of GROUPS; the rest (96 %) is train
 
+EN_ROW_MAX = 700                  # an English row (instruction or answer prose in English) is kept only up to this many characters
+# every manifest says what a split unit is, so that nobody reads a row-level dev / heldout file as group-independent
+_ROW_UNIT = ("row only: NOT group-independent - siblings generated from the same seed or evolution chain can sit in train and in "
+             "dev / heldout (near duplicates are removed at about Jaccard 0.5 across splits, paraphrase siblings are not)")
+SPLIT_UNIT = {"jaquad": "group = article title: every question of one article is in one split",
+              "hotpot": "group = connected component of supporting-paragraph titles over ALL train records: questions that share a "
+                        "supporting paragraph are in one split",
+              "coding": _ROW_UNIT, "tengentoppa": _ROW_UNIT, "toolace": _ROW_UNIT, "wizard": _ROW_UNIT}
+PY_FENCE_RE = re.compile(r"(?im)^[ \t]*(?:`{3,}|~{3,})[ \t]*(?:python|py|python3|py3|ipython)\b")
 REQUIRED_FIELDS = ("id", "source", "license", "split", "training_category", "family", "structural_template", "difficulty",
                    "_v46_group", "prompt", "target", "full_text", "loss_mask_spans", "tool_steps",
                    "reference_final_answer", "answer_type", "attribution", "adoption", "adoption_note")
@@ -160,101 +173,12 @@ def load_vocab(path=None, drive_root=None):
     raise FileNotFoundError("model vocabulary not found: pass --vocab base_metadata.json (src/v44fix/base_metadata.json) or --drive-root")
 
 
-# ====================================================================================================== code sandbox (builtin)
-ALLOWED_MODULES = frozenset("""math cmath itertools functools collections re string json heapq bisect statistics fractions decimal
-typing dataclasses enum copy operator textwrap abc numbers array queue contextlib unicodedata difflib pprint random datetime
-calendar hashlib base64 binascii struct zlib csv io""".split())
-FORBIDDEN_CALLS = frozenset("open exec eval compile input __import__ breakpoint exit quit help".split())
-FORBIDDEN_ATTRS = frozenset("""open system popen __subclasses__ __globals__ __builtins__ __code__ __bases__ __mro__ __import__
-__loader__ __closure__ __getattribute__ exec eval""".split())
-MAX_CODE_CHARS = 6000
-
-
-def static_code_check(code: str):
-    """(ok, reason).  Allow-list: stdlib modules that cannot touch files / processes / network, no input(), no eval/exec/open,
-    no dunder escapes, `random` only with a seed, `datetime` only without now()/today()."""
-    if len(code) > MAX_CODE_CHARS:
-        return False, "code_too_long"
-    try:
-        tree = ast.parse(code)
-    except (SyntaxError, ValueError, RecursionError, MemoryError):
-        return False, "syntax_error"
-    uses_random = False
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for a in node.names:
-                root = a.name.split(".")[0]
-                if root not in ALLOWED_MODULES:
-                    return False, "import_not_allowed:" + root
-                uses_random |= root == "random"
-        elif isinstance(node, ast.ImportFrom):
-            root = (node.module or "").split(".")[0]
-            if node.level or root not in ALLOWED_MODULES:
-                return False, "import_not_allowed:" + (root or "relative")
-            uses_random |= root == "random"
-        elif isinstance(node, ast.Call):
-            f = node.func
-            if isinstance(f, ast.Name) and f.id in FORBIDDEN_CALLS:
-                return False, "uses_input" if f.id == "input" else ("uses_file_io" if f.id == "open" else "forbidden_call:" + f.id)
-        elif isinstance(node, ast.Attribute):
-            if node.attr in FORBIDDEN_ATTRS:
-                return False, "forbidden_attr:" + node.attr
-            if node.attr in ("now", "today", "utcnow", "fromtimestamp"):
-                return False, "nondeterministic:datetime"
-        elif isinstance(node, ast.Name) and node.id in ("__builtins__", "__import__"):
-            return False, "forbidden_name:" + node.id
-    if uses_random and "seed(" not in code:
-        return False, "nondeterministic:random"
-    return True, ""
-
-
-def run_python_sandbox(code: str, timeout: float = 5.0, max_out: int = 20000) -> dict:
-    """Run `code` as a script in a throw-away directory, stdin closed, minimal environment, fixed hash seed, wall/cpu/memory/file
-    size limits (POSIX).  Returns {ok, stdout, stderr, reason}.  The caller has already applied static_code_check()."""
-    if not code.endswith("\n"):
-        code += "\n"
-    with tempfile.TemporaryDirectory(prefix="v49sbx_") as d:
-        script, out_p, err_p = (os.path.join(d, n) for n in ("main.py", "out.bin", "err.bin"))
-        with open(script, "w", encoding="utf-8", newline="\n") as f:
-            f.write(code)
-        env = {"PYTHONHASHSEED": "0", "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1", "PYTHONDONTWRITEBYTECODE": "1",
-               "LC_ALL": "C.UTF-8"}
-        for k in ("PATH", "SYSTEMROOT", "SystemRoot", "TEMP", "TMP"):
-            if k in os.environ:
-                env[k] = os.environ[k]
-        kw = {}
-        if os.name == "posix":
-            def _limits():                                     # pragma: no cover - runs in the child
-                import resource
-                cpu = int(timeout) + 1
-                resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
-                resource.setrlimit(resource.RLIMIT_AS, (1 << 30, 1 << 30))
-                resource.setrlimit(resource.RLIMIT_FSIZE, (1 << 21, 1 << 21))
-            kw["preexec_fn"] = _limits
-        rc, timed_out = None, False
-        with open(out_p, "wb") as fo, open(err_p, "wb") as fe:
-            try:
-                rc = subprocess.run([sys.executable, "-S", "-B", script], stdin=subprocess.DEVNULL, stdout=fo, stderr=fe,
-                                    cwd=d, env=env, timeout=timeout, **kw).returncode
-            except subprocess.TimeoutExpired:
-                timed_out = True
-        with open(out_p, "rb") as fo:
-            raw = fo.read(max_out + 1)
-        with open(err_p, "rb") as fe:
-            err = fe.read(4000).decode("utf-8", "replace")
-    stdout = raw[:max_out].decode("utf-8", "replace").replace("\r\n", "\n")
-    if timed_out:
-        return {"ok": False, "stdout": stdout, "stderr": err, "reason": "timeout"}
-    if len(raw) > max_out:
-        return {"ok": False, "stdout": stdout, "stderr": err, "reason": "output_too_large"}
-    if rc != 0:
-        last = err.strip().splitlines()[-1] if err.strip() else ""
-        m = re.match(r"([A-Za-z_][\w.]*)", last)
-        return {"ok": False, "stdout": stdout, "stderr": err, "reason": "runtime_error:" + (m.group(1) if m else f"rc{rc}")}
-    return {"ok": True, "stdout": stdout, "stderr": err, "reason": ""}
-
-
-# ====================================================================================================== checks (builtin + optional checks.py)
+# ====================================================================================================== checks (checks.py is REQUIRED to run code)
+# There is no builtin sandbox any more.  An earlier version fell back to a plain-script runner (full builtins, no audit hook) whenever
+# checks.code_sandbox_check failed its start-up test; review showed that fallback could write files and that nothing noticed which
+# backend was used.  Now python rows are executed ONLY by checks.code_sandbox_check(profile="executor") - the rules of the model's own
+# executor - and Checks() raises SandboxUnavailable when that sandbox is missing or fails its self-test.  --no-sandbox (run_code=False)
+# converts everything except the python rows, which are then rejected.
 def _load_external_checks():
     try:
         if str(HERE) not in sys.path:
@@ -265,26 +189,24 @@ def _load_external_checks():
         return None
 
 
-def _coerce_sandbox(res) -> dict:
-    if isinstance(res, (tuple, list)) and len(res) >= 2:
-        return {"ok": bool(res[0]), "stdout": str(res[1]), "reason": str(res[2]) if len(res) > 2 else ""}
-    get = res.get if isinstance(res, dict) else (lambda k, d=None: getattr(res, k, d))
-    ok = next((get(k) for k in ("ok", "passed", "success") if get(k) is not None), None)
-    out = next((get(k) for k in ("stdout", "output", "out") if get(k) is not None), None)
-    if ok is None or out is None:
-        raise ValueError("unrecognised checks.code_sandbox_check result")
-    reason = next((get(k) for k in ("reason", "error", "why") if get(k)), "")
-    return {"ok": bool(ok), "stdout": str(out), "reason": str(reason)}
+class SandboxUnavailable(RuntimeError):
+    """python rows cannot be verified here: the executor-profile sandbox of checks.py is missing or failed its self-test.
+    There is no weaker fallback."""
 
 
 class Checks:
-    """Vocabulary / OOV / sandbox services.  `use_external=True` runs python through checks.code_sandbox_check(profile="wide") when a
-    sibling checks.py provides it AND it passes a start-up self-test (otherwise the builtin sandbox is used).  OOV is always measured per
-    row here with the runtime normaliser (checks.oov_stats is a corpus-level report over rows: run it over the output files).
-    The backend actually used is recorded in .backends (and in every summary)."""
+    """Vocabulary / OOV / sandbox services.  Python is run through checks.code_sandbox_check(profile="executor") after
+    checks.sandbox_selftest(light=True) passed (otherwise SandboxUnavailable is raised when run_code=True).  OOV is always measured
+    per row here with the runtime normaliser (checks.oov_stats is a corpus-level report over rows: run it over the output files).
+    The backend actually used is recorded in .backends (and in every summary): backends["sandbox"] is
+    'checks.code_sandbox_check(profile=executor)' or 'disabled'; backends["sandbox_run_as"] is the OS account of the child ('nobody' on
+    Colab).  python_require_stored_output (default True) keeps a python row only when the answer's OWN stored output block equals the
+    sandbox stdout - the owner's rule 'keep only rows whose output equals the reference answer'; rows that run but have nothing to
+    compare with are counted (python_sandbox_ok_no_stored_output) and dropped, never kept as 'verified'."""
 
     def __init__(self, vocab=None, vocab_path=None, max_chars=DEFAULT_CAP, run_code=True, sandbox_timeout=5.0, use_external=True,
-                 python_require_stored_output=False, tengentoppa_steps=True, drive_root=None):
+                 python_require_stored_output=True, tengentoppa_steps=True, drive_root=None, require_os_containment=False,
+                 en_row_max=EN_ROW_MAX):
         if vocab is None:
             vocab, vocab_path = load_vocab(vocab_path, drive_root)
         self.vocab = frozenset(vocab)
@@ -292,28 +214,29 @@ class Checks:
         self.max_chars = min(int(max_chars), MAX_LEN - 1)
         self.run_code = run_code
         self.sandbox_timeout = sandbox_timeout
-        self.python_require_stored_output = python_require_stored_output   # keep python rows only if the answer's own expected output matches
+        self.python_require_stored_output = python_require_stored_output
         self.tengentoppa_steps = tengentoppa_steps                        # include the 'reasoning' steps when the row fits
-        self.backends = {"oov": "builtin", "sandbox": "builtin" if run_code else "disabled", "static_check": "builtin"}
-        self._ext_sandbox = None
-        if use_external:
-            ext = _load_external_checks()
-            if ext is not None and run_code and callable(getattr(ext, "code_sandbox_check", None)):
-                # checks.code_sandbox_check(code, timeout, profile=...) -> (ok, stdout, error); profile "wide" = stdlib allow-list WITH classes
-                # (the default "executor" profile is the model's own math worker: no classes, no attribute assignment)
-                def _ext(code, _fn=ext.code_sandbox_check, _t=sandbox_timeout):
-                    return _fn(code, _t, profile="wide")
-                try:
-                    r = _coerce_sandbox(_ext("print(1 + 1)\n"))
-                    if r["ok"] and r["stdout"].strip() == "2":
-                        self._ext_sandbox = _ext
-                        self.backends["sandbox"] = "checks.code_sandbox_check(profile=wide)"
-                    else:
-                        self.backends["sandbox"] = "builtin (checks.code_sandbox_check failed self-test)"
-                except Exception as e:                           # noqa: BLE001
-                    self.backends["sandbox"] = f"builtin (checks.code_sandbox_check unusable: {type(e).__name__})"
-            if ext is not None and getattr(ext, "RUNTIME_NORMALIZE", None) == NORMALIZE:
-                self.backends["oov"] = "builtin per-row (same runtime normaliser as checks.RUNTIME_NORMALIZE; checks.oov_stats is corpus level)"
+        self.hotpot_roots = None                                          # title -> union-find root (set by run_dataset for hotpot)
+        self.en_row_max = int(en_row_max)
+        self.backends = {"oov": "builtin", "sandbox": "disabled", "sandbox_run_as": None, "static_check": "unavailable"}
+        self._ext = _load_external_checks() if use_external else None
+        ext = self._ext
+        if ext is not None and callable(getattr(ext, "static_check", None)):
+            self.backends["static_check"] = "checks.static_check(profile=executor)"
+        if run_code:
+            need = ("code_sandbox_check", "static_check", "sandbox_selftest", "SANDBOX_BACKEND")
+            if ext is None or not all(hasattr(ext, n) for n in need):
+                raise SandboxUnavailable("running python rows needs the sibling checks.py sandbox (use_external=True and checks.py next to "
+                                         "convert.py); there is no builtin fallback.  Pass run_code=False / --no-sandbox to convert without "
+                                         "executing code")
+            st = ext.sandbox_selftest(light=True, require_os_containment=require_os_containment, timeout=max(15.0, 3 * sandbox_timeout))
+            if not st["ok"]:
+                raise SandboxUnavailable("the sandbox self-test failed, so no code is run: " +
+                                         "; ".join(f"{c['name']}: {c['detail']}" for c in st["checks"] if not c["ok"]))
+            self.backends["sandbox"] = ext.SANDBOX_BACKEND
+            self.backends["sandbox_run_as"] = st["run_as"]
+        if ext is not None and getattr(ext, "RUNTIME_NORMALIZE", None) == NORMALIZE:
+            self.backends["oov"] = "builtin per-row (same runtime normaliser as checks.RUNTIME_NORMALIZE; checks.oov_stats is corpus level)"
 
     # --- vocabulary
     def oov_list(self, text: str):
@@ -335,15 +258,21 @@ class Checks:
         return text.translate(NORMALIZE) != text
 
     # --- code
+    def static_check(self, code: str):
+        """(ok, reason): the executor profile's static rules (checks.static_check)."""
+        if self._ext is None:
+            return False, "checks_unavailable"
+        why = self._ext.static_check(code, profile="executor")
+        return (not why), why
+
     def run_python(self, code: str) -> dict:
         if not self.run_code:
             return {"ok": False, "stdout": "", "reason": "sandbox_disabled"}
-        if self._ext_sandbox is not None:
-            try:
-                return _coerce_sandbox(self._ext_sandbox(code))
-            except Exception as e:                               # noqa: BLE001
-                return {"ok": False, "stdout": "", "reason": "checks_error:" + type(e).__name__}
-        return run_python_sandbox(code, timeout=self.sandbox_timeout)
+        try:
+            ok, out, err = self._ext.code_sandbox_check(code, self.sandbox_timeout, profile="executor")
+        except Exception as e:                                   # noqa: BLE001
+            return {"ok": False, "stdout": "", "reason": "checks_error:" + type(e).__name__}
+        return {"ok": bool(ok), "stdout": str(out), "reason": str(err)}
 
 
 # ====================================================================================================== rows, stats, validation
@@ -395,6 +324,12 @@ class Stats:
         for field, prefix in self.ACCEPT_FIELDS:                  # counters over EMITTED rows only
             if field in row:
                 self.extra[prefix + str(row[field])] += 1
+        fam = row["family"]
+        sup = len(row["target"]) - sum(b - a for a, b in row["loss_mask_spans"])           # characters the loss is computed on
+        self.extra["supervised_chars_" + fam] += sup
+        if row.get("user_lang") == "en" or row.get("answer_lang") == "en" or str(row.get("language", "")).startswith("en"):
+            self.extra["english_rows_" + fam] += 1
+            self.extra["english_supervised_chars_" + fam] += sup
 
 
 def build_row(*, id, family, template, group, category, prompt, target, ref, answer_type, difficulty, spec: Spec, split,
@@ -561,8 +496,9 @@ def _find(raw_dir, patterns, root_only=()):
     return out
 
 
-def _limited(it: Iterable, limit):
-    return itertools.islice(enumerate(it), limit) if limit is not None else enumerate(it)
+def _limited(it: Iterable, limit, start: int = 0):
+    """(index, record) for start <= index < limit (limit None = to the end); indices are global (they keep counting over files)."""
+    return itertools.islice(enumerate(it), start or 0, limit)
 
 
 def find_jaquad(d):
@@ -592,7 +528,7 @@ def find_wizard(d):
     return _find(d, ["**/train-*.parquet"])
 
 
-def read_jaquad(files, limit=None):
+def read_jaquad(files, limit=None, start=0):
     n = 0
     for fp in files:
         d = json.loads(Path(fp).read_text(encoding="utf-8"))
@@ -603,8 +539,9 @@ def read_jaquad(files, limit=None):
                 for qa in para.get("qas", []):
                     if limit is not None and n >= limit:
                         return
-                    yield n, {"id": qa.get("id"), "title": title, "context": ctx, "question": qa.get("question", ""),
-                              "question_type": qa.get("question_type", ""), "answers": qa.get("answers", [])}
+                    if n >= start:
+                        yield n, {"id": qa.get("id"), "title": title, "context": ctx, "question": qa.get("question", ""),
+                                  "question_type": qa.get("question_type", ""), "answers": qa.get("answers", [])}
                     n += 1
 
 
@@ -613,21 +550,45 @@ def _chain(files, reader):
         yield from reader(fp)
 
 
-def read_messages_parquet(files, limit=None):
-    return _limited(_chain(files, lambda p: iter_parquet(p, columns=["messages"])), limit)
+def read_messages_parquet(files, limit=None, start=0):
+    return _limited(_chain(files, lambda p: iter_parquet(p, columns=["messages"])), limit, start)
 
 
-def read_tengentoppa(files, limit=None):
-    return _limited(_chain(files, iter_jsonl), limit)
+def read_tengentoppa(files, limit=None, start=0):
+    return _limited(_chain(files, iter_jsonl), limit, start)
 
 
-def read_hotpot(files, limit=None):
+def read_hotpot(files, limit=None, start=0):
     cols = ["id", "question", "answer", "type", "level", "supporting_facts", "context"]
-    return _limited(_chain(files, lambda p: iter_parquet(p, columns=cols)), limit)
+    return _limited(_chain(files, lambda p: iter_parquet(p, columns=cols)), limit, start)
 
 
-def read_toolace(files, limit=None):
-    return _limited(_chain(files, iter_json_array), limit)
+def read_toolace(files, limit=None, start=0):
+    return _limited(_chain(files, iter_json_array), limit, start)
+
+
+def build_hotpot_roots(files) -> dict:
+    """{supporting-paragraph title: root title} where two titles are joined whenever one question uses both: the connected components
+    over ALL train records (one cheap pass over the supporting_facts column).  Two questions that share a supporting paragraph then get
+    the same group key and so the same split; the root is the smallest title of its component, so the key does not depend on file order."""
+    parent: dict = {}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    for fp in files:
+        for rec in iter_parquet(fp, columns=["supporting_facts"]):
+            sf = rec.get("supporting_facts") or {}
+            titles = sorted({str(t) for t in (sf.get("title") or [])})
+            for t in titles:
+                parent.setdefault(t, t)
+            for t in titles[1:]:
+                a, b = find(titles[0]), find(t)
+                if a != b:
+                    parent[max(a, b)] = min(a, b)
+    return {t: find(t) for t in parent}
 
 
 # ====================================================================================================== (a) JaQuAD
@@ -645,6 +606,29 @@ def sentence_spans(body: str):
     if s < len(body):
         spans.append((s, len(body)))
     return [(a, b) for a, b in spans if body[a:b].strip()]
+
+
+_INTERROGATIVE = re.compile(r"(?:ですか|でしょうか|ますか|は何|を何|が何|とは|何年|何人|何番目|何回|いつ|どこ|だれ|誰|どの|どれ|どのように|なぜ|何)")
+_CONTENT_CHAR = re.compile(r"[\u4e00-\u9fff\u30a0-\u30ffA-Za-z0-9]")
+
+
+def _cmp_norm(s: str) -> str:
+    return re.sub(r"\s+", "", unicodedata.normalize("NFKC", s)).casefold()
+
+
+def shares_content(question: str, quote: str, n: int = 3) -> bool:
+    """True when the question and the quote share a character n-gram (default 3) that carries content (a kanji, katakana, latin letter
+    or digit), after the interrogative words (何 / どこ / ですか ...) are cut out of the question.  A quote that shares nothing with the
+    question does not support it - the JaQuAD card's own 'Multiple sentence reasoning' example (the question names ビワタナゴ, the
+    evidence sentence never does) is the case this catches."""
+    q = _INTERROGATIVE.sub("\n", _cmp_norm(question).replace("?", "\n").replace("？", "\n"))
+    t = _cmp_norm(quote)
+    for frag in q.split("\n"):
+        for i in range(len(frag) - n + 1):
+            g = frag[i:i + n]
+            if g in t and _CONTENT_CHAR.search(g):
+                return True
+    return False
 
 
 def _answers_list(a):
@@ -694,6 +678,14 @@ def _jaquad_one(idx, rec, st: Stats, ck: Checks, spec: Spec):
     quote = body[hit[0][0]:hit[0][1]].strip()
     if ans not in quote or len(quote) < 4 or "\n" in quote:
         raise Reject("quote_check")
+    qtype = str(rec.get("question_type") or "")
+    st.extra["question_type_seen_" + (qtype[:40] or "(none)")] += 1                   # distribution for the report
+    if re.search(r"(?i)multi", qtype):
+        raise Reject("question_type_multiple_sentence")           # the evidence is not (only) the one sentence that holds the span
+    if re.search(r"(?i)ambiguous", qtype):
+        raise Reject("question_type_ambiguous")                   # the annotators themselves marked the question as not clearly answerable
+    if not shares_content(q, quote):
+        raise Reject("quote_shares_no_content_with_question")
     if ck.oov_count(quote + ans):
         raise Reject("oov_in_quote_or_answer")
     head = pick(PASSAGE_HEAD, "jaq-head", qid)
@@ -825,6 +817,23 @@ def pick_plan(asst: str, first_fence_start: int, ck: Checks) -> str:
     return PLAN_FALLBACK
 
 
+def strip_fences(text: str, blocks) -> str:
+    """The prose of an answer: `text` without its fenced code blocks (language detection must not be fooled by code)."""
+    out, cur = [], 0
+    for b in blocks or []:
+        out.append(text[cur:b["start"]])
+        cur = b["end"]
+    out.append(text[cur:])
+    return "\n".join(out)
+
+
+def english_gate(ck: Checks, ulang: str, alang: str, n_chars: int):
+    """Rejects an English row longer than ck.en_row_max characters: long English rows are not used as they are (owner's plan 5-3);
+    short English rows stay as a skeleton."""
+    if (ulang == "en" or alang == "en") and n_chars > ck.en_row_max:
+        raise Reject("english_row_too_long")
+
+
 def _coding_one(idx, rec, st: Stats, ck: Checks, spec: Spec):
     msgs = rec.get("messages")
     if not isinstance(msgs, list) or not msgs:
@@ -848,16 +857,19 @@ def _coding_one(idx, rec, st: Stats, ck: Checks, spec: Spec):
     if not blocks:
         raise Reject("no_code_block")
     ulang = detect_lang(user)
+    alang = detect_lang(strip_fences(asst, blocks))               # language of the PROSE: code letters would make everything 'en'
     py = [b for b in blocks if b["lang"] == "python"]
     if py:
-        return _coding_python_row(idx, user, asst, blocks, py, ulang, st, ck, spec)
-    return _coding_text_row(idx, user, asst, blocks, ulang, st, ck, spec)
+        return _coding_python_row(idx, user, asst, blocks, py, ulang, alang, st, ck, spec)
+    return _coding_text_row(idx, user, asst, blocks, ulang, alang, st, ck, spec)
 
 
-def _coding_python_row(idx, user, asst, blocks, py, ulang, st, ck, spec):
+def _coding_python_row(idx, user, asst, blocks, py, ulang, alang, st, ck, spec):
+    if not ck.run_code:
+        raise Reject("sandbox_failed:sandbox_disabled")
     chosen, first_reason = None, None
     for b in py:
-        ok, why = static_code_check(b["code"].rstrip())
+        ok, why = ck.static_check(b["code"].rstrip())            # the model's own executor rules (checks.static_check, profile executor)
         if not ok:
             first_reason = first_reason or why
             continue
@@ -893,8 +905,10 @@ def _coding_python_row(idx, user, asst, blocks, py, ulang, st, ck, spec):
     if stored and not any(_same_output(s, stdout) for s in stored):
         raise Reject("stored_output_mismatch")
     verification = "stored_output_equals_sandbox" if stored else "sandbox_only_no_stored_output"
-    if not stored and ck.python_require_stored_output:
-        raise Reject("no_stored_output_to_corroborate")
+    if not stored:
+        st.extra["python_sandbox_ok_no_stored_output"] += 1       # ran, but nothing independent to compare with: counted for the report
+        if ck.python_require_stored_output:
+            raise Reject("no_stored_output_to_corroborate")
     if prose_number_contradiction(_prose_after(asst, blocks, chosen), stdout, code, user):
         raise Reject("prose_number_contradicts_output")
     plan = pick_plan(asst, blocks[0]["start"], ck)
@@ -904,17 +918,19 @@ def _coding_python_row(idx, user, asst, blocks, py, ulang, st, ck, spec):
     tail = f"確認: 出力の最後の行を答えとする。\n答え: {ans}。"
     target = head + obs + tail
     a = len(prompt) + len(head)
+    english_gate(ck, ulang, alang, len(prompt) + len(target))
     gk = f"coding:{idx}"
     return build_row(id=f"v49acq_coding_{idx:07d}", family="coding_pytool", template="acq_coding_pytool", group="v49_coding_pytool",
                      category="python", prompt=prompt, target=target, ref=ans, answer_type="output_last_line", difficulty=3,
                      spec=spec, split=split_of(gk), spans=[(a, a + len(obs))],
                      steps=[{"index": 0, "code": code, "stdout": stdout, "observation": obs, "success": True}],
                      python_code=code, expected_stdout=stdout, plan_line=plan, verification=verification,
-                     sandbox_backend=ck.backends["sandbox"], user_lang=ulang, group_key=gk,
-                     quality_flag="llm-generated instruction+code; output replaced by sandbox stdout")
+                     sandbox_backend=ck.backends["sandbox"], sandbox_run_as=ck.backends["sandbox_run_as"], user_lang=ulang,
+                     answer_lang=alang, group_key=gk,
+                     quality_flag="llm-generated instruction+code; output replaced by sandbox stdout, equal to the answer's stored output")
 
 
-def _coding_text_row(idx, user, asst, blocks, ulang, st, ck, spec):
+def _coding_text_row(idx, user, asst, blocks, ulang, alang, st, ck, spec):
     if any(not b["lang"] for b in blocks):
         raise Reject("untagged_code_fence")
     code_blocks = [b for b in blocks if b["lang"] in CODE_LANGS]
@@ -924,8 +940,8 @@ def _coding_text_row(idx, user, asst, blocks, ulang, st, ck, spec):
     target = "\n" + asst
     if len(prompt) + len(target) > ck.max_chars:
         raise Reject("row_too_long")
+    english_gate(ck, ulang, alang, len(prompt) + len(target))
     lang = code_blocks[0]["lang"]
-    alang = detect_lang(asst)
     gk = f"coding:{idx}"
     return build_row(id=f"v49acq_coding_{idx:07d}", family="code_text", template="acq_coding_codetext", group="v49_coding_codetext",
                      category="code", prompt=prompt, target=target, ref="", answer_type="free_code_text", difficulty=3, spec=spec,
@@ -984,6 +1000,8 @@ def _tengentoppa_one(idx, rec, st: Stats, ck: Checks, spec: Spec):
     reasoning = clean_text(rec.get("reasoning") or "").strip()
     if not instr or not refined:
         raise Reject("empty_field")
+    if PY_FENCE_RE.search(refined):
+        raise Reject("python_block_not_executed")                 # a python block with a stated output cannot be re-run here: dropped
     if REFUSAL_RE.match(refined[:40]) or REFUSAL_ANY.search(refined[:120]):
         raise Reject("refusal_opening")
     if BOILER_RE.match(refined[:40]):
@@ -1000,14 +1018,15 @@ def _tengentoppa_one(idx, rec, st: Stats, ck: Checks, spec: Spec):
     family, tmpl = "tengentoppa_answer", "acq_tengentoppa_answer"
     if len(prompt) + len(target) > ck.max_chars:
         raise Reject("row_too_long")
-    if ck.tengentoppa_steps and reasoning and reads_as_steps(reasoning) and latin_ratio(reasoning) <= 0.30 and not looks_repetitive(reasoning):
+    if (ck.tengentoppa_steps and reasoning and reads_as_steps(reasoning) and latin_ratio(reasoning) <= 0.30 and not looks_repetitive(reasoning)
+            and not PY_FENCE_RE.search(reasoning)):
         t2 = f"\n手順: {reasoning}\n答え: {refined}"
         if len(prompt) + len(t2) <= ck.max_chars:
             target, family, tmpl = t2, "tengentoppa_steps", "acq_tengentoppa_steps"
     gk = f"tengentoppa:{idx}"
     return build_row(id=f"v49acq_tengentoppa_{idx:07d}", family=family, template=tmpl, group="v49_tengentoppa", category="free_text",
                      prompt=prompt, target=target, ref=refined, answer_type="free_text", difficulty=2, spec=spec,
-                     split=split_of(gk), group_key=gk, answer_format=fmt, has_python_block=FENCE + "python" in target,
+                     split=split_of(gk), group_key=gk, answer_format=fmt, has_python_block=False,
                      quality_flag=TENGEN_FLAG)
 
 
@@ -1085,7 +1104,8 @@ def _hotpot_one(idx, rec, st: Stats, ck: Checks, spec: Spec):
         raise Reject("answer_not_in_evidence")
     if ck.oov_count(" ".join(quotes) + ans + " ".join(t for _, t, _ in qbp)):
         raise Reject("oov_in_quote_or_answer")
-    gk = "hotpot:" + min(supp)
+    first = min(supp)
+    gk = "hotpot:" + (ck.hotpot_roots or {}).get(first, first)    # union-find root over shared supporting paragraphs (run_dataset)
     diff = {"easy": 2, "medium": 3, "hard": 4}.get(str(rec.get("level")), 3)
     return build_row(id=f"v49acq_hotpot_{rid}", family="hotpot_en_short", template="acq_hotpot_en_short", group="v49_hotpot_en_short",
                      category="evidence", prompt=prompt, target=target, ref=ans, answer_type="yes_no_en" if yn else "span_en",
@@ -1302,6 +1322,7 @@ def _wizard_one(idx, rec, st: Stats, ck: Checks, spec: Spec):
     if not user or not asst:
         raise Reject("empty_message")
     stmts = check_arithmetic(asst)                               # statistics over ALL parseable rows, before the length filter
+    has_py = bool(PY_FENCE_RE.search(asst))
     prompt = f"問題: {user}\n{INSTR}"
     target = f"\n答え: {asst}"
     fits = len(prompt) + len(target) <= ck.max_chars
@@ -1314,6 +1335,8 @@ def _wizard_one(idx, rec, st: Stats, ck: Checks, spec: Spec):
         if fits:
             st.extra["fit_arith_rows_checked"] += 1
             st.extra["fit_arith_rows_wrong"] += wrong > 0
+    if has_py:
+        raise Reject("python_block_not_executed")                 # a python block with a stated output cannot be re-run here: dropped
     if not fits:
         raise Reject("row_too_long")
     if stmts and any(not ok for _, ok in stmts):
@@ -1325,7 +1348,7 @@ def _wizard_one(idx, rec, st: Stats, ck: Checks, spec: Spec):
     nums = _numbers(unicodedata.normalize("NFKC", asst))
     family = "wizard_math" if stmts else "wizard_text"
     gk = f"wizard:{idx}"
-    extra = {"arith_statements_checked": len(stmts), "has_python_block": FENCE + "python" in asst, "group_key": gk,
+    extra = {"arith_statements_checked": len(stmts), "has_python_block": False, "group_key": gk,
              "quality_flag": "wizardlm-2-8x22b generated, unverified"}
     if stmts and nums:
         extra["final_number_guess"] = nums[-1]
@@ -1350,9 +1373,10 @@ DATASETS: dict = {
                    "LLM-jp (Kiyomaru, Kodama); instructions by Nemotron-4-340B-Instruct, Phi-3-medium, Mixtral-8x22B-Instruct, calm3-22b-chat; "
                    "no post-filtering by the authors",
                    "candidate",
-                   "python rows: stored output replaced by sandbox stdout (per-row 'verification': stored_output_equals_sandbox = "
-                   "independently corroborated by the answer's own expected output, sandbox_only_no_stored_output = executed but not "
-                   "corroborated: the code may still not solve the task); code_text rows unverified (not executed)", find_coding,
+                   "python rows: executed by the executor-profile sandbox, stored output replaced by the sandbox stdout, and KEPT ONLY "
+                   "when the answer's own stored output block equals it (verification = stored_output_equals_sandbox; rows that ran but "
+                   "had no stored output are counted and dropped); code_text rows (other languages) are unverified, not executed; long "
+                   "English rows are dropped", find_coding,
                    read_messages_parquet, convert_coding),
     "tengentoppa": Spec("tengentoppa", "DeL-TaiseiOzaki/Tengentoppa-sft-qwen2.5-32b-reasoning-100k", "Apache-2.0",
                         "DeL-TaiseiOzaki/Tengentoppa-sft-qwen2.5-32b-reasoning-100k - Apache-2.0",
@@ -1407,6 +1431,18 @@ def summarize(stats: Stats, ck: Checks | None = None) -> dict:
     if stats.key == "coding":
         d["verification"] = {k[len("verification_"):]: v for k, v in e.items() if k.startswith("verification_")}
         d["code_text_languages"] = {k[len("code_text_lang_"):]: v for k, v in e.items() if k.startswith("code_text_lang_")}
+        d["python"] = {"rows_kept_stored_output_equals_sandbox": e["verification_stored_output_equals_sandbox"],
+                       "ran_in_sandbox_but_had_no_stored_output": e["python_sandbox_ok_no_stored_output"],
+                       "note": "rows that ran but had no stored output block are NOT kept as verified python rows (owner's rule: keep only rows whose "
+                               "output equals the reference); the second number is how many there were"}
+    if stats.key == "jaquad":
+        d["question_types"] = {k[len("question_type_seen_"):]: v for k, v in e.items() if k.startswith("question_type_seen_")}
+    d["split_unit"] = SPLIT_UNIT.get(stats.key, "")
+    d["group_independent_dev_heldout"] = stats.key in ("jaquad", "hotpot")
+    fams = sorted(stats.families)
+    d["supervised_chars"] = {f: e["supervised_chars_" + f] for f in fams}
+    d["english"] = {f: {"rows": e["english_rows_" + f], "supervised_chars": e["english_supervised_chars_" + f]} for f in fams if e["english_rows_" + f]}
+    d["english_rows_total"] = sum(v["rows"] for v in d["english"].values())
     if ck is not None:
         d["backends"] = dict(ck.backends)
         d["max_chars"] = ck.max_chars
@@ -1432,8 +1468,12 @@ class SplitWriter:
     def write(self, row: dict):
         line = json.dumps(row, ensure_ascii=False)
         line = line.replace("\u2028", "\\u2028").replace("\u2029", "\\u2029").replace("\x85", "\\u0085")
-        self.fh[row["split"]].write(line + "\n")
-        self.counts[row["split"]] += 1
+        self.write_line(row["split"], line)
+
+    def write_line(self, split: str, line: str):
+        """One already serialised row (used when shards are merged)."""
+        self.fh[split].write(line.rstrip("\n") + "\n")
+        self.counts[split] += 1
 
     @staticmethod
     def _free(path: Path) -> Path:
@@ -1539,7 +1579,15 @@ def train_only(files, raw_dir, prov: dict):
     return kept, dropped
 
 
-def run_dataset(key: str, raw_dir, out_dir, ck: Checks, limit=None, sample_dump: int = 100, seed: int = 20261109) -> dict:
+def stats_state(stats: Stats) -> dict:
+    """The raw counters of a Stats (JSON-able), stored in every manifest so that merge_shards can add shards up exactly."""
+    return {"n_in": stats.n_in, "n_out": stats.n_out, "rejects": dict(stats.rejects), "families": dict(stats.families), "splits": dict(stats.splits),
+            "family_splits": {k: dict(v) for k, v in stats.family_splits.items()}, "extra": dict(stats.extra),
+            "reject_examples": stats.reject_examples}
+
+
+def run_dataset(key: str, raw_dir, out_dir, ck: Checks, limit=None, sample_dump: int = 100, seed: int = 20261109, start: int = 0) -> dict:
+    """Convert one dataset (or, with start / limit, the records start <= index < limit: one shard).  The input is the TRAIN files only."""
     spec = DATASETS[key]
     files = spec.find(raw_dir)
     prov = load_provenance(raw_dir)
@@ -1550,7 +1598,9 @@ def run_dataset(key: str, raw_dir, out_dir, ck: Checks, limit=None, sample_dump:
     if not files:
         raise FileNotFoundError(f"{key}: no train-eligible raw files under {raw_dir}")
     stats = Stats(key)
-    rows = spec.convert(spec.reader(files, limit), stats, ck, spec)
+    if key == "hotpot":
+        ck.hotpot_roots = build_hotpot_roots(files)               # group key = component of shared supporting paragraphs (all train records)
+    rows = spec.convert(spec.reader(files, limit, start), stats, ck, spec)
     writer = SplitWriter(Path(out_dir) / key)
     heap, tie = [], 0
     for row in rows:
@@ -1566,8 +1616,10 @@ def run_dataset(key: str, raw_dir, out_dir, ck: Checks, limit=None, sample_dump:
     summary["provenance"] = {"used": bool(prov), "commit_sha": (prov or {}).get("commit_sha"),
                              "skipped_not_train_files": [Path(p).relative_to(Path(raw_dir)).as_posix() for p in not_train]}
     summary["row_source"], summary["row_license"] = spec.source, spec.license
-    summary["limit"] = limit
-    manifest = dict(summary, files={n: {k: v for k, v in e.items() if k in ("rows", "bytes", "sha256")} for n, e in info.items()})
+    summary["limit"] = limit if not start else None
+    summary["range"] = {"start": int(start), "stop": limit}
+    manifest = dict(summary, files={n: {k: v for k, v in e.items() if k in ("rows", "bytes", "sha256")} for n, e in info.items()},
+                    stats_state=stats_state(stats))
     d = Path(out_dir) / key
     summary["files"] = info                                       # per-run statuses (written / identical_existing / REFUSED) stay out of the manifest
     statuses = {"manifest.json": _write_new(d / "manifest.json", json.dumps(manifest, ensure_ascii=False, indent=1))}
@@ -1582,21 +1634,99 @@ def run_dataset(key: str, raw_dir, out_dir, ck: Checks, limit=None, sample_dump:
     return summary
 
 
+def merge_shards(key: str, shard_roots, out_dir, sample_dump: int = 100, seed: int = 20261109) -> dict:
+    """Join the shards of one dataset into the folder a single run would have produced.  shard_roots: the --out-dir of every shard (each holds
+    <key>/ with train/dev/heldout.jsonl and manifest.json), in any order; the shards must tile the record range 0..end without a gap or an
+    overlap.  Rows are concatenated in record order, the counters of the manifests are added (so n_in == n_out + rejects still holds), the
+    100-row reading dump is drawn again over the merged rows, and the merged files are written next to nothing else under out_dir/<key>/
+    (never over an existing file)."""
+    mans = []
+    for r in shard_roots:
+        mp = Path(r) / key / "manifest.json"
+        m = json.loads(mp.read_text(encoding="utf-8"))
+        rg = m.get("range") or {"start": 0, "stop": m.get("limit")}
+        mans.append((int(rg["start"] or 0), rg["stop"], Path(r) / key, m))
+    mans.sort(key=lambda t: t[0])
+    if not mans:
+        raise ValueError("merge_shards: no shards")
+    if mans[0][0] != 0:
+        raise ValueError(f"merge_shards: the first shard starts at record {mans[0][0]}, not 0")
+    for (s0, e0, _, _), (s1, _, _, _) in zip(mans, mans[1:]):
+        if e0 is None or int(e0) != s1:
+            raise ValueError(f"merge_shards: gap or overlap between a shard ending at {e0} and the next starting at {s1}")
+    if mans[-1][1] is not None:
+        raise ValueError("merge_shards: the last shard must run to the end of the dataset (stop = None)")
+    first = mans[0][3]
+    stats = Stats(key)
+    for _, _, _, m in mans:
+        st = m["stats_state"]
+        if m.get("splits") is None or not m.get("balanced"):
+            raise ValueError("merge_shards: a shard manifest is not balanced")
+        stats.n_in += st["n_in"]
+        stats.n_out += st["n_out"]
+        stats.rejects.update(st["rejects"])
+        stats.families.update(st["families"])
+        stats.splits.update(st["splits"])
+        for fam, c in st["family_splits"].items():
+            stats.family_splits[fam].update(c)
+        stats.extra.update(st["extra"])
+        for reason, exs in st["reject_examples"].items():
+            have = stats.reject_examples.setdefault(reason, [])
+            have.extend(exs[:max(0, Stats.MAX_EXAMPLES - len(have))])
+    writer = SplitWriter(Path(out_dir) / key)
+    heap, tie = [], 0
+    for _, _, d, _ in mans:
+        for sp in SplitWriter.SPLITS:
+            with open(d / f"{sp}.jsonl", encoding="utf-8", newline="\n") as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    writer.write_line(sp, line)
+                    if sample_dump:
+                        row = json.loads(line)
+                        tie += 1
+                        heapq.heappush(heap, (-h("dump", seed, row["id"]), tie, row))
+                        if len(heap) > sample_dump:
+                            heapq.heappop(heap)
+    info = writer.close()
+    summary = summarize(stats, None)
+    for k in ("backends", "max_chars", "vocab_size", "vocab_path", "raw_files", "provenance", "row_source", "row_license"):
+        if k in first:
+            summary[k] = first[k]
+    summary["limit"] = None
+    summary["range"] = {"start": 0, "stop": None, "shards": [[a, b] for a, b, _, _ in mans]}
+    manifest = dict(summary, files={n: {k: v for k, v in e.items() if k in ("rows", "bytes", "sha256")} for n, e in info.items()},
+                    stats_state=stats_state(stats))
+    d = Path(out_dir) / key
+    summary["files"] = info
+    statuses = {"manifest.json": _write_new(d / "manifest.json", json.dumps(manifest, ensure_ascii=False, indent=1))}
+    if sample_dump:
+        statuses["sample_dump.txt"] = _write_new(d / "sample_dump.txt", format_dump([r for _, _, r in sorted(heap, key=lambda t: (-t[0], t[1]))]))
+    ex = [{"reason": k, **e} for k, v in stats.reject_examples.items() for e in v]
+    statuses["rejects_sample.jsonl"] = _write_new(d / "rejects_sample.jsonl", "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in ex))
+    summary["write_status"] = statuses
+    summary["refused_overwrite"] = any(v["status"].startswith("REFUSED") for v in info.values()) or any(x.startswith("REFUSED") for x in statuses.values())
+    return summary
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="GeoCPU v49 acquisition converters")
     ap.add_argument("--dataset", required=True, help="|".join(DATASETS) + "|all")
     ap.add_argument("--raw-dir", required=True)
     ap.add_argument("--out-dir", required=True)
-    ap.add_argument("--limit", type=int, default=None, help="stop after N input records per dataset")
+    ap.add_argument("--limit", type=int, default=None, help="stop at record index N (exclusive) per dataset: the first N records")
+    ap.add_argument("--start", type=int, default=0, help="first record index (with --limit E: the shard S <= i < E)")
     ap.add_argument("--vocab", default=None, help="base_metadata.json (default: search, then checks.load_vocab on --drive-root)")
     ap.add_argument("--drive-root", default=None, help="Drive folder that holds the model bundle (for checks.load_vocab)")
     ap.add_argument("--max-chars", type=int, default=DEFAULT_CAP)
     ap.add_argument("--sample-dump", type=int, default=100, help="seeded readable sample of N emitted rows per dataset (0 = off)")
     ap.add_argument("--no-sandbox", action="store_true", help="do not execute python (coding_pytool rows are then rejected)")
+    ap.add_argument("--require-os-containment", action="store_true",
+                    help="the sandbox child must run as an unprivileged user (Colab: root -> nobody); otherwise the self-test fails")
     ap.add_argument("--sandbox-timeout", type=float, default=5.0)
-    ap.add_argument("--no-external-checks", action="store_true", help="ignore a sibling checks.py")
-    ap.add_argument("--python-require-stored-output", action="store_true",
-                    help="coding: keep python rows only when the answer's own expected output equals the sandbox stdout")
+    ap.add_argument("--no-external-checks", action="store_true", help="ignore a sibling checks.py (then --no-sandbox is required: no code can run)")
+    ap.add_argument("--allow-unverified-python", action="store_true",
+                    help="coding: ALSO keep python rows that ran but have no stored output to compare with (default: dropped and counted)")
     ap.add_argument("--no-tengentoppa-steps", action="store_true", help="tengentoppa: never include the 'reasoning' field")
     a = ap.parse_args(argv)
     keys = list(DATASETS) if a.dataset == "all" else [a.dataset]
@@ -1604,15 +1734,19 @@ def main(argv=None) -> int:
         if k not in DATASETS:
             print("unknown dataset:", k, file=sys.stderr)
             return 2
-    ck = Checks(vocab_path=a.vocab, drive_root=a.drive_root, max_chars=a.max_chars, run_code=not a.no_sandbox, sandbox_timeout=a.sandbox_timeout,
-                use_external=not a.no_external_checks, python_require_stored_output=a.python_require_stored_output,
-                tengentoppa_steps=not a.no_tengentoppa_steps)
+    try:
+        ck = Checks(vocab_path=a.vocab, drive_root=a.drive_root, max_chars=a.max_chars, run_code=not a.no_sandbox, sandbox_timeout=a.sandbox_timeout,
+                    use_external=not a.no_external_checks, python_require_stored_output=not a.allow_unverified_python,
+                    tengentoppa_steps=not a.no_tengentoppa_steps, require_os_containment=a.require_os_containment)
+    except SandboxUnavailable as e:
+        print(f"SANDBOX UNAVAILABLE: {e}", file=sys.stderr)
+        return 4
     code = 0
     allsum = {}
     for k in keys:
         raw = subdir_for(a.raw_dir, k) if a.dataset == "all" else Path(a.raw_dir)
         try:
-            s = run_dataset(k, raw, a.out_dir, ck, limit=a.limit, sample_dump=a.sample_dump)
+            s = run_dataset(k, raw, a.out_dir, ck, limit=a.limit, sample_dump=a.sample_dump, start=a.start)
         except FileNotFoundError as e:
             print(f"[{k}] {e}", file=sys.stderr)
             code = max(code, 2)

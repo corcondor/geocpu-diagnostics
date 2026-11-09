@@ -104,7 +104,7 @@ def main():
         return
     out = Path(a.out)
     out.mkdir(exist_ok=True)
-    ck = C.Checks(use_external=False)
+    ck = C.Checks(use_external=False, run_code=False)                 # (no code is run to pick fixture rows)
     total = 0
     report = {}
     for key in JOBS:

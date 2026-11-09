@@ -67,7 +67,7 @@ def main():
     ap.add_argument("--no-external-checks", action="store_true")
     ap.add_argument("--dump", default=None, help="write 2 readable kept rows per family here (for reading by eye)")
     a = ap.parse_args()
-    ck = C.Checks(use_external=not a.no_external_checks)
+    ck = C.Checks(use_external=not a.no_external_checks, run_code=not a.no_external_checks)      # code is only run through the checks.py sandbox
     dump = []
     result = {"note": "indicative only: 3 x 100 rows per dataset at 10 / 50 / 90 % of the train split, datasets-server rows API; "
                       "Wilson 95 % intervals; the real run decides adoption", "backends": ck.backends, "max_chars": ck.max_chars, "datasets": {}}

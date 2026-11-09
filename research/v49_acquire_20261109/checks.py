@@ -13,7 +13,7 @@ NOTEBOOK COOKBOOK (names are exactly the ones defined below)
     oov  = oov_stats(rows(), V)                                      # per-row OOV share, share of rows > 1 %, top OOV characters
     ln   = length_stats(rows(), group_key=lambda r: r.get("source")) # len(prompt+target)+1, share > 2048 and > 1900
     ex   = exact_dups(rows())                                        # exact duplicates inside one dataset
-    nd   = near_dups_within(rows(), threshold=0.8)                   # MinHash (k=64, char 5-grams, LSH 16x4) near duplicates
+    nd   = near_dups_within(rows(), threshold=0.75)                  # MinHash (k=128, char 5-grams, LSH 32x4) near duplicates; see MinHasher for the cut
     cr   = cross_near_dups(rows(), iter_rows(OLD_CORPUS), sample_every=1)   # new rows vs the 423,348-row old corpus
     mx   = cross_dataset_near_dups({"jaquad": rows_a(), "hotpot": rows_b()})  # dataset x dataset duplicate matrix
     EF   = find_eval_files(DRIVE_ROOT)                               # eval manifests (bundle zip on Drive) -> EvalFiles
@@ -27,11 +27,11 @@ streaming pass with drop_flagged / oov_filter).  Outputs written to Google Drive
 creates files and refuses (FileExistsError) when a file exists with a different sha256.
 
 MEMORY / TIME (measured on the owner's Windows PC with synthetic 2,000-character rows; a Colab Linux CPU is similar or faster)
-    MinHash signature (k=64, 5-grams): 1.3-1.9 ms/row with numpy, ~19 ms/row pure Python  -> 300k rows: 7-10 min / ~95 min
+    MinHash signature (k=128, 5-grams): ~2.8 ms/row with numpy (k=64 was 1.9), ~38 ms/row pure Python -> 300k rows: ~14 min / ~3 h
         (numpy is on every Colab image; MinHasher(use_numpy=False) gives the identical signatures, only slower)
-    MinHashIndex: ~0.9 KB/row measured (256 B signature + 128 B band tables + ~290 B snippet + list slack) -> 300k rows ~ 260 MB;
-        build() holds one transient copy of the signatures (77 MB at 300k rows).  The old corpus is streamed, never held;
-        streaming all 423,348 old rows costs ~10-13 min (cross_near_dups(sample_every=N) divides that by N).
+    MinHashIndex: ~1.2 KB/row measured (512 B signature + 256 B band tables + ~290 B snippet + list slack) -> 300k rows ~ 360 MB;
+        build() holds one transient copy of the signatures (154 MB at 300k rows).  The old corpus is streamed, never held;
+        streaming all 423,348 old rows costs ~20-25 min (cross_near_dups(sample_every=N) divides that by N).
     EvalIndex: one python int per distinct eval 13-gram: 146k shingles = 12 MB RSS for the small manifests, so the 9 MB of
         all eval texts (incl. benchmark_8100_manifest.jsonl, 4.9 MB) is expected at a few hundred MB, not more.
     ExactIndex: ~100 B per row.  Sandbox: ~0.11 s per snippet wall time with 2 workers on Windows (process start), less on Linux.
@@ -125,6 +125,38 @@ EVAL_REQUIRED_PY = {                                     # python sources whose 
 EVAL_OPTIONAL_V48 = tuple(f"{fam}_{kind}.jsonl" for fam in ("evidence", "japanese", "logic", "python") for kind in ("unseen_eval", "dev"))
 EVAL_OPTIONAL_SUITE_ZIPS = ("GeoCPU_v47_train_eval_suite_v2.zip", "GeoCPU_v47_continue30500_train_eval_v1.zip",
                             "GeoCPU_v47_python_tir_eval_25500_28000_v1.zip")      # small zips at the Drive root (30-218 KB)
+# The other frozen eval suites of the owner's registry (research/v47_practical_20261107/frozen/registry.json, 'leakage_sources', the
+# files that are not T1-T8 manifests).  Each is searched as a stand-alone file, in the bundle's data/ folder and (by file name) inside
+# the suite zips; one that is not found is reported as NOT covered (find_eval_files(...).missing_optional / the report), never skipped
+# silently.  python120 = selection_120.json; engineering64 = engineering_heldout.jsonl; visual10 = visual_heldout.jsonl;
+# new_public:* = the *_dev.jsonl files.
+EVAL_REGISTRY_EXTRA = {
+    "dev_overlay.jsonl": "public_dev80: public search development overlay",
+    "dev_numina_tir_strict_numeric.jsonl": "python120 / math_python: NuminaMath-TIR strict numeric dev",
+    "dev_tldr_terminal.jsonl": "new_public:terminal dev",
+    "japanese_math_python_dev.jsonl": "new_public:japanese_math_python dev",
+    "plos_science_dev.jsonl": "new_public:plos_science dev",
+    "python_docs_ja_core_dev.jsonl": "new_public:python_ja dev",
+    "python_reference_dev.jsonl": "new_public:python_reference dev",
+    "science_code_complete_dev.jsonl": "new_public:science_code dev",
+    "science_engineering_verified_dev.jsonl": "new_public:science_engineering_verified dev",
+    "search_post_result_dev.jsonl": "new_public:search_next dev",
+    "engineering_heldout.jsonl": "engineering64 held-out",
+    "visual_heldout.jsonl": "visual10 held-out",
+    "dev_after_final_result_198.jsonl": "search_final198",
+    "selection_120.json": "python120: 80 Japanese + 40 NuminaMath-TIR selection",
+}
+# which file stands for which tier of the owner's T1-T8 (registry.json 'suites'); T4 and T7 share one source file
+EVAL_TIER_FILES = {
+    "T1 held-out SWE step control": ("eval_swe_step_control_heldout.jsonl", "eval_swe_step_control_heldout_v43labels.jsonl"),
+    "T2 decomposed state tracking": ("eval_v33_state_tracking_heldout.jsonl", "eval_v38_decomposed_state_bench200.jsonl"),
+    "T3 JamC-QA manifest": ("jamcqa_manifest_test.jsonl",),
+    "T4 broad 8100": ("benchmark_8100_manifest.jsonl",),
+    "T5 logical instruction operators": ("eval_v41_logical_instruction_operators_heldout.jsonl",),
+    "T6 search retrieval": ("eval_v42_search_retrieval_aligned.jsonl", "eval_v42_search_retrieval_heldout.jsonl"),
+    "T7 closed/open-book A/B (same source file as T4)": ("benchmark_8100_manifest.jsonl",),
+    "T8 code/explanation form probe": ("tier8_readonly_v44fix.py",),
+}
 EVAL_TEXT_KEYS = ("prompt", "question", "choices", "options", "target", "answer", "full_text", "input", "instruction", "text",
                   "context", "expected_query", "final_answer", "python_code")
 MAX_LEN = 2048                                           # context length in characters; a row needs len(prompt+target)+1 <= MAX_LEN
@@ -179,24 +211,49 @@ def sha256_file(path: str, chunk: int = 1 << 20) -> str:
             h.update(b)
 
 
+def quarantine_part(path: str) -> str:
+    """Move a leftover `<x>.part` of a dead run aside as `<x>.part.stale-N` (never deleted: the owner's rule); returns the new name."""
+    n = 1
+    while os.path.lexists(f"{path}.stale-{n}"):
+        n += 1
+    dst = f"{path}.stale-{n}"
+    os.rename(path, dst)
+    return dst
+
+
 def write_new_file(path: str, data: Union[str, bytes], *, encoding: str = "utf-8") -> str:
     """Create `path` with `data`.  Never overwrites: if the file exists with the same sha256 nothing happens ('identical'); with a
-    different sha256 FileExistsError is raised.  Text is written UTF-8 with lone surrogates as backslash escapes (they occur
-    in raw web text and would otherwise crash the write).  Returns 'created' or 'identical'."""
+    different sha256 FileExistsError is raised.  The bytes go to `<path>.part` first (flushed and fsynced) and are renamed into place
+    only when `path` still does not exist, so a runtime that dies in the middle of a write leaves a `.part`, never a truncated final
+    file (a leftover `.part` of an earlier run is moved aside, not deleted).  Text is written UTF-8 with lone surrogates as backslash
+    escapes (they occur in raw web text and would otherwise crash the write).  Returns 'created' or 'identical'."""
     if isinstance(data, str):
         data = data.encode(encoding, "backslashreplace")
     path = os.fspath(path)
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    try:
-        with open(path, "xb") as f:
-            f.write(data)
-        return "created"
-    except FileExistsError:
+
+    def compare() -> str:
         old = sha256_file(path)
         new = hashlib.sha256(data).hexdigest()
         if old == new:
             return "identical"
         raise FileExistsError(f"refusing to overwrite {path}: existing sha256 {old[:16]}... != new {new[:16]}...") from None
+    if os.path.lexists(path):
+        return compare()
+    part = path + ".part"
+    if os.path.lexists(part):
+        quarantine_part(part)
+    with open(part, "xb") as f:
+        f.write(data)
+        f.flush()
+        try:
+            os.fsync(f.fileno())
+        except OSError:
+            pass
+    if os.path.lexists(path):                                    # somebody created it while we wrote: never replace it
+        return compare()
+    os.rename(part, path)
+    return "created"
 
 
 def digest64(text: str) -> int:
@@ -296,18 +353,24 @@ def _stream_array_items(f, buf: str, chunk: int = 1 << 20) -> Iterator[Any]:
             buf, pos = buf[pos:], 0
 
 
-def _iter_jsonl(path: str, strict: bool) -> Iterator[Any]:
+def _iter_jsonl(path: str, strict: bool, stats: Optional[dict] = None) -> Iterator[Any]:
     opener = gzip.open if path.lower().endswith(".gz") else open
-    with opener(path, "rt", encoding="utf-8", newline="\n") as f:
+    # strict: undecodable bytes and bad lines raise.  lenient (strict=False): undecodable bytes become U+FFFD (the converter reads the
+    # same way), bad lines are skipped and counted in stats["bad_lines"] / stats["decode_replacements"] when a dict is given.
+    with opener(path, "rt", encoding="utf-8", errors="strict" if strict else "replace", newline="\n") as f:
         for ln, line in enumerate(f, 1):
             line = line.strip()
             if not line:
                 continue
+            if stats is not None and not strict and "�" in line:
+                stats["decode_replacements"] = stats.get("decode_replacements", 0) + 1
             try:
                 yield json.loads(line)
             except json.JSONDecodeError as e:
                 if strict:
                     raise ValueError(f"{path}:{ln}: bad JSON line: {e}") from e
+                if stats is not None:
+                    stats["bad_lines"] = stats.get("bad_lines", 0) + 1
 
 
 def _iter_json(path: str, squad_flatten: bool) -> Iterator[Any]:
@@ -346,9 +409,10 @@ def _iter_parquet(path: str, columns: Optional[Sequence[str]], batch_size: int) 
 
 def iter_rows(path: str, *, columns: Optional[Sequence[str]] = None, limit: Optional[int] = None, batch_size: int = 512,
               squad_flatten: bool = True, strict: bool = True, progress: Optional[ProgressCB] = None,
-              progress_every: int = 50000, label: Optional[str] = None) -> Iterator[Any]:
+              progress_every: int = 50000, label: Optional[str] = None, stats: Optional[dict] = None) -> Iterator[Any]:
     """Stream the rows of a .jsonl(.gz) / .parquet / .json(.gz) file as dicts.
-      .jsonl   one JSON value per line (blank lines skipped; strict=True raises on a bad line, False skips it)
+      .jsonl   one JSON value per line (blank lines skipped; strict=True raises on a bad line or an undecodable byte; False replaces
+               undecodable bytes, skips bad lines and counts them in `stats` (bad_lines, decode_replacements) when a dict is passed)
       .parquet pyarrow record batches of `batch_size` rows (only `columns` are read); RAM ~ one row group (~100-300 MB for 330 MB files)
       .json    a top-level array of objects, or {"data": [...]} (SQuAD / JaQuAD); decoded item by item.  With squad_flatten
                every article with "paragraphs" is flattened to one dict per question: id, title, context, question, answers,
@@ -357,7 +421,7 @@ def iter_rows(path: str, *, columns: Optional[Sequence[str]] = None, limit: Opti
     p = os.fspath(path)
     low = p.lower()
     if low.endswith((".jsonl", ".jsonl.gz", ".ndjson")):
-        gen = _iter_jsonl(p, strict)
+        gen = _iter_jsonl(p, strict, stats)
     elif low.endswith(".parquet"):
         gen = _iter_parquet(p, columns, batch_size)
     elif low.endswith((".json", ".json.gz")):
@@ -463,10 +527,11 @@ def load_vocab(drive_root: str = DRIVE_ROOT, out_dir: Optional[str] = None, *, c
                progress: Optional[ProgressCB] = None) -> VocabInfo:
     """The model's character vocabulary.  Search order:
       0. out_dir/vocab_cache.json (only a cache of a NON-derived result is trusted);
-      1. a stand-alone vocab / tokenizer / base_metadata JSON in the Drive run folders (names vocab*.json, *vocab.json,
-         tokenizer*.json, base_metadata.json, depth <= max_depth); only a file with exactly 3,898 entries / 3,893 single
-         characters is accepted - anything else is ignored with a warning;
-      1b. base_metadata.json['vocab'] inside GeoCPU_v47_fullmodel_bundle_v1.zip -> assets/r6_bundle.zip (VOCAB_DRIVE_PATH);
+      1. base_metadata.json['vocab'] inside GeoCPU_v47_fullmodel_bundle_v1.zip -> assets/r6_bundle.zip (VOCAB_DRIVE_PATH): the model's
+         own file, always preferred;
+      1b. only when no bundle yields it: a stand-alone vocab / tokenizer / base_metadata JSON in the Drive run folders (names vocab*.json,
+         *vocab.json, tokenizer*.json, base_metadata.json, depth <= max_depth); only a file with exactly 3,898 entries / 3,893 single
+         characters is accepted - anything else is ignored with a warning (and the source says it was a loose file);
       2. else (allow_derive) the union of the characters of every full_text of OLD_CORPUS (one streaming pass).  That is the
          census of what the model has SEEN (3,498 characters on 2026-11-09), not its vocabulary: it lacks ~400 vocabulary
          characters and has 5 the vocabulary lacks.  A warning says so; the result is cached with derived=True.
@@ -485,35 +550,38 @@ def load_vocab(drive_root: str = DRIVE_ROOT, out_dir: Optional[str] = None, *, c
     info: Optional[VocabInfo] = None
     names = re.compile(r"(?i)^(vocab.*\.json|.*vocab\.json|tokenizer.*\.json|base_metadata\.json)$")
     if os.path.isdir(drive_root):
-        for dirpath, files in _walk_limited(drive_root, max_depth):
-            for fn in files:
-                if not names.match(fn):
-                    continue
-                p = os.path.join(dirpath, fn)
-                try:
-                    if os.path.getsize(p) > 5 << 20:
+        # the model's own file first: base_metadata.json inside the bundle.  A stray vocab*.json elsewhere on Drive that merely has
+        # 3,898 entries must never override it (a stale vocabulary would silently drive the OOV filter for every row).
+        for zp in _bundle_zip_paths(drive_root):
+            try:
+                with zipfile.ZipFile(zp) as z:
+                    if VOCAB_NESTED_ZIP not in z.namelist():
                         continue
-                    with open(p, "rb") as vf:
-                        info = vocab_from_json_bytes(vf.read(), p, expected_size=expected_size, expected_single=expected_single)
-                    break
-                except (ValueError, OSError) as e:
-                    warnings.append(f"rejected vocab candidate: {e}")
-            if info:
-                break
-        if info is None:
-            for zp in _bundle_zip_paths(drive_root):
-                try:
-                    with zipfile.ZipFile(zp) as z:
-                        if VOCAB_NESTED_ZIP not in z.namelist():
+                    with zipfile.ZipFile(io.BytesIO(z.read(VOCAB_NESTED_ZIP))) as inner:
+                        if VOCAB_MEMBER not in inner.namelist():
                             continue
-                        with zipfile.ZipFile(io.BytesIO(z.read(VOCAB_NESTED_ZIP))) as inner:
-                            if VOCAB_MEMBER not in inner.namelist():
-                                continue
-                            info = vocab_from_json_bytes(inner.read(VOCAB_MEMBER), f"{zp}::{VOCAB_NESTED_ZIP}::{VOCAB_MEMBER}[vocab]",
-                                                         expected_size=expected_size, expected_single=expected_single)
-                            break
-                except (ValueError, OSError, zipfile.BadZipFile) as e:
-                    warnings.append(f"rejected bundle {zp}: {e}")
+                        info = vocab_from_json_bytes(inner.read(VOCAB_MEMBER), f"{zp}::{VOCAB_NESTED_ZIP}::{VOCAB_MEMBER}[vocab]",
+                                                     expected_size=expected_size, expected_single=expected_single)
+                        break
+            except (ValueError, OSError, zipfile.BadZipFile) as e:
+                warnings.append(f"rejected bundle {zp}: {e}")
+        if info is None:
+            for dirpath, files in _walk_limited(drive_root, max_depth):
+                for fn in files:
+                    if not names.match(fn):
+                        continue
+                    p = os.path.join(dirpath, fn)
+                    try:
+                        if os.path.getsize(p) > 5 << 20:
+                            continue
+                        with open(p, "rb") as vf:
+                            info = vocab_from_json_bytes(vf.read(), p, expected_size=expected_size, expected_single=expected_single)
+                        warnings.append("vocabulary taken from a loose file, not from the model bundle: " + p)
+                        break
+                    except (ValueError, OSError) as e:
+                        warnings.append(f"rejected vocab candidate: {e}")
+                if info:
+                    break
     if info is None:
         if not allow_derive:
             raise FileNotFoundError("model vocabulary not found under " + drive_root + "; warnings: " + "; ".join(warnings))
@@ -813,7 +881,7 @@ def exact_dups(rows: Iterable[Any], *, text_fn: Optional[Callable[[Any], str]] =
 
 
 # =====================================================================================================================
-# MinHash (k = 64 permutations, character 5-grams) + LSH banding
+# MinHash (k = 128 permutations, character 5-grams) + LSH banding (32 bands x 4 rows)
 # =====================================================================================================================
 _M32 = 0xFFFFFFFF
 
@@ -825,9 +893,15 @@ class MinHasher:
       * permutation j: h_j(x) = (a_j * x + b_j) mod 2^32 with odd a_j (a bijection of the 32-bit space), a_j / b_j derived from
         sha256("checks.minhash:<seed>:<j>"); signature[j] = min over shingles of h_j(shingle).
     The expected share of equal signature slots of two texts is the Jaccard similarity of their shingle sets (standard error
-    0.05 at J = 0.8 with k = 64).  numpy is used when importable (identical output; pass use_numpy=False for pure Python)."""
+    0.035 at J = 0.8 with k = 128).  numpy is used when importable (identical output; pass use_numpy=False for pure Python).
 
-    def __init__(self, k: int = 64, ngram: int = 5, seed: int = 20261109, use_numpy: Optional[bool] = None):
+    HOW SHARP THE CUT IS (binomial, k = 128): a pair is reported when the share of equal slots is >= the cut.  With the cut at
+    0.75 (the pipeline's choice: target 0.8 minus a 0.05 margin) a pair of true Jaccard 0.90 is found with probability ~1.00,
+    0.85 ~0.999, 0.80 ~0.93, 0.75 ~0.55, 0.70 ~0.13, 0.65 ~0.01, 0.60 ~0.00.  With the cut at exactly the target the pair AT the target is
+    found only half of the time, which is a property of any MinHash estimate, not a defect.  Clusters are connected components,
+    so a chain of near pairs can remove a row that is not itself near the survivor (cluster sizes are reported)."""
+
+    def __init__(self, k: int = 128, ngram: int = 5, seed: int = 20261109, use_numpy: Optional[bool] = None):
         self.k, self.ngram, self.seed = int(k), int(ngram), int(seed)
         a, b = [], []
         for j in range(self.k):
@@ -883,12 +957,13 @@ class MinHasher:
 
 
 class MinHashIndex:
-    """Signatures of added rows + LSH tables (`bands` bands of k/bands slots; default 16 x 4: a pair with Jaccard 0.8 collides in
-    some band with probability 0.9998, one with 0.5 with 0.64; candidates are verified by the share of equal slots).
+    """Signatures of added rows + LSH tables (`bands` bands of k/bands slots; default 32 x 4 for k = 128: a pair with Jaccard 0.8
+    collides in some band with probability ~1.0000, one with 0.7 with 0.9998, 0.6 with 0.988, 0.5 with 0.873; candidates are verified by
+    the share of equal slots).
     Tables are sorted arrays (build() once after adding), queried with bisect; at most `max_per_band` earliest rows per bucket
     are inspected (a bucket that large is boilerplate: its earliest members stand for it)."""
 
-    def __init__(self, hasher: Optional[MinHasher] = None, bands: int = 16, snippet_chars: int = 120):
+    def __init__(self, hasher: Optional[MinHasher] = None, bands: int = 32, snippet_chars: int = 120):
         self.hasher = hasher or MinHasher()
         self.k = self.hasher.k
         if self.k % bands:
@@ -975,12 +1050,14 @@ class MinHashIndex:
 
 
 def near_dups_within(rows: Iterable[Any], *, text_fn: Optional[Callable[[Any], str]] = None, id_fn: Optional[Callable[[Any, int], str]] = None,
-                     threshold: float = 0.8, k: int = 64, bands: int = 16, max_per_band: int = 64, max_examples: int = 5,
+                     threshold: float = 0.8, k: int = 128, bands: int = 32, max_per_band: int = 64, max_examples: int = 5,
                      snippet_chars: int = 120, hasher: Optional[MinHasher] = None, progress: Optional[ProgressCB] = None,
                      progress_every: int = 20000) -> dict:
     """Near-duplicate clusters inside one stream (keep-first: the earliest row of a cluster is kept, the others are listed in
     dup_positions).  Clusters are the connected components of 'estimated Jaccard >= threshold' pairs, so a chain a~b~c can put a
-    and c together even if J(a, c) < threshold.  Memory: see the module docstring (~0.7 KB per row)."""
+    and c together even if J(a, c) < threshold; cluster_size_hist says how many clusters of each size there are (sizes above 9 are
+    pooled as '10+') and largest_cluster the biggest.  `threshold` is applied to the ESTIMATE (see MinHasher for how sharp that is).
+    Memory: see the module docstring (~1.2 KB per row at k = 128)."""
     text_fn, id_fn = text_fn or default_text, id_fn or default_id
     idx = MinHashIndex(hasher or MinHasher(k=k), bands=bands, snippet_chars=snippet_chars)
     tick = _Ticker(progress, "minhash signatures", progress_every)
@@ -1014,7 +1091,9 @@ def near_dups_within(rows: Iterable[Any], *, text_fn: Optional[Callable[[Any], s
     roots = [find(i) for i in range(n)]
     dup_positions = [i for i in range(n) if roots[i] != i]
     sizes = collections.Counter(roots)
+    size_hist = collections.Counter(("10+" if c >= 10 else str(c)) for c in sizes.values() if c > 1)
     return {"n_rows": n, "n_rows_without_shingles": n - sum(idx.valid), "threshold": threshold, "k": idx.k, "bands": bands,
+            "cluster_size_hist": {key: size_hist[key] for key in sorted(size_hist, key=lambda x: (len(x), x))},
             "hasher_backend": idx.hasher.backend, "n_dups": len(dup_positions), "dup_rate": len(dup_positions) / n if n else 0.0,
             "dup_positions": dup_positions, "root_of": roots, "n_clusters_gt1": sum(1 for r, c in sizes.items() if c > 1),
             "largest_cluster": max(sizes.values()) if sizes else 0, "examples": examples}
@@ -1022,7 +1101,7 @@ def near_dups_within(rows: Iterable[Any], *, text_fn: Optional[Callable[[Any], s
 
 def cross_near_dups(index_rows: Iterable[Any], probe_rows: Iterable[Any], *, text_fn: Optional[Callable[[Any], str]] = None,
                     probe_text_fn: Optional[Callable[[Any], str]] = None, id_fn: Optional[Callable[[Any, int], str]] = None,
-                    threshold: float = 0.8, k: int = 64, bands: int = 16, max_per_band: int = 64, sample_every: int = 1,
+                    threshold: float = 0.8, k: int = 128, bands: int = 32, max_per_band: int = 64, sample_every: int = 1,
                     max_examples: int = 5, snippet_chars: int = 120, progress: Optional[ProgressCB] = None,
                     progress_every: int = 20000) -> dict:
     """New rows (index side, held in memory, <= ~300k) against a big reference stream (probe side, streamed once, never held -
@@ -1069,20 +1148,32 @@ def cross_near_dups(index_rows: Iterable[Any], probe_rows: Iterable[Any], *, tex
 
 
 def cross_dataset_near_dups(named_rows: Mapping[str, Iterable[Any]], *, text_fn: Optional[Callable[[Any], str]] = None,
-                            threshold: float = 0.8, k: int = 64, bands: int = 16, max_per_band: int = 64, snippet_chars: int = 80,
-                            progress: Optional[ProgressCB] = None, progress_every: int = 20000) -> dict:
+                            threshold: float = 0.8, k: int = 128, bands: int = 32, max_per_band: int = 64, snippet_chars: int = 80,
+                            progress: Optional[ProgressCB] = None, progress_every: int = 20000, deadline: Optional[float] = None,
+                            info: Optional[dict] = None) -> dict:
     """Dataset x dataset duplicate matrix.  rows_with_match_in[A][B] = number of rows of A that have a near duplicate (estimated
     Jaccard >= threshold) among the rows of B; for A == B it is the number of rows that belong to some duplicate pair inside A
-    (both members count).  All datasets share one index (~0.7 KB per row in total)."""
+    (both members count).  All datasets share one index (~1.2 KB per row in total).
+    deadline = an absolute time.time() value: when it passes, the signature phase or the query phase stops and info["truncated"]
+    (a dict passed by the caller) says which; the matrix then only covers the rows handled so far."""
     text_fn = text_fn or default_text
     idx = MinHashIndex(MinHasher(k=k), bands=bands, snippet_chars=snippet_chars)
     names = list(named_rows)
+    late = lambda: deadline is not None and time.time() > deadline            # noqa: E731
+    stopped = False
     for ds, rows in named_rows.items():
         tick = _Ticker(progress, f"signatures[{ds}]", progress_every)
         for i, row in enumerate(rows):
+            if i % 512 == 0 and late():
+                stopped = True
+                break
             idx.add_text(text_fn(row), default_id(row, i), tag=ds)
             tick.tick()
         tick.done()
+        if stopped:
+            break
+    if stopped and info is not None:
+        info["truncated"] = "signatures"
     idx.build()
     n_rows = collections.Counter(t for t, v in zip(idx.tags, idx.valid) if v)
     matrix = {a: collections.Counter() for a in names}
@@ -1090,6 +1181,11 @@ def cross_dataset_near_dups(named_rows: Mapping[str, Iterable[Any]], *, text_fn:
     tick = _Ticker(progress, "cross-dataset query", progress_every)
     for i in range(len(idx)):
         tick.tick()
+        if i % 512 == 0 and late():
+            if info is not None:
+                info.setdefault("truncated", "query")
+                info["queried_rows"] = i
+            break
         if not idx.valid[i]:
             continue
         hits = idx.query_sig(idx.sig_at(i), threshold, exclude=i, max_per_band=max_per_band)
@@ -1222,12 +1318,24 @@ def _glob_fallback(name: str, roots: Sequence[str]) -> Optional[str]:
     return None
 
 
+def locate_registry(name: str, loose: Mapping[str, str], bundles: Sequence[tuple], members: Mapping[str, Tuple[str, str]]) -> Optional[Tuple[str, ...]]:
+    """Where an EVAL_REGISTRY_EXTRA file is: a stand-alone file, the bundle's nested data/ folder, or a suite zip member (by file name)."""
+    if name in loose:
+        return (loose[name],)
+    for zp, outer, nested in bundles:
+        if nested is not None and f"data/{name}" in nested:
+            return (zp, EVAL_NESTED_ZIP, f"data/{name}")
+    return members.get(name)
+
+
 def find_eval_files(drive_root: str = DRIVE_ROOT, *, extra_dirs: Sequence[str] = (), strict: bool = True, max_depth: int = 4) -> EvalFiles:
     """Locate the eval texts the training rows must not overlap.  For every name in EVAL_REQUIRED_JSONL / EVAL_REQUIRED_PY:
     a stand-alone file under drive_root / extra_dirs wins; otherwise the file is taken from the Drive bundle
     GeoCPU_v47_fullmodel_bundle_v1.zip (-> assets/r6_bundle.zip -> data/<name>; code/<name> for .py); otherwise a recursive glob
-    is tried.  Optional: the v48 unseen_eval/dev jsonl (EVAL_OPTIONAL_V48) and the .jsonl members of the small suite zips whose
-    names contain eval / heldout / manifest / bench.  strict=True raises EvalFilesMissing, naming every missing required file."""
+    is tried.  Optional: the v48 unseen_eval/dev jsonl (EVAL_OPTIONAL_V48), the other frozen suites of the owner's registry
+    (EVAL_REGISTRY_EXTRA: python120, engineering64, visual10, the new_public dev sets ... as stand-alone files, in the bundle or in the
+    suite zips; the ones not found are listed in missing_optional) and the .jsonl members of the small suite zips whose names contain
+    eval / heldout / manifest / bench.  strict=True raises EvalFilesMissing, naming every missing required file."""
     ef = EvalFiles()
     roots = [drive_root] + [d for d in extra_dirs]
     bundles = []                                           # (zip path, outer names, nested names or None)
@@ -1272,18 +1380,34 @@ def find_eval_files(drive_root: str = DRIVE_ROOT, *, extra_dirs: Sequence[str] =
         ef.notes.append("v48 unseen_eval/dev jsonl are not on Drive as stand-alone files (local copy: research/v48_balanced_augmentation_"
                         "20261108/data/); copy them under the Drive root or pass extra_dirs to include them")
     pat = re.compile(r"(?i)(eval|heldout|manifest|bench).*\.jsonl$")
-    for zn in EVAL_OPTIONAL_SUITE_ZIPS:
-        zp = loose.get(zn)
-        if not zp:
-            continue
+    suite_zips = [loose[zn] for zn in EVAL_OPTIONAL_SUITE_ZIPS if zn in loose]
+    suite_zips += [pth for name, pth in sorted(loose.items()) if re.fullmatch(r"(?i)GeoCPU_v47_.*eval.*\.zip", name) and pth not in suite_zips]
+    members: Dict[str, Tuple[str, str]] = {}                 # basename -> (zip, member) for the registry names found inside suite zips
+    for zp in suite_zips:
         try:
             with zipfile.ZipFile(zp) as z:
                 for info in z.infolist():
-                    if pat.search(os.path.basename(info.filename)) and info.file_size <= 20 << 20:
-                        ef.sources.append(EvalSource(label=f"suite:{zn}:{os.path.basename(info.filename)}", chain=(zp, info.filename),
-                                                     kind="jsonl", required=False, description="eval member of a suite zip"))
+                    base = os.path.basename(info.filename)
+                    if base in EVAL_REGISTRY_EXTRA and info.file_size <= 50 << 20:
+                        members.setdefault(base, (zp, info.filename))
         except (OSError, zipfile.BadZipFile) as e:
             ef.notes.append(f"unreadable suite zip {zp}: {e}")
+    for name, desc in EVAL_REGISTRY_EXTRA.items():
+        chain = locate_registry(name, loose, bundles, members)
+        if chain is None:
+            ef.missing_optional.append("registry:" + name + f" ({desc})")
+        else:
+            ef.sources.append(EvalSource(label="registry:" + name, chain=chain, kind=_guess_kind(name), required=False, description=desc))
+    for zp in suite_zips:
+        try:
+            with zipfile.ZipFile(zp) as z:
+                for info in z.infolist():
+                    base = os.path.basename(info.filename)
+                    if pat.search(base) and base not in EVAL_REGISTRY_EXTRA and info.file_size <= 20 << 20:
+                        ef.sources.append(EvalSource(label=f"suite:{os.path.basename(zp)}:{base}", chain=(zp, info.filename),
+                                                     kind="jsonl", required=False, description="eval member of a suite zip"))
+        except (OSError, zipfile.BadZipFile):
+            pass                                              # already noted above
     ef.sources.sort(key=lambda s: (not s.required, s.label))
     if ef.missing_required and strict:
         raise EvalFilesMissing("required eval files not found under " + ", ".join(roots) + ":\n  " + "\n  ".join(ef.missing_required)
@@ -1310,6 +1434,12 @@ class EvalIndex:
         self.hashes: set = set()
         self.docs: List[Tuple[str, int, str]] = []        # (source label, item index, normalised text)
         self.per_source: Dict[str, Dict[str, int]] = {}
+        # shingle -> number of distinct eval ITEMS (label, item) that contain it; only shingles of >= 2 items are stored (absent = 1).
+        # This, not the number of training rows, decides what is boilerplate: a shingle that many eval items share is a template
+        # phrase, a shingle that one eval item owns is content - however many training rows copy it.
+        self.eval_df: Dict[int, int] = {}
+        self._cur_key: Optional[Tuple[str, int]] = None
+        self._cur_seen: set = set()
 
     def __len__(self) -> int:
         return len(self.hashes)
@@ -1321,8 +1451,16 @@ class EvalIndex:
         st["texts"] += 1
         if len(norm) < n:
             return 0
+        hset = {hash(norm[i:i + n]) for i in range(len(norm) - n + 1)}
+        if (label, item) != self._cur_key:                # texts of ONE item (question + choices) count once per shingle
+            self._cur_key, self._cur_seen = (label, item), set()
+        fresh = hset - self._cur_seen
+        self._cur_seen |= hset
         before = len(self.hashes)
-        self.hashes.update({hash(norm[i:i + n]) for i in range(len(norm) - n + 1)})
+        for h in fresh:
+            if h in self.hashes:
+                self.eval_df[h] = self.eval_df.get(h, 1) + 1
+        self.hashes.update(fresh)
         self.docs.append((label, item, norm))
         st["shingles"] += len(self.hashes) - before
         return len(self.hashes) - before
@@ -1338,7 +1476,8 @@ class EvalIndex:
         return out
 
     def stats(self) -> dict:
-        return {"ngram": self.ngram, "distinct_shingles": len(self.hashes), "normalised_texts": len(self.docs), "per_source": self.per_source}
+        return {"ngram": self.ngram, "distinct_shingles": len(self.hashes), "normalised_texts": len(self.docs), "per_source": self.per_source,
+                "shingles_in_several_eval_items": len(self.eval_df), "max_eval_items_per_shingle": max(self.eval_df.values(), default=1)}
 
 
 def build_eval_index(sources: Iterable[Union[EvalSource, str, Tuple[str, Iterable[str]]]], *, ngram: int = 13,
@@ -1366,20 +1505,22 @@ def build_eval_index(sources: Iterable[Union[EvalSource, str, Tuple[str, Iterabl
 
 
 def decontaminate(rows: Iterable[Any], index: EvalIndex, *, text_fn: Optional[Callable[[Any], str]] = None,
-                  id_fn: Optional[Callable[[Any, int], str]] = None, boilerplate_df: int = 500, min_shared: int = 1,
+                  id_fn: Optional[Callable[[Any, int], str]] = None, boilerplate_eval_df: int = 20, min_shared: int = 1,
                   max_examples: int = 5, row_prefix_chars: int = 160, progress: Optional[ProgressCB] = None,
                   progress_every: int = 20000) -> dict:
-    """Flag rows that share a digit-stripped n-gram (13) with any eval text.  A shingle that occurs in MORE than `boilerplate_df`
-    (500) rows of this stream is boilerplate (instruction templates, 'which of the following ...'); it is reported separately
-    and never flags a row.  A row is flagged when it shares >= min_shared non-boilerplate shingles.
-    One streaming pass; memory is bounded because a shingle stops being recorded once it is known to be boilerplate.
-    Returns n_rows, rows_with_any_shared_shingle, rows_boilerplate_only, rows_flagged, flagged_positions (stream positions, to
-    drop with drop_flagged), shared_count_hist, boilerplate {n_shingles, top[20]}, examples (<= max_examples: id, shared shingles,
-    the row's first characters, where the shingle sits in the eval text) and the index stats.
-    Limits: exact digit-stripped substring overlap only - paraphrases, translations and re-worded numbers are NOT caught (see
-    semantic_neighbors for a small look-alike search); the boilerplate cut means a phrase used by > 500 rows is trusted."""
+    """Flag rows that share a digit-stripped n-gram (13) with any eval text.  A shingle is BOILERPLATE (instruction templates, 'which
+    of the following ...') when it occurs in at least `boilerplate_eval_df` (20) distinct EVAL ITEMS - the count is taken on the eval
+    side (EvalIndex.eval_df), never on the training side: an eval question owned by one item has eval df 1, so it flags every row that
+    copies it however many rows do (a train-side count would wave a widely copied leak through).  Boilerplate is reported and never
+    flags a row.  A row is flagged when it shares >= min_shared non-boilerplate shingles.
+    One streaming pass.  Returns n_rows, rows_with_any_shared_shingle, rows_boilerplate_only, rows_flagged, flagged_positions (stream
+    positions, to drop with drop_flagged), shared_count_hist, boilerplate {n_shingles, top[20]: shingle, eval_items, rows},
+    real_shingles_top (the non-boilerplate shingles that most rows share: a big number means one eval text is copied widely),
+    examples (<= max_examples: id, shared shingles, the row's first characters, where the shingle sits in the eval text) and the index
+    stats.  Limits: exact digit-stripped substring overlap only - paraphrases, translations and re-worded numbers are NOT caught (see
+    semantic_neighbors for a small look-alike search)."""
     text_fn, id_fn = text_fn or default_text, id_fn or default_id
-    ng, ev = index.ngram, index.hashes
+    ng, ev, eval_df = index.ngram, index.hashes, index.eval_df
     df: collections.Counter = collections.Counter()
     shingle_text: Dict[int, str] = {}
     hits: Dict[int, Tuple[str, Tuple[int, ...], str]] = {}
@@ -1408,18 +1549,17 @@ def decontaminate(rows: Iterable[Any], index: EvalIndex, *, text_fn: Optional[Ca
             df[h] += 1
             if h not in shingle_text:
                 shingle_text[h] = norm[first[h]:first[h] + ng]
-            if df[h] <= boilerplate_df:
+            if eval_df.get(h, 1) < boilerplate_eval_df:
                 real.append(h)
         if real:
             hits[pos] = (id_fn(row, pos), tuple(sorted(real, key=lambda h: shingle_text[h])), text[:row_prefix_chars])
     tick.done()
-    boiler = {h for h, d in df.items() if d > boilerplate_df}
+    boiler = {h for h in df if eval_df.get(h, 1) >= boilerplate_eval_df}
     flagged: Dict[int, List[int]] = {}
     for pos, (rid, hs, prefix) in hits.items():
-        real = [h for h in hs if h not in boiler]
-        if len(real) >= min_shared:
-            flagged[pos] = real
-    any_real = sum(1 for pos, (_, hs, _) in hits.items() if any(h not in boiler for h in hs))
+        if len(hs) >= min_shared:
+            flagged[pos] = list(hs)
+    any_real = len(hits)
     hist = collections.Counter()
     for real in flagged.values():
         c = len(real)
@@ -1430,12 +1570,14 @@ def decontaminate(rows: Iterable[Any], index: EvalIndex, *, text_fn: Optional[Ca
         shingles = sorted(shingle_text[h] for h in flagged[pos])
         examples.append({"position": pos, "id": rid, "n_shared_shingles": len(shingles), "shared_shingles": shingles[:3],
                          "row_prefix": prefix, "eval_matches": index.find_sources(shingles[0])})
-    top = sorted(((shingle_text[h], d) for h, d in df.items() if d > boilerplate_df), key=lambda kv: (-kv[1], kv[0]))
-    return {"n_rows": n_rows, "n_rows_shorter_than_ngram": n_short, "ngram": ng, "boilerplate_df": boilerplate_df, "min_shared": min_shared,
+    top = sorted(((shingle_text[h], eval_df.get(h, 1), df[h]) for h in boiler), key=lambda t: (-t[2], t[0]))
+    real_top = sorted(((shingle_text[h], eval_df.get(h, 1), d) for h, d in df.items() if h not in boiler), key=lambda t: (-t[2], t[0]))
+    return {"n_rows": n_rows, "n_rows_shorter_than_ngram": n_short, "ngram": ng, "boilerplate_eval_df": boilerplate_eval_df, "min_shared": min_shared,
             "rows_with_any_shared_shingle": rows_any, "rows_boilerplate_only": rows_any - any_real,
             "rows_with_real_overlap": any_real, "rows_flagged": len(flagged), "flagged_positions": sorted(flagged),
             "shared_count_hist": {k: hist[k] for k in ("1", "2-4", "5-19", "20+")},
-            "boilerplate": {"n_shingles": len(boiler), "top": [{"shingle": s, "rows": d} for s, d in top[:20]]},
+            "boilerplate": {"n_shingles": len(boiler), "top": [{"shingle": sh, "eval_items": e, "rows": d} for sh, e, d in top[:20]]},
+            "real_shingles_top": [{"shingle": sh, "eval_items": e, "rows": d} for sh, e, d in real_top[:10]],
             "examples": examples, "eval_index": index.stats(),
             "limits": "exact digit-stripped 13-gram overlap only; paraphrases/translations not detected"}
 
@@ -1463,13 +1605,16 @@ def _tfidf_vec(s: str, idf: Dict[str, float], default_idf: float) -> Dict[str, f
 def semantic_neighbors(queries: Sequence[str], rows: Iterable[Any], *, text_fn: Optional[Callable[[Any], str]] = None,
                        id_fn: Optional[Callable[[Any, int], str]] = None, top_n: int = 5, min_cos: float = 0.30, block_n: int = 4,
                        max_block_df: int = 30, min_shared_blocks: int = 2, idf_buffer_rows: int = 5000, snippet_chars: int = 200,
-                       progress: Optional[ProgressCB] = None, progress_every: int = 20000) -> List[dict]:
+                       progress: Optional[ProgressCB] = None, progress_every: int = 20000, deadline: Optional[float] = None,
+                       info: Optional[dict] = None) -> List[dict]:
     """For a SMALL list of eval questions find the train rows most similar by character-bigram TF-IDF cosine (digits and spaces
     stripped, NFKC).  Candidate rows are those sharing >= min_shared_blocks rare 4-grams (a 4-gram is a blocking key only if it
     occurs in <= max_block_df of the queries); only candidates get a cosine.  One streaming pass over `rows`.  Returns, per
     query, {"query", "matches": [{cosine, position, id, shared_blocks, snippet}]} (best first) - the numbers are for a human to read,
     not a verdict.  LIMITS: lexical only (no embeddings); paraphrases that change the wording, translations and re-ordered
-    sentences are missed; IDF comes from the queries + the first `idf_buffer_rows` rows; recall is unknown, nothing is exhaustive."""
+    sentences are missed; IDF comes from the queries + the first `idf_buffer_rows` rows; recall is unknown, nothing is exhaustive.
+    deadline = an absolute time.time() value: when it passes the pass over `rows` stops and info["truncated"] / info["rows_scanned"]
+    (a dict passed by the caller) say so; the matches found so far are returned."""
     text_fn, id_fn = text_fn or default_text, id_fn or default_id
     norm = lambda t: _STRIP_DIGITS_WS.sub("", unicodedata.normalize("NFKC", t).casefold())   # noqa: E731
     qs = [norm(q) for q in queries]
@@ -1523,10 +1668,24 @@ def semantic_neighbors(queries: Sequence[str], rows: Iterable[Any], *, text_fn: 
                     heapq.heappush(best[qi], item)
                 else:
                     heapq.heappushpop(best[qi], item)
+    scanned, stopped = 0, False
     for pos, (row, s) in enumerate(buffered):
+        if deadline is not None and pos % 256 == 0 and time.time() > deadline:
+            stopped = True
+            break
         handle(pos, row, s)
-    for pos, row in enumerate(it, start=len(buffered)):
-        handle(pos, row, norm(text_fn(row)))
+        scanned += 1
+    if not stopped:
+        for pos, row in enumerate(it, start=len(buffered)):
+            if deadline is not None and pos % 256 == 0 and time.time() > deadline:
+                stopped = True
+                break
+            handle(pos, row, norm(text_fn(row)))
+            scanned += 1
+    if stopped and info is not None:
+        info["truncated"] = True
+    if info is not None:
+        info["rows_scanned"] = scanned
     tick.done()
     return [{"query": q, "matches": [{"cosine": round(c, 4), "position": -negpos, "id": rid, "shared_blocks": cnt, "snippet": snip}
                                       for c, negpos, rid, snip, cnt in sorted(best[i], reverse=True)]} for i, q in enumerate(queries)]
@@ -1606,28 +1765,52 @@ def extract_python_blocks(text: str, *, include_unlabeled: bool = False, include
     return [c for _, c in found]
 
 
-# --- the sandbox.  The static rules are those of the GeoCPU math worker (executor_worker_v44r1.py in the r6 bundle), so a row
-# that passes here can also be run by the model's own executor.  The same source text is used in the parent (static check) and
-# in the child process (second check before exec).
+# --- the sandbox.  WHAT IT IS AND IS NOT.
+# The static rules are those of the GeoCPU math worker (executor_worker_v44r1.py in the r6 bundle: imports only from math cmath
+# decimal fractions statistics itertools functools operator collections, no classes, no attribute assignment, no underscore
+# attributes, no open/eval/exec/compile/getattr/globals ...) PLUS extra hardening found in review (import-from names, frame and
+# code attributes, str.format only on a literal with plain fields, sanitised module namespaces).  A row that passes here is
+# therefore also accepted by the model's own executor, and stays inside what the model can really call.
+#
+# The Python-level layers (static rules, restricted builtins/imports, an audit hook) are a FILTER, not a security boundary:
+# CPython sandboxes in pure Python always have escapes.  The boundary is the operating system: on the Colab runtime the child
+# runs as the unprivileged user 'nobody' (no supplementary groups, cannot read /content/drive, cannot write anywhere but its own
+# output files), under RLIMIT_CPU / AS / FSIZE / NPROC / NOFILE, in its own session that is killed on timeout, and the notebook
+# unmounts Drive while any untrusted code runs.  sandbox_selftest() proves these properties on the machine that runs the job.
+# There is NO weaker fallback: if the sandbox cannot start, the caller must stop (convert.Checks raises).
 EXECUTOR_ROOTS = ("math", "cmath", "decimal", "fractions", "statistics", "itertools", "functools", "operator", "collections")
 THIRD_PARTY_ROOTS = ("sympy", "numpy", "pandas")                     # additional roots of the executor; off by default
-WIDE_ROOTS = ("math", "cmath", "itertools", "functools", "collections", "re", "string", "json", "heapq", "bisect", "statistics",
-              "fractions", "decimal", "typing", "dataclasses", "enum", "copy", "operator", "textwrap", "abc", "numbers", "array",
-              "queue", "contextlib", "unicodedata", "difflib", "pprint", "datetime", "calendar", "hashlib", "base64", "binascii",
-              "struct", "zlib", "csv", "io", "random")
 SANDBOX_PROFILES = {
     "executor": {"roots": EXECUTOR_ROOTS, "allow_classes": False, "allow_attr_store": False, "allow_private_attrs": False, "dunder_names": ()},
-    "wide": {"roots": WIDE_ROOTS, "allow_classes": True, "allow_attr_store": True, "allow_private_attrs": True, "dunder_names": ("__name__",)},
 }
+SANDBOX_BACKEND = "checks.code_sandbox_check(profile=executor)"
+
+
+class SandboxError(RuntimeError):
+    """The sandbox cannot be started the way it must be (no weaker fallback exists)."""
+
 
 _VALIDATE_SRC = r'''
-import ast, re
+import ast, re, string
 class StaticReject(Exception):
     pass
-DENIED_NAMES = {'eval','exec','compile','open','input','help','dir','vars','globals','locals','getattr','setattr','delattr','breakpoint','memoryview'}
-DENIED_ATTRS = {'save','savez','savez_compressed','load','loads','dump','fromfile','tofile','memmap','ctypes','ctypeslib','system','popen','fork','spawn','get_handle','urlopen','request','write','writelines','open','codegen','autowrap','ufuncify','os','sys','builtins','subprocess','socket','environ','attrgetter','methodcaller'}
+DENIED_NAMES = {'eval','exec','compile','open','input','help','dir','vars','globals','locals','getattr','setattr','delattr','breakpoint','memoryview','exit','quit','type','object','super','classmethod','staticmethod','property'}
+DENIED_ATTRS = {'save','savez','savez_compressed','load','loads','dump','fromfile','tofile','memmap','ctypes','ctypeslib','system','popen','fork','spawn','get_handle','urlopen','request','write','writelines','open','codegen','autowrap','ufuncify','os','sys','builtins','subprocess','socket','environ','attrgetter','methodcaller','importlib','import_module','gi_frame','gi_code','gi_yieldfrom','cr_frame','cr_code','cr_await','ag_frame','ag_code','ag_await','f_back','f_globals','f_locals','f_builtins','f_code','f_trace','tb_frame','tb_next','func_globals','func_code','func_closure','cell_contents','co_code','co_consts','co_names','mro','with_traceback'}
+IMPORT_DENIED = DENIED_NAMES | DENIED_ATTRS | {'call'}
+ALLOWED_DOTTED = {'collections.abc'}
 _READ_PREFIXES = ('read_','to_csv','to_excel','to_json','to_pickle','to_parquet','to_hdf','to_sql','to_feather','to_orc')
 _FMT_TRAVERSAL = re.compile(r"\{[^{}]*__")
+_FIELD_OK = re.compile(r"[0-9]+|[A-Za-z][A-Za-z0-9_]*")
+def _check_format(s):
+    try:
+        parts = list(string.Formatter().parse(s))
+    except ValueError:
+        raise StaticReject("format_string|malformed format string")
+    for _lit, field, spec, _conv in parts:
+        if field and not _FIELD_OK.fullmatch(field):
+            raise StaticReject("format_string|only plain {}, {0} and {name} fields are allowed (no attribute or index access)")
+        if spec:
+            _check_format(spec)
 def validate(code, cfg):
     roots = set(cfg["roots"])
     if not isinstance(code, str):
@@ -1645,6 +1828,8 @@ def validate(code, cfg):
     for node in ast.walk(tree):
         if isinstance(node, (ast.Global, ast.Nonlocal)):
             raise StaticReject("global_nonlocal|global/nonlocal declarations are disabled")
+        if isinstance(node, (ast.AsyncFunctionDef, ast.Await, ast.AsyncFor, ast.AsyncWith)):
+            raise StaticReject("async|async code is disabled")
         if isinstance(node, ast.ClassDef) and not cfg["allow_classes"]:
             raise StaticReject("class_def|class definitions are disabled")
         if isinstance(node, ast.Name) and ((node.id.startswith("__") and node.id not in cfg["dunder_names"]) or node.id in DENIED_NAMES):
@@ -1656,22 +1841,31 @@ def validate(code, cfg):
                 raise StaticReject("attr|" + a)
             if isinstance(node.ctx, (ast.Store, ast.Del)) and not cfg["allow_attr_store"]:
                 raise StaticReject("attr_store|attribute assignment is disabled: ." + a)
+            if a in ("format", "format_map"):
+                v = node.value
+                if not (isinstance(v, ast.Constant) and isinstance(v.value, str)):
+                    raise StaticReject("format_string|str.format / format_map are only allowed on a string literal")
+                _check_format(v.value)
         if isinstance(node, ast.Import):
             for n in node.names:
-                if n.name.split(".")[0] not in roots:
+                if n.name.split(".")[0] not in roots or ("." in n.name and n.name not in ALLOWED_DOTTED):
                     raise StaticReject("import|" + n.name)
         if isinstance(node, ast.ImportFrom):
-            if node.level or not node.module or node.module.split(".")[0] not in roots:
+            mod = node.module or ""
+            if node.level or not mod or mod.split(".")[0] not in roots or ("." in mod and mod not in ALLOWED_DOTTED):
                 raise StaticReject("import|" + str(node.module))
-            if any(a.name == "*" or a.name.startswith("_") for a in node.names):
-                raise StaticReject("wildcard_import|wildcard or private import")
+            for a in node.names:
+                if a.name == "*" or a.name.startswith("_"):
+                    raise StaticReject("wildcard_import|wildcard or private import")
+                if a.name in IMPORT_DENIED:
+                    raise StaticReject("import_name|" + a.name)
         if isinstance(node, ast.Constant) and isinstance(node.value, str) and _FMT_TRAVERSAL.search(node.value):
             raise StaticReject("format_string|attribute traversal inside a format string")
     return tree
 '''
 
 _CHILD_SRC = _VALIDATE_SRC + r'''
-import builtins, contextlib, importlib, io, json, os, sys
+import builtins, contextlib, importlib, io, json, os, sys, types
 cfg = json.loads(sys.argv[1])
 with open(sys.argv[2], encoding="utf-8") as _f:
     code = _f.read()
@@ -1694,19 +1888,32 @@ if resource is not None:
         _lim("RLIMIT_AS", int(cfg["mem_mb"]) << 20)
     _lim("RLIMIT_FSIZE", 1 << 20)
     _lim("RLIMIT_CORE", 0)
+    _lim("RLIMIT_NPROC", 64)
+    _lim("RLIMIT_NOFILE", 64)
 ROOTS = set(cfg["roots"])
-MODULES = {}
+_HIDE = {"attrgetter", "methodcaller", "call"}
+def _public(mod):
+    # a namespace of the PUBLIC, NON-MODULE attributes of a module: nothing like random._os, fractions.sys or dataclasses.inspect
+    return types.SimpleNamespace(**{k: v for k, v in vars(mod).items() if not k.startswith("_") and not isinstance(v, types.ModuleType) and k not in _HIDE})
+NS = {}
 for r in sorted(ROOTS):
     try:
-        MODULES[r] = importlib.import_module(r)
+        NS[r] = _public(importlib.import_module(r))
+    except Exception:
+        pass
+DOTTED = {}
+if "collections" in NS:
+    try:
+        DOTTED["collections.abc"] = _public(importlib.import_module("collections.abc"))
+        NS["collections"].abc = DOTTED["collections.abc"]
     except Exception:
         pass
 LIB = [os.path.realpath(os.path.dirname(os.__file__)), os.path.realpath(os.path.join(sys.base_prefix, "DLLs"))]
 if cfg.get("third_party"):
-    for m in MODULES.values():
-        fn = getattr(m, "__file__", None)
-        if fn:
-            LIB.append(os.path.realpath(os.path.dirname(fn)))
+    for _n in NS:
+        _fn = getattr(sys.modules.get(_n), "__file__", None)
+        if _fn:
+            LIB.append(os.path.realpath(os.path.dirname(_fn)))
     LIB += [os.path.realpath(p) for p in sys.path if p.endswith(("site-packages", "dist-packages"))]
 def _in_lib(p):
     try:
@@ -1714,8 +1921,8 @@ def _in_lib(p):
     except Exception:
         return False
     return any(p == r or p.startswith(r + os.sep) for r in LIB)
-_BLOCK_PREFIX = ("socket.", "subprocess.", "ctypes.", "urllib.", "http.client.", "ftplib.", "smtplib.", "imaplib.", "poplib.", "telnetlib.", "webbrowser.", "shutil.", "pty.")
-_BLOCK_EVENTS = {"os.system", "os.exec", "os.posix_spawn", "os.spawn", "os.fork", "os.forkpty", "os.kill", "os.killpg", "os.remove", "os.rmdir", "os.rename", "os.mkdir", "os.chdir", "os.chmod", "os.chown", "os.link", "os.symlink", "os.truncate", "os.putenv", "os.unsetenv"}
+_BLOCK_PREFIX = ("socket.", "subprocess.", "ctypes.", "urllib.", "http.client.", "ftplib.", "smtplib.", "imaplib.", "poplib.", "telnetlib.", "webbrowser.", "shutil.", "pty.", "_posixsubprocess.")
+_BLOCK_EVENTS = {"os.system", "os.exec", "os.posix_spawn", "os.spawn", "os.fork", "os.forkpty", "os.kill", "os.killpg", "os.remove", "os.rmdir", "os.rename", "os.mkdir", "os.chdir", "os.chmod", "os.chown", "os.link", "os.symlink", "os.truncate", "os.putenv", "os.unsetenv", "os.utime", "os.setxattr", "os.removexattr", "os.listxattr", "os.chroot", "os.mkfifo", "os.mknod"}
 def audit(event, args):
     if event.startswith(_BLOCK_PREFIX) or event in _BLOCK_EVENTS:
         raise PermissionError("operation disabled in the sandbox: " + event)
@@ -1731,22 +1938,18 @@ def audit(event, args):
         if not _in_lib(os.fsdecode(f)):
             raise PermissionError("filesystem reads outside the python library disabled")
 sys.addaudithook(audit)
-REAL_IMPORT = builtins.__import__
-_NAMES = ('abs','all','any','bin','bool','bytes','bytearray','chr','complex','dict','divmod','enumerate','filter','float','format','frozenset','hash','hex','int','isinstance','issubclass','iter','len','list','map','max','min','next','oct','ord','pow','print','range','repr','reversed','round','set','slice','sorted','str','sum','tuple','zip','Exception','ValueError','TypeError','ZeroDivisionError','RuntimeError','AssertionError','NameError','IndexError','KeyError','StopIteration')
-_WIDE = ('object','super','property','staticmethod','classmethod','type','callable','NotImplementedError','OverflowError','AttributeError','ArithmeticError','LookupError','StopAsyncIteration','True','False','None')
-SAFE = {n: getattr(builtins, n) for n in _NAMES}
-if cfg["allow_classes"]:
-    SAFE["__build_class__"] = builtins.__build_class__
-    for n in _WIDE:
-        if hasattr(builtins, n):
-            SAFE[n] = getattr(builtins, n)
+_NAMES = ('abs','all','any','bin','bool','bytes','bytearray','chr','complex','dict','divmod','enumerate','filter','float','format','frozenset','hash','hex','int','isinstance','issubclass','iter','len','list','map','max','min','next','oct','ord','pow','print','range','repr','reversed','round','set','slice','sorted','str','sum','tuple','zip','Exception','ValueError','TypeError','ZeroDivisionError','RuntimeError','AssertionError','NameError','IndexError','KeyError','StopIteration','OverflowError','ArithmeticError','LookupError','True','False','None')
+SAFE = {n: getattr(builtins, n) for n in _NAMES if hasattr(builtins, n)}
 def safe_import(name, globals=None, locals=None, fromlist=(), level=0):
-    root = name.split(".")[0]
-    if level or root not in ROOTS:
+    if level:
+        raise PermissionError("import disabled: relative import")
+    if name in DOTTED:
+        return DOTTED[name] if fromlist else NS[name.split(".")[0]]
+    if "." in name or name.split(".")[0] not in ROOTS:
         raise PermissionError("import disabled: " + name)
-    if root not in MODULES:
-        raise ImportError("module unavailable: " + root)
-    return REAL_IMPORT(name, globals, locals, fromlist, level)
+    if name not in NS:
+        raise ImportError("module unavailable: " + name)
+    return NS[name]
 SAFE["__import__"] = safe_import
 class OutputLimit(RuntimeError):
     pass
@@ -1804,11 +2007,12 @@ def _profile_cfg(profile: str, allowed_modules: Optional[Iterable[str]], allow_t
 
 def static_check(code: str, *, profile: str = "executor", allowed_modules: Optional[Iterable[str]] = None,
                  allow_third_party: bool = False) -> str:
-    """'' when the code passes the static rules, else '<category>:<detail>' (syntax, too_long, global_nonlocal, class_def, name, attr,
-    attr_store, import, wildcard_import, format_string).  Profile 'executor' = the GeoCPU math worker's rules (imports only from
-    math cmath decimal fractions statistics itertools functools operator collections; no classes, no attribute assignment, no
-    underscore attributes, no open/eval/exec/compile/getattr/globals..., no 'os'/'sys'/'subprocess'/'socket' attributes);
-    'wide' = a broader stdlib allow-list with classes, for code that only needs to run in this check."""
+    """'' when the code passes the static rules, else '<category>:<detail>' (syntax, too_long, global_nonlocal, async, class_def, name,
+    attr, attr_store, import, import_name, wildcard_import, format_string).  Profile 'executor' = the GeoCPU math worker's rules
+    (imports only from math cmath decimal fractions statistics itertools functools operator collections; no classes, no attribute
+    assignment, no underscore attributes, no open/eval/exec/compile/getattr/globals..., no 'os'/'sys'/'subprocess'/'socket'
+    attributes, no frame / code introspection attributes, str.format only on a literal with plain fields).  This is the ONLY profile:
+    the earlier 'wide' profile (classes, random, re, json ...) was removed because the model's own executor cannot run such code."""
     cfg = _profile_cfg(profile, allowed_modules, allow_third_party)
     try:
         _VALIDATE_NS["validate"](code, cfg)
@@ -1817,60 +2021,124 @@ def static_check(code: str, *, profile: str = "executor", allowed_modules: Optio
     return ""
 
 
-def code_sandbox_run(code: str, timeout: float = 5.0, *, profile: str = "executor", allowed_modules: Optional[Iterable[str]] = None,
-                     allow_third_party: bool = False, max_output_chars: int = 8192, mem_mb: Optional[int] = None,
-                     python: Optional[str] = None) -> dict:
-    """Run `code` in a fresh python subprocess.  Returns {ok, stdout, error, category, seconds}.
-    category: '' | static | timeout | output_limit | exception | crash.  error is '<category>:<detail>'.
-    Defence in depth (NOT a security boundary - Colab cannot firewall a process, so only code that passes the static rules is
-    ever executed, and the child checks it again): python -S -s -B -X utf8 (no site / user site / .pyc; -I is not used because it
-    would ignore PYTHONHASHSEED=0, which makes set order of strings reproducible), cwd = a fresh empty temp dir, stdin closed,
-    minimal environment, restricted builtins and import, an audit hook that refuses sockets / subprocesses / ctypes / file
-    writes / reads outside the python library, output capped at max_output_chars, wall-clock `timeout` (the whole process group
-    is killed), and on POSIX RLIMIT_CPU / RLIMIT_AS (mem_mb, default 1024; 4096 with third party) / RLIMIT_FSIZE / RLIMIT_CORE.
-    Windows has no `resource`: only the wall-clock timeout applies there."""
-    t0 = time.time()
-    cfg = _profile_cfg(profile, allowed_modules, allow_third_party)
-    rej = static_check(code, profile=profile, allowed_modules=allowed_modules, allow_third_party=allow_third_party)
-    if rej:
-        return {"ok": False, "stdout": "", "error": "static:" + rej, "category": "static", "seconds": time.time() - t0}
-    marker = "@@CHECKS-RESULT-" + secrets.token_hex(8) + "@@"
-    cfg.update({"cpu": int(math.ceil(timeout)) + 1, "cap": int(max_output_chars), "marker": marker,
-                "mem_mb": mem_mb if mem_mb is not None else (4096 if allow_third_party else 1024)})
-    env = {"PYTHONHASHSEED": "0", "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1", "PYTHONDONTWRITEBYTECODE": "1"}
+def _resolve_run_as(run_as: Union[None, bool, str]) -> Optional[Tuple[int, int, str]]:
+    """None (no user switch) or (uid, gid, name) of the unprivileged account the child runs as.  'auto' = 'nobody' when this process is
+    root on POSIX (Colab), nothing otherwise (a local test run).  An explicit name that cannot be used raises SandboxError."""
+    if run_as in (None, False):
+        return None
+    if os.name != "posix":
+        if run_as == "auto":
+            return None
+        raise SandboxError(f"run_as={run_as!r}: user switching needs POSIX")
+    import pwd
+    if run_as == "auto":
+        if os.geteuid() != 0:
+            return None
+        run_as = "nobody"
+    elif os.geteuid() != 0:
+        raise SandboxError(f"run_as={run_as!r} needs root to switch users")
+    try:
+        pw = pwd.getpwnam(str(run_as))
+    except KeyError as e:
+        raise SandboxError(f"user {run_as!r} does not exist on this machine") from e
+    if pw.pw_uid == 0:
+        raise SandboxError("refusing to run the sandbox child as root")
+    return pw.pw_uid, pw.pw_gid, str(run_as)
+
+
+def _file_tail(path: str, nbytes: int) -> bytes:
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as f:
+            if size > nbytes:
+                f.seek(size - nbytes)
+            return f.read(nbytes)
+    except OSError:
+        return b""
+
+
+def _spawn(script_text: str, args: Sequence[str], *, timeout: float, flags: Sequence[str], python: Optional[str],
+           acct: Optional[Tuple[int, int, str]], files: Optional[Mapping[str, str]] = None) -> dict:
+    """Run `python <flags> _run.py <args>` once in a fresh temp dir: cwd = that dir, stdin closed, minimal environment, stdout/stderr
+    to files (never pipes, so a child cannot fill this process's memory; only the tail is read), own session killed on timeout, and
+    on POSIX as the unprivileged `acct` with no supplementary groups.  Returns {returncode, out, err, timed_out, spawn_error}."""
     exe = python or sys.executable
+    env = {"PYTHONHASHSEED": "0", "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1", "PYTHONDONTWRITEBYTECODE": "1"}
     if os.name == "nt":
         for k in ("SYSTEMROOT", "SystemRoot", "windir", "TEMP", "TMP"):
             if k in os.environ:
                 env[k] = os.environ[k]
         env["PATH"] = os.path.dirname(exe)
-    flags = ["-s", "-B", "-X", "utf8"] + ([] if allow_third_party else ["-S"])
     with tempfile.TemporaryDirectory(prefix="v49sbx_", ignore_cleanup_errors=True) as d:
-        script, codefile = os.path.join(d, "_run.py"), os.path.join(d, "code.py")
-        with open(script, "w", encoding="utf-8", newline="\n") as f:
-            f.write(_CHILD_SRC)
-        with open(codefile, "w", encoding="utf-8", newline="\n") as f:
-            f.write(code)
-        proc = subprocess.Popen([exe] + flags + [script, json.dumps(cfg), codefile], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, cwd=d, env=env, start_new_session=(os.name == "posix"))
-        timed_out = False
-        try:
-            raw_out, raw_err = proc.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            timed_out = True
+        script, out_p, err_p = os.path.join(d, "_run.py"), os.path.join(d, "out.bin"), os.path.join(d, "err.bin")
+        payload = {"_run.py": script_text}
+        payload.update(files or {})
+        for name, text in payload.items():
+            with open(os.path.join(d, name), "w", encoding="utf-8", newline="\n") as f:
+                f.write(text)
+        kw: Dict[str, Any] = {}
+        if acct is not None:                                      # the unprivileged child must be able to read its script
+            os.chmod(d, 0o755)
+            for name in payload:
+                os.chmod(os.path.join(d, name), 0o644)
+            kw.update(user=acct[0], group=acct[1], extra_groups=[])
+        timed_out, rc, spawn_error = False, None, ""
+        with open(out_p, "wb") as fo, open(err_p, "wb") as fe:
             try:
-                if os.name == "posix":
-                    os.killpg(proc.pid, signal.SIGKILL)
-                else:
-                    proc.kill()
-            except OSError:
-                pass
-            raw_out, raw_err = proc.communicate()
+                proc = subprocess.Popen([exe] + list(flags) + [script] + list(args), stdin=subprocess.DEVNULL, stdout=fo, stderr=fe, cwd=d,
+                                        env=env, start_new_session=(os.name == "posix"), **kw)
+            except (OSError, ValueError) as e:
+                proc, spawn_error = None, f"{type(e).__name__}: {e}"
+            if proc is not None:
+                try:
+                    proc.wait(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                    try:
+                        if os.name == "posix":
+                            os.killpg(proc.pid, signal.SIGKILL)
+                        else:
+                            proc.kill()
+                    except OSError:
+                        pass
+                    proc.wait()
+                rc = proc.returncode
+        raw_out, raw_err = _file_tail(out_p, 1 << 18), _file_tail(err_p, 4096)
+    return {"returncode": rc, "out": raw_out, "err": raw_err, "timed_out": timed_out, "spawn_error": spawn_error}
+
+
+def code_sandbox_run(code: str, timeout: float = 5.0, *, profile: str = "executor", allowed_modules: Optional[Iterable[str]] = None,
+                     allow_third_party: bool = False, max_output_chars: int = 8192, mem_mb: Optional[int] = None,
+                     python: Optional[str] = None, run_as: Union[None, bool, str] = "auto") -> dict:
+    """Run `code` in a fresh python subprocess.  Returns {ok, stdout, error, category, seconds}.
+    category: '' | static | timeout | output_limit | exception | crash.  error is '<category>:<detail>'.
+    Defence in depth (see the comment above SANDBOX_PROFILES: the Python layers are a filter, the OS is the boundary): only code that
+    passes the static rules is ever executed and the child checks it again; python -S -s -B -X utf8 (no site / user site / .pyc;
+    -I is not used because it would ignore PYTHONHASHSEED=0, which makes set order of strings reproducible); cwd = a fresh temp
+    dir; stdin closed; minimal environment; restricted builtins; modules are handed out as namespaces of their public non-module
+    attributes; an audit hook refuses sockets / subprocesses / ctypes / file writes / reads outside the python library; output is
+    capped at max_output_chars; wall-clock `timeout` (the whole process group is killed).  On POSIX: RLIMIT_CPU / AS (mem_mb, default
+    1024; 4096 with third party) / FSIZE / CORE / NPROC / NOFILE and, when this process is root (Colab), the child runs as the
+    unprivileged user 'nobody' (run_as='auto'; None disables; a name forces it).  Windows has no `resource`: only the wall-clock
+    timeout applies there (local unit tests only)."""
+    t0 = time.time()
+    cfg = _profile_cfg(profile, allowed_modules, allow_third_party)
+    rej = static_check(code, profile=profile, allowed_modules=allowed_modules, allow_third_party=allow_third_party)
+    if rej:
+        return {"ok": False, "stdout": "", "error": "static:" + rej, "category": "static", "seconds": time.time() - t0}
+    acct = _resolve_run_as(run_as)
+    marker = "@@CHECKS-RESULT-" + secrets.token_hex(8) + "@@"
+    cfg.update({"cpu": int(math.ceil(timeout)) + 1, "cap": int(max_output_chars), "marker": marker,
+                "mem_mb": mem_mb if mem_mb is not None else (4096 if allow_third_party else 1024)})
+    flags = ["-s", "-B", "-X", "utf8"] + ([] if allow_third_party else ["-S"])
+    r = _spawn(_CHILD_SRC, [json.dumps(cfg), "code.py"], timeout=timeout, flags=flags, python=python, acct=acct, files={"code.py": code})
     secs = time.time() - t0
-    if timed_out:
+    if r["spawn_error"]:
+        return {"ok": False, "stdout": "", "error": "crash:spawn:" + r["spawn_error"][:200], "category": "crash", "seconds": secs}
+    if r["timed_out"]:
         return {"ok": False, "stdout": "", "error": f"timeout:{timeout}s", "category": "timeout", "seconds": secs}
     result = None
-    for line in reversed(raw_out.decode("utf-8", "replace").splitlines()):
+    for line in reversed(r["out"].decode("utf-8", "replace").splitlines()):
         if line.startswith(marker):
             try:
                 result = json.loads(line[len(marker):])
@@ -1878,18 +2146,132 @@ def code_sandbox_run(code: str, timeout: float = 5.0, *, profile: str = "executo
                 result = None
             break
     if result is None:
-        tail = raw_err.decode("utf-8", "replace").strip().splitlines()[-1:] or [""]
-        return {"ok": False, "stdout": "", "error": f"crash:returncode={proc.returncode}:{tail[0][:200]}", "category": "crash", "seconds": secs}
+        tail = r["err"].decode("utf-8", "replace").strip().splitlines()[-1:] or [""]
+        return {"ok": False, "stdout": "", "error": f"crash:returncode={r['returncode']}:{tail[0][:200]}", "category": "crash", "seconds": secs}
     cat = "" if result["ok"] else result["error"].split(":", 1)[0]
     return {"ok": bool(result["ok"]), "stdout": result["stdout"], "error": result["error"], "category": cat, "seconds": secs}
 
 
 def code_sandbox_check(code: str, timeout: float = 5.0, **kw: Any) -> Tuple[bool, str, str]:
-    """(ok, stdout, error) - see code_sandbox_run for the flags, profiles and limits.  error is '' when ok, else e.g.
+    """(ok, stdout, error) - see code_sandbox_run for the flags, profile and limits.  error is '' when ok, else e.g.
     'static:import:os', 'static:name:open', 'static:class_def:...', 'timeout:5s', 'exception:ZeroDivisionError: ...',
     'output_limit:...', 'crash:returncode=...'.  `print(1 + 1)` -> (True, '2\\n', '')."""
     r = code_sandbox_run(code, timeout, **kw)
     return r["ok"], r["stdout"], r["error"]
+
+
+# payloads that the static rules must refuse (each is harmless if it ever ran: it only prints or raises)
+SANDBOX_MUST_REJECT = (
+    ("import os", "import os\nprint(os.getcwd())\n"),
+    ("operator.attrgetter walk", "from operator import attrgetter, methodcaller\nprint(methodcaller('__subclasses__')(attrgetter('__class__.__base__')(0)))\n"),
+    ("format-string traversal (literal)", "print('{0.__class__}'.format(1))\n"),
+    ("format-string traversal (built)", "s = '{0._' + '_class__}'\nprint(s.format(1))\n"),
+    ("generator frame walk", "g = (g.gi_frame.f_back for _ in [1])\nprint(next(g))\n"),
+    ("class definition", "class A:\n    pass\n"),
+    ("import re", "import re\nprint(re.sub('a', 'b', 'a'))\n"),
+    ("import random", "import random\nprint(random.random())\n"),
+    ("open()", "print(open('x'))\n"),
+    ("getattr()", "print(getattr(1, 'real'))\n"),
+)
+_PROBE_SRC = r'''
+import json, os
+res = {"uid": os.getuid() if hasattr(os, "getuid") else None, "gid": os.getgid() if hasattr(os, "getgid") else None}
+def t(label, fn):
+    try:
+        res[label] = "ok:" + str(fn())
+    except BaseException as e:
+        res[label] = "error:" + type(e).__name__
+t("listdir_drive", lambda: len(os.listdir("/content/drive")))
+t("listdir_mydrive", lambda: len(os.listdir("/content/drive/MyDrive")))
+t("read_etc_shadow", lambda: len(open("/etc/shadow").read()))
+res["can_write_mydrive"] = os.access("/content/drive/MyDrive", os.W_OK)
+res["can_write_content"] = os.access("/content", os.W_OK)
+res["can_write_cwd"] = os.access(".", os.W_OK)
+print(json.dumps(res))
+'''
+
+
+def sandbox_selftest(*, timeout: float = 20.0, python: Optional[str] = None, require_os_containment: bool = False, light: bool = False,
+                     run_as: Union[None, bool, str] = "auto", drive_unmounted: bool = False) -> dict:
+    """Proves on THIS machine that the sandbox works and refuses what it must.  Returns {ok, backend, run_as, checks: [{name, ok,
+    detail}], failed: [names]}.  light=True runs only the cheap start-up checks (convert.Checks uses it); the full run (the notebook,
+    step '7-0') adds the escape payloads, the runtime-import smoke test, timeout handling and the OS probe.  With
+    require_os_containment=True a machine where the child cannot be switched to an unprivileged user (Windows, a non-root Linux
+    process) FAILS: that is the setting for the Colab run.  On a root POSIX process the OS probe additionally requires that the
+    child is not root, cannot list or write a mounted /content/drive and cannot read /etc/shadow.  drive_unmounted=True says that the
+    notebook unmounts Drive while code runs (and verifies it): the two Drive checks then only report what the child could see, because
+    the unmount is the barrier that matters for Drive (a mounted Drive that happens to be world-readable must not block the run)."""
+    out: List[dict] = []
+
+    def add(name: str, ok: bool, detail: str = "") -> bool:
+        out.append({"name": name, "ok": bool(ok), "detail": detail})
+        return bool(ok)
+
+    try:
+        acct = _resolve_run_as(run_as)
+    except SandboxError as e:
+        add("run_as", False, str(e))
+        acct = None
+    else:
+        add("run_as", True, "no user switch (not root / not POSIX)" if acct is None else f"child runs as {acct[2]} (uid {acct[0]})")
+    if require_os_containment:
+        add("os_containment_available", acct is not None, "the child must run as an unprivileged user" if acct is None else f"uid {acct[0]}")
+    r = code_sandbox_run("print(1 + 1)\n", timeout, python=python, run_as=run_as)
+    add("print(1 + 1)", r["ok"] and r["stdout"].strip() == "2", r["error"] or r["stdout"].strip())
+    r = code_sandbox_run("import os\n", timeout, python=python, run_as=run_as)
+    add("import os is refused", (not r["ok"]) and r["category"] == "static", r["error"])
+    r = code_sandbox_run("import math, cmath, decimal, fractions, statistics, itertools, functools, operator, collections\nprint('ok')\n", timeout,
+                         python=python, run_as=run_as)
+    add("every allowed module imports", r["ok"] and r["stdout"].strip() == "ok", r["error"] or r["stdout"].strip())
+    if not light:
+        for name, code, expect in (
+                ("Fraction", "from fractions import Fraction\nprint(Fraction(1, 3) + Fraction(1, 6))\n", "1/2"),
+                ("Decimal", "from decimal import Decimal\nprint(Decimal('0.1') + Decimal('0.2'))\n", "0.3"),
+                ("statistics", "import statistics\nprint(statistics.mean([1, 2, 3]))\n", "2"),
+                ("collections", "import collections\nprint(collections.Counter('aab').most_common(1))\n", "[('a', 2)]"),
+                ("collections.abc", "from collections.abc import Iterable\nprint(isinstance([1], Iterable))\n", "True"),
+                ("operator", "import operator\nprint(operator.add(1, 2), operator.mul(3, 4))\n", "3 12"),
+                ("functools", "from functools import reduce\nprint(reduce(lambda a, b: a * b, [1, 2, 3, 4]))\n", "24"),
+                ("itertools", "import itertools\nprint(list(itertools.permutations([1, 2, 3]))[0])\n", "(1, 2, 3)"),
+                ("math", "import math\nprint(round(math.sqrt(2), 4), math.gcd(12, 18))\n", "1.4142 6"),
+                ("str.format literal", "print('{:>5}|{name}'.format(3, name='x'))\n", "3|x"),
+                ("function and loop", "def f(n):\n    return sum(i * i for i in range(n))\nprint(f(10))\n", "285")):
+            r = code_sandbox_run(code, timeout, python=python, run_as=run_as)
+            add("runs: " + name, r["ok"] and r["stdout"].strip() == expect, r["error"] or r["stdout"].strip())
+        for name, code in SANDBOX_MUST_REJECT:
+            r = code_sandbox_run(code, timeout, python=python, run_as=run_as)
+            add("refused: " + name, (not r["ok"]) and r["category"] == "static", r["error"] or ("RAN: " + r["stdout"].strip()[:80]))
+        r = code_sandbox_run("import statistics\nprint(statistics.random)\n", timeout, python=python, run_as=run_as)
+        add("module namespaces hide submodules (statistics.random)", (not r["ok"]) and ("AttributeError" in r["error"] or r["category"] == "static"),
+            r["error"] or ("RAN: " + r["stdout"].strip()[:80]))
+        r = code_sandbox_run("while True:\n    pass\n", 1.0, python=python, run_as=run_as)
+        add("endless loop is stopped", (not r["ok"]) and r["category"] in ("timeout", "exception", "crash"), r["error"])
+        r = code_sandbox_run("print('x' * 100000)\n", timeout, python=python, run_as=run_as, max_output_chars=1000)
+        add("output is capped", (not r["ok"]) and r["category"] == "output_limit", r["error"])
+        probe = _spawn(_PROBE_SRC, [], timeout=timeout, flags=["-s", "-B", "-X", "utf8", "-S"], python=python, acct=acct)
+        info: dict = {}
+        try:
+            info = json.loads(probe["out"].decode("utf-8", "replace").strip().splitlines()[-1])
+        except (ValueError, IndexError):
+            pass
+        if not info:
+            add("os probe ran", False, probe["spawn_error"] or probe["err"].decode("utf-8", "replace")[-200:])
+        else:
+            add("os probe ran", True, json.dumps(info))
+            if acct is not None:
+                add("child is not root", info.get("uid") not in (0, None), f"uid {info.get('uid')}")
+                sees = str(info.get("listdir_drive", "")).startswith("ok:") or str(info.get("listdir_mydrive", "")).startswith("ok:")
+                writes = bool(info.get("can_write_mydrive"))
+                if drive_unmounted:
+                    add("Drive is unmounted while code runs (what a child could see of a mounted Drive: " + ("it could list it" if sees else "nothing")
+                        + ("; it could write it" if writes else "") + ")", True, f"{info.get('listdir_drive')} / {info.get('listdir_mydrive')}")
+                else:
+                    add("child cannot list /content/drive", not sees, f"{info.get('listdir_drive')} / {info.get('listdir_mydrive')}")
+                    add("child cannot write Drive", not writes, str(info.get("can_write_mydrive")))
+                add("child cannot read /etc/shadow", not str(info.get("read_etc_shadow", "")).startswith("ok:"), str(info.get("read_etc_shadow")))
+    failed = [c["name"] for c in out if not c["ok"]]
+    return {"ok": not failed, "backend": SANDBOX_BACKEND, "run_as": None if acct is None else acct[2], "light": light, "checks": out, "failed": failed,
+            "platform": sys.platform, "python": sys.version.split()[0]}
 
 
 def code_sandbox_check_many(codes: Sequence[str], timeout: float = 5.0, *, workers: int = 2, progress: Optional[ProgressCB] = None,

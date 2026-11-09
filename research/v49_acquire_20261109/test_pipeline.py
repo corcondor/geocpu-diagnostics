@@ -41,6 +41,29 @@ def fixture(name):
     return json.loads((FIX / name).read_text(encoding="utf-8"))
 
 
+FENCE = CV.FENCE
+JQ_ART = [("山田太郎は東京出身の作家である。", "山田太郎の出身地はどこ?", "東京"), ("鈴木花子は大阪で生まれた画家である。", "鈴木花子はどこで生まれた?", "大阪"),
+          ("佐藤次郎は北海道の農家に育った。", "佐藤次郎はどこで育った?", "北海道"), ("高橋美咲は京都にある大学を卒業した。", "高橋美咲はどこの大学を卒業した?", "京都"),
+          ("伊藤健一は福岡市の市長を務めた。", "伊藤健一は何市の市長を務めた?", "福岡"), ("渡辺由美は仙台で会社を設立した。", "渡辺由美はどこで会社を設立した?", "仙台"),
+          ("中村拓也は札幌の病院で働いている。", "中村拓也はどこの病院で働いている?", "札幌"), ("小林真理は名古屋で店を開いた。", "小林真理はどこで店を開いた?", "名古屋")]
+JQ_TAIL = "別の文が続きます。"
+EXTRA_CODING = [
+    {"messages": [{"role": "user", "content": "1から10までの合計を表示するPythonコードを書いて。"},
+                  {"role": "assistant", "content": f"以下のPythonコードは、1から10までの合計を計算して表示します。\n{FENCE}python\nprint(sum(range(1, 11)))\n{FENCE}\n出力:\n{FENCE}\n55\n{FENCE}\n結果は55です。"}]},
+    {"messages": [{"role": "user", "content": "Rustで挨拶を表示する関数を書いてください。"},
+                  {"role": "assistant", "content": f"次のように書けます。\n{FENCE}rust\nfn main() {{\n    println!(\"こんにちは\");\n}}\n{FENCE}\nこれで標準出力に表示されます。"}]},
+]
+
+
+def jaquad_json() -> dict:
+    jq = fixture("jaquad_train_fixture.json")
+    for i, (ctx, q, a) in enumerate(JQ_ART):
+        jq["data"].append({"title": f"人物{i}", "paragraphs": [{"context": ctx + JQ_TAIL, "qas": [
+            {"id": f"tr-ok-{i:02d}-000", "question": q, "question_type": "Syntactic variation",
+             "answers": [{"text": a, "answer_start": ctx.index(a), "answer_type": "Place"}]}]}]})
+    return jq
+
+
 def sha(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
 
@@ -69,12 +92,12 @@ def parquet_bytes(records) -> bytes:
 def fixture_layout() -> dict:
     """{acquire key: [(path inside the repo, bytes, role)]}: the fixtures as the real files would be laid out in the repos."""
     hp = fixture("hotpot_fixture.json")
-    jq = (FIX / "jaquad_train_fixture.json").read_bytes()
+    jq = json.dumps(jaquad_json(), ensure_ascii=False).encode("utf-8")
     dev = json.dumps({"data": [{"title": "DEV", "paragraphs": [{"context": "甲は乙である。丙は丁である。", "qas": [
         {"id": "de-001-00-000", "question": "甲は何ですか。", "question_type": "x", "answers": [{"text": "乙", "answer_start": 2, "answer_type": "O"}]}]}]}]},
         ensure_ascii=False).encode("utf-8")
     layout = {
-        "coding": [("data/train-00000-of-00001.parquet", parquet_bytes(fixture("coding_fixture.json")), "train")],
+        "coding": [("data/train-00000-of-00001.parquet", parquet_bytes(fixture("coding_fixture.json") + EXTRA_CODING), "train")],
         "tengentoppa": [("completed_sets.jsonl", (FIX / "tengentoppa_fixture.jsonl").read_bytes(), "train")],
         "jaquad": [("data/train/jaquad_train_0000.json", jq, "train"), ("data/dev/jaquad_dev_0000.json", dev, "dev")],
         "hotpotqa": [("distractor/train-00000-of-00002.parquet", parquet_bytes(hp), "train"),
@@ -161,7 +184,7 @@ class TestRealAcquireLayout(unittest.TestCase):
                 for ds in table:
                     if ds["key"] in ("jaquad", "hotpotqa", "toolace"):
                         self.assertTrue((cfg.stage_a_drive({"hotpotqa": "hotpot"}.get(ds["key"], ds["key"])) / "stageA_meta.json").is_file())
-                self.assertEqual(sorted(os.listdir(root)), sorted([A.EXTERNAL_DIRNAME, "GeoCPU_v47_fullmodel_bundle_v1.zip", P.OUT_NAME]))
+                self.assertEqual(sorted(os.listdir(root)), sorted([A.EXTERNAL_DIRNAME, "GeoCPU_v47_fullmodel_bundle_v1.zip", P.OUT_NAME, P.STAGE_A_NAME]))
                 self.assertEqual([l for l in logs if l.startswith("FAIL [")], [])
 
 
@@ -174,22 +197,28 @@ class TestEndToEnd(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        from unittest import mock
+        cls._apache = mock.patch.object(P, "find_apache_license_text", return_value="APACHE LICENSE TEXT\n")        # the same text on every run, as on one machine
+        cls._apache.start()
         cls.td = tempfile.TemporaryDirectory(prefix="test_pipeline_", ignore_cleanup_errors=True)
         base = Path(cls.td.name)
         cls.logs = []
         try:
             cls.root = build_root(base)
             extra = write_eval_extra(base)
-            jq = fixture("jaquad_train_fixture.json")
-            passage = jq["data"][0]["paragraphs"][0]["context"]
-            assert len(passage) > 40
-            user = cls.root / P.USER_EVAL_EXTRA                                    # the owner's own extra eval file: overlaps the first JaQuAD passage
+            jq = jaquad_json()
+            passage = JQ_ART[0][0]                                                  # the first sentence of a clean passage (the five real fixture rows are all rejected)
+            assert len(passage) > 13
+            user = cls.root / P.USER_EVAL_EXTRA                                    # the owner's own extra eval file: overlaps the first clean JaQuAD passage
             user.mkdir()
             (user / "mine.jsonl").write_text(json.dumps({"id": "x1", "prompt": passage[:60]}, ensure_ascii=False) + "\n", encoding="utf-8")
             cls.n_jq_qas = sum(len(p["qas"]) for a in jq["data"] for p in a["paragraphs"])
+            cls.events = []                                                         # what the Drive hooks saw, in order
             cls.cfg = P.Cfg(root=str(cls.root), work=str(base / "work"), vocab_override=str(VOCAB), eval_extra_dir=str(extra), parallel=1, poll_s=0.2,
-                            heartbeat_s=1e9, check_disk=False, expected_old_rows=None, log=cls.logs.append,
-                            expected_counts={"jaquad": cls.n_jq_qas, "coding": 10, "tengentoppa": 2, "hotpot": 5, "toolace": 999, "wizard": 5})
+                            heartbeat_s=1e9, check_disk=False, expected_old_rows=None, log=cls.logs.append, shard_records=3,
+                            drive_detach=lambda: cls.events.append("detach"), drive_attach=lambda: cls.events.append("attach"),
+                            drive_sync=lambda: cls.events.append("sync"),
+                            expected_counts={"jaquad": cls.n_jq_qas, "coding": 12, "tengentoppa": 2, "hotpot": 5, "toolace": 999, "wizard": 5})
             R = cls.results
             R["modules"] = P.step_modules(cls.cfg)
             R["dry"] = P.step_dry_run(cls.cfg)
@@ -197,12 +226,17 @@ class TestEndToEnd(unittest.TestCase):
             R["mirror"] = P.step_mirror(cls.cfg)
             R["vocab_eval"] = P.step_vocab_eval(cls.cfg)
             R["raw"] = P.step_raw_checks(cls.cfg)
+            R["sandbox"] = P.step_sandbox_selftest(cls.cfg)
+            cls.events.clear()
             R["smoke"] = P.step_convert_smoke(cls.cfg)
+            cls.smoke_events = list(cls.events)
+            cls.events.clear()
             R["full"] = P.step_convert_full(cls.cfg)
+            cls.full_events = list(cls.events)
             # the old corpus: one exact copy of a converted row, one near copy (a few characters changed), and filler
             rows = {k: [json.loads(l) for _, l in P.iter_stage_a(cls.cfg, k)] for k in ("coding", "tengentoppa", "wizard")}
             cls.exact_src = rows["wizard"][0]
-            cls.near_src = max(rows["coding"], key=lambda r: len(r["full_text"]))
+            cls.near_src = next(r for r in rows["coding"] if r["family"] == "code_text")      # the python row must survive: it is the verified one
             near_text = cls.near_src["full_text"][:-6] + "改変済み。"
             old = [{"id": "o_exact", "full_text": cls.exact_src["full_text"]}, {"id": "o_near", "full_text": near_text}]
             old += [{"id": f"o{i}", "full_text": "旧コーパスの行 %d: " % i + "".join(chr(0x3042 + (i * 7 + j * 3) % 80) for j in range(300))} for i in range(20)]
@@ -211,6 +245,7 @@ class TestEndToEnd(unittest.TestCase):
             oc.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in old), encoding="utf-8")
             cls.cfg.expected_old_rows = len(old)
             R["filters"] = P.step_filters(cls.cfg)
+            R["reviews"] = P.step_reviews(cls.cfg)
             R["final"] = P.step_finalize(cls.cfg)
         except BaseException as e:                                                  # noqa: BLE001
             cls.failure = e
@@ -220,6 +255,7 @@ class TestEndToEnd(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        cls._apache.stop()
         cls.td.cleanup()
 
     def need(self, name):
@@ -229,11 +265,11 @@ class TestEndToEnd(unittest.TestCase):
 
     # ---------------------------------------------------------------- the steps
     def test_every_step_prints_pass_and_reports_it(self):
-        for n in ("modules", "dry", "mirror", "vocab_eval", "raw", "smoke", "full", "filters", "final"):
+        for n in ("modules", "dry", "mirror", "vocab_eval", "raw", "sandbox", "smoke", "full", "filters", "reviews", "final"):
             r = self.need(n)
             self.assertTrue(r["pass"], n)
         passes = [l for l in self.pipeline_logs if l.startswith("PASS [")]
-        self.assertGreaterEqual(len(passes), 9)
+        self.assertGreaterEqual(len(passes), 11)
         self.assertFalse([l for l in self.pipeline_logs if l.startswith("FAIL [")])
 
     def test_dry_run_states_the_expected_total(self):
@@ -277,7 +313,7 @@ class TestEndToEnd(unittest.TestCase):
         st = r["datasets"]
         for k, v in st.items():
             c = v["counts"]
-            seq = [c["converted"], c["after_exact_dedup"], c["after_near_dedup"], c["after_eval_decontam"], c["after_old_corpus_dedup"]]
+            seq = [c[x] for x in P.FUNNEL]
             self.assertEqual(seq, sorted(seq, reverse=True), k)
             self.assertEqual(c["final_rows"], seq[-1])
         old = r["global"]["old_corpus"]
@@ -303,11 +339,16 @@ class TestEndToEnd(unittest.TestCase):
     def test_final_rows_are_on_drive_valid_and_match_the_registry(self):
         res = self.need("final")
         reg = json.loads((self.cfg.out / "registry.json").read_text(encoding="utf-8"))
-        self.assertEqual(reg["schema"], "v49_acquire_registry/1")
+        self.assertEqual(reg["schema"], "v49_acquire_registry/2")
         ck = P._convert_ck(self.cfg)
         for k in P.KEYS:
-            d = self.cfg.rows / k
-            self.assertEqual(sorted(p.name for p in d.iterdir()), ["ATTRIBUTION.md", "dev.jsonl", "heldout.jsonl", "manifest.json", "train.jsonl"])
+            hold = k in P.HOLD_KEYS
+            d = self.cfg.rows / P.HOLD_DIRNAME / k if hold else self.cfg.rows / k
+            apache = ["LICENSE-Apache-2.0.txt"] if k != "jaquad" and k != "hotpot" else []
+            self.assertEqual(sorted(p.name for p in d.iterdir()),
+                             sorted(["ATTRIBUTION.md", "LICENSE_NOTICE.txt", "dev.jsonl", "heldout.jsonl", "manifest.json", "train.jsonl"] + apache
+                                    + (["DO_NOT_TRAIN_UNTIL_APPROVED.txt"] if hold else [])), k)
+            self.assertFalse((self.cfg.rows / k).exists() and hold, k)             # a held dataset is never next to the candidates
             n = 0
             for sp in P.SPLITS:
                 for line in (d / f"{sp}.jsonl").read_text(encoding="utf-8").splitlines():
@@ -319,6 +360,15 @@ class TestEndToEnd(unittest.TestCase):
             for name, e in reg["datasets"][k]["final"]["files"].items():
                 self.assertEqual(C.sha256_file(str(d / name)), e["sha256"])
             self.assertTrue((d / "ATTRIBUTION.md").read_text(encoding="utf-8").startswith("# Attribution"))
+            notice = (d / "LICENSE_NOTICE.txt").read_text(encoding="utf-8")
+            self.assertIn(reg["datasets"][k]["license"]["url"], notice)
+            if k in ("jaquad", "hotpot"):
+                self.assertIn("DO NOT merge ShareAlike rows", notice)
+                self.assertIn("DO NOT merge", (d / "ATTRIBUTION.md").read_text(encoding="utf-8").replace("Do not", "DO NOT"))
+            else:
+                self.assertEqual((d / "LICENSE-Apache-2.0.txt").read_text(encoding="utf-8"), "APACHE LICENSE TEXT\n")
+        self.assertEqual(reg["held"], ["toolace", "wizard"])
+        self.assertEqual(reg["trainable"], ["coding", "tengentoppa", "jaquad", "hotpot"])
         self.assertEqual(reg["old_corpus"]["rows_found"], 22)
         self.assertEqual([m["dataset"] for m in reg["count_mismatches"]], ["toolace"])
         self.assertTrue(res["registry"]["vocab"]["n_single_chars"] == 3893)
@@ -330,7 +380,7 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(v["toolace"], "hold")
         self.assertEqual(v["jaquad"], "candidate")
         self.assertEqual(v["tengentoppa"], "conditional")
-        self.assertIn(v["wizard"], ("hold", "low_priority_candidate", "reject"))
+        self.assertEqual(v["wizard"], "hold")                                       # never promoted automatically
         for d in reg["datasets"].values():
             self.assertIn("adoption", d["adoption"]["at_acquire"]["text"])
 
@@ -343,6 +393,15 @@ class TestEndToEnd(unittest.TestCase):
         self.assertIn("MISMATCH", text)
         self.assertIn("旧コーパス: 22 行を確認", text)
         self.assertIn("ShareAlike", text)
+        self.assertIn("T1〜T8 の評価データの照合状況", text)
+        self.assertIn("T8 code/explanation form probe", text)
+        self.assertIn("行単位。dev / heldout をグループ独立の評価として使わないでください", text)      # the four synthetic datasets
+        self.assertIn("検証済み", text)
+        self.assertIn("見つかる確率は計算上", text)
+        self.assertIn("真のJaccard 0.8 の組で約93%", text)
+        self.assertIn(P.HOLD_DIRNAME, text)
+        self.assertIn("英語の行:", text)
+        self.assertIn("NOT found on Drive", text)                                    # the registry suites that are not there are named in section 5
 
     def test_rerun_is_idempotent_and_never_overwrites(self):
         self.need("final")
@@ -361,7 +420,7 @@ class TestEndToEnd(unittest.TestCase):
             return {p: C.sha256_file(str(p)) for p in list(self.cfg.out.rglob("*")) + list(self.cfg.rows.rglob("*"))
                     if p.is_file() and not p.name.startswith("run_info_")}
         before = tree()
-        for fn in (P.step_vocab_eval, P.step_raw_checks, P.step_convert_full, P.step_filters, P.step_finalize):
+        for fn in (P.step_vocab_eval, P.step_raw_checks, P.step_convert_full, P.step_filters, P.step_reviews, P.step_finalize):
             self.assertTrue(fn(self.cfg)["pass"], fn.step_name)
         self.assertEqual(before, tree())
 
@@ -378,27 +437,184 @@ class TestEndToEnd(unittest.TestCase):
         finally:
             p.write_bytes(data)
 
+    def fresh_cfg(self, work, **kw):
+        """A config with an EMPTY local disk (a restarted runtime) that has the same vocabulary file as the original run."""
+        cfg = P.Cfg(root=str(self.root), work=work, vocab_override=str(VOCAB), parallel=1, poll_s=0.2, check_disk=False, log=lambda s: None, **kw)
+        Path(work).mkdir(parents=True, exist_ok=True)
+        cfg.vocab_file.write_bytes(self.cfg.vocab_file.read_bytes())
+        return cfg
+
     def test_stage_a_on_drive_resumes_and_refuses_other_code(self):
         self.need("full")
         d = self.cfg.stage_a_drive("toolace")
         self.assertTrue((d / "stageA_meta.json").is_file())
+        self.assertEqual(d.parent.parent.name, P.STAGE_A_NAME)                      # not under the RUN_SUFFIX-dependent output folder
         # a second config with an empty local disk restores the rows from Drive instead of converting again
         with tempfile.TemporaryDirectory() as w2:
-            cfg2 = P.Cfg(root=str(self.root), work=w2, vocab_override=str(VOCAB), parallel=1, poll_s=0.2, check_disk=False, log=lambda s: None, only=("toolace",))
+            cfg2 = self.fresh_cfg(w2, only=("toolace",))
             self.assertTrue(P.restore_stage_a(cfg2, "toolace"))
             self.assertEqual(C.sha256_file(str(cfg2.conv_dir("toolace") / "train.jsonl")), C.sha256_file(str(d / "train.jsonl")))
             meta = json.loads((d / "stageA_meta.json").read_text(encoding="utf-8"))
-            meta["code"]["convert.py"] = "0" * 64
+            good = json.dumps(meta)
+            meta["converter"]["convert.py"] = "0" * 64
             (d / "stageA_meta.json").write_text(json.dumps(meta), encoding="utf-8")
             try:
                 with tempfile.TemporaryDirectory() as w3:
-                    cfg3 = P.Cfg(root=str(self.root), work=w3, parallel=1, log=lambda s: None, only=("toolace",))
+                    cfg3 = self.fresh_cfg(w3, only=("toolace",))
                     with self.assertRaises(P.StepFailed) as cm:
                         P.restore_stage_a(cfg3, "toolace")
-                    self.assertIn("different code", str(cm.exception))
+                    self.assertIn("different converter code", str(cm.exception))
             finally:
-                meta["code"] = P.Cfg(root=str(self.root)).code_hashes()
-                (d / "stageA_meta.json").write_text(json.dumps(meta), encoding="utf-8")
+                (d / "stageA_meta.json").write_text(good, encoding="utf-8")
+
+    def test_a_new_run_suffix_redoes_the_filters_but_not_the_conversion(self):
+        self.need("final")
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as w2:
+            cfg2 = self.fresh_cfg(w2, suffix="_2", expected_old_rows=22, expected_counts=self.cfg.expected_counts)
+            self.assertNotEqual(cfg2.out, self.cfg.out)
+            for k in P.KEYS:
+                self.assertEqual(cfg2.stage_a_drive(k), self.cfg.stage_a_drive(k))
+            P.ensure_sandbox_ok(cfg2)                                               # (already proven by this process; a fresh one would start processes)
+            with mock.patch.object(P.subprocess, "Popen", side_effect=AssertionError("a converter was started")):
+                r = P.step_convert_full(cfg2)
+            self.assertTrue(r["pass"])
+            self.assertIn("0 now", r["detail"])
+            self.assertFalse((cfg2.out / "state").exists() and any((cfg2.out / "state").glob("step8*")))
+
+    def test_shards_were_published_one_by_one_and_a_lost_shard_alone_is_redone(self):
+        self.need("full")
+        from unittest import mock
+        key = "coding"
+        n = self.results["raw"]["datasets"][key]["n_raw"]
+        ranges = P.shard_ranges(n, self.cfg.shard_records)
+        self.assertGreater(len(ranges), 2)
+        for a, b in ranges:
+            sd = self.cfg.shard_drive(key, a, b)
+            self.assertTrue((sd / "shard_meta.json").is_file(), (a, b))
+            self.assertTrue((sd / "train.jsonl").is_file())
+        want = {n_: C.sha256_file(str(self.cfg.stage_a_drive(key) / n_)) for n_ in ("train.jsonl", "dev.jsonl", "heldout.jsonl")}
+        # a runtime that died after the other shards were published: with the merged rows missing and one shard missing, only that shard is converted
+        with tempfile.TemporaryDirectory() as drive2, tempfile.TemporaryDirectory() as w2:
+            import shutil
+            root2 = Path(drive2) / "d"
+            shutil.copytree(self.root, root2)
+            cfg2 = P.Cfg(root=str(root2), work=w2, vocab_override=str(VOCAB), parallel=1, poll_s=0.2, check_disk=False, log=lambda s: None, only=(key,),
+                         shard_records=self.cfg.shard_records, expected_counts=self.cfg.expected_counts)
+            cfg2.vocab_file.parent.mkdir(parents=True, exist_ok=True)
+            cfg2.vocab_file.write_bytes(self.cfg.vocab_file.read_bytes())
+            P.step_mirror(cfg2)                                                     # a restarted runtime runs 6a again before 7b
+            lost = ranges[1]
+            shutil.rmtree(cfg2.stage_a_drive(key))                                  # (this is a COPY in a temp dir; the notebook never deletes on Drive)
+            shutil.rmtree(cfg2.shard_drive(key, *lost))
+            started = []
+            real = P.subprocess.Popen
+
+            def spy(cmd, **kw):
+                started.append(cmd)
+                return real(cmd, **kw)
+            with mock.patch.object(P.subprocess, "Popen", spy):
+                r = P.step_convert_full(cfg2)
+            self.assertTrue(r["pass"])
+            self.assertEqual(len(started), 1)
+            self.assertIn(str(lost[0]), started[0][started[0].index("--start") + 1])
+            self.assertEqual(started[0][started[0].index("--limit") + 1], str(lost[1]))
+            got = {n_: C.sha256_file(str(cfg2.stage_a_drive(key) / n_)) for n_ in want}
+            self.assertEqual(got, want)                                             # identical to the rows of the uninterrupted run
+
+    def test_an_unsharded_dataset_estimated_to_take_too_long_is_refused_before_it_starts(self):
+        self.need("full")
+        import shutil
+        with tempfile.TemporaryDirectory() as drive2, tempfile.TemporaryDirectory() as w2:
+            root2 = Path(drive2) / "d"
+            shutil.copytree(self.root, root2)
+            cfg2 = P.Cfg(root=str(root2), work=w2, vocab_override=str(VOCAB), parallel=1, poll_s=0.2, check_disk=False, log=lambda s: None, only=("toolace",),
+                         shard_keys=(), max_unsharded_minutes=60.0, expected_counts=self.cfg.expected_counts)
+            cfg2.vocab_file.parent.mkdir(parents=True, exist_ok=True)
+            cfg2.vocab_file.write_bytes(self.cfg.vocab_file.read_bytes())
+            shutil.rmtree(cfg2.stage_a_drive("toolace"))                                      # (a COPY in a temp dir)
+            cfg2.state["step7a_smoke"] = {"estimate_minutes": {"toolace": 300.0}, "est_drive_bytes": 1}
+            with self.assertRaises(P.StepFailed) as cm:
+                P.step_convert_full(cfg2)
+            self.assertIn("300", str(cm.exception))
+            self.assertIn("shard", str(cm.exception).lower())
+
+    def test_drive_is_unmounted_while_code_runs_and_flushed_after_the_writing_steps(self):
+        self.need("full")
+        # 7a: one window around all converters; 7b: a window per wave of converters; the hooks always come in pairs, in order
+        self.assertEqual(self.smoke_events[0], "detach")
+        self.assertEqual(self.smoke_events.count("detach"), self.smoke_events.count("attach"))
+        ev = self.full_events
+        self.assertGreater(ev.count("detach"), 3)
+        self.assertEqual(ev.count("detach"), ev.count("attach"))
+        self.assertTrue(all(ev[i] == "detach" and ev[i + 1] == "attach" for i in range(len(ev)) if ev[i] == "detach"))
+        self.assertEqual(ev[-1], "sync")                                            # step 7b ends with a flush
+
+    def test_the_sandbox_selftest_state_names_the_backend(self):
+        r = self.need("sandbox")
+        self.assertEqual(r["selftest"]["backend"], C.SANDBOX_BACKEND)
+        recs = sorted((self.cfg.out / "state").glob("sandbox_selftest_*.json"))
+        self.assertEqual(len(recs), 1)                                                  # a record named by its content: re-runs never conflict
+        st = json.loads(recs[0].read_text(encoding="utf-8"))
+        self.assertEqual(st["backend"], "checks.code_sandbox_check(profile=executor)")
+        self.assertTrue(st["drive_unmounted_during_code_runs"])
+        self.assertEqual(P.last_sandbox_record(self.cfg), P._CACHE["sandbox"])
+        self.assertTrue(all(c["ok"] for c in st["checks"]))
+        man = json.loads((self.cfg.conv_dir("coding") / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(man["backends"]["sandbox"], C.SANDBOX_BACKEND)
+        verified = {json.loads(l)["verification"] for _, l in P.iter_stage_a(self.cfg, "coding") if json.loads(l).get("python_code")}
+        self.assertEqual(verified, {"stored_output_equals_sandbox"})
+
+    def test_reviews_are_saved_apart_and_say_when_they_were_cut_short(self):
+        r = self.need("reviews")
+        rv = r["reviews"]
+        self.assertFalse(rv["semantic"].get("truncated"))
+        self.assertTrue(Path(rv["semantic"]["file"]).is_file())
+        self.assertIn("matrix", json.dumps(rv["cross_dataset"]) + "matrix")
+        # a budget of zero cuts both short and the result says so (a fresh suffix: the saved result of the first run is returned otherwise)
+        with tempfile.TemporaryDirectory() as w2:
+            cfg2 = self.fresh_cfg(w2, suffix="_cut", semantic_budget_s=0.0, cross_budget_s=0.0, expected_counts=self.cfg.expected_counts)
+            P.save_state(cfg2, "step8_filters", self.results["filters"] and {"datasets": self.results["filters"]["datasets"], "global": self.results["filters"]["global"]})
+            for k in P.KEYS:                                                          # the drop lists of the first run, copied to the new output folder
+                (cfg2.out / "filters").mkdir(parents=True, exist_ok=True)
+                (cfg2.out / "filters" / f"{k}_dropped.tsv").write_bytes((self.cfg.out / "filters" / f"{k}_dropped.tsv").read_bytes())
+            P._CACHE["eval_sources"] = P._CACHE["eval_sources"]
+            out = P.step_reviews(cfg2)["reviews"]
+            self.assertTrue(out["cross_dataset"]["truncated"])
+            self.assertTrue(out["semantic"]["truncated"] or out["semantic"]["queries"] == 0)
+
+    def test_split_hygiene_only_touches_the_row_level_datasets(self):
+        r = self.need("filters")
+        sh = r["global"]["split_hygiene"]
+        self.assertEqual(sorted(sh["datasets"]), ["coding", "tengentoppa", "toolace", "wizard"])
+        for k in ("jaquad", "hotpot"):
+            self.assertIsNone(r["datasets"][k]["split_hygiene"])
+        for k, v in sh["datasets"].items():
+            self.assertGreaterEqual(v["dev_heldout_rows"], 0)
+
+    def test_registry_documents_the_split_unit_and_the_held_datasets(self):
+        self.need("final")
+        reg = json.loads((self.cfg.out / "registry.json").read_text(encoding="utf-8"))
+        for k in ("coding", "tengentoppa", "toolace", "wizard"):
+            self.assertFalse(reg["datasets"][k]["convert"]["group_independent_dev_heldout"], k)
+            self.assertIn("NOT group-independent", reg["datasets"][k]["convert"]["split_unit"])
+        for k in ("jaquad", "hotpot"):
+            self.assertTrue(reg["datasets"][k]["convert"]["group_independent_dev_heldout"], k)
+        self.assertEqual(reg["params"]["near_estimate_cut"], 0.75)
+        self.assertEqual(reg["params"]["minhash_k"], 128)
+        self.assertEqual(reg["params"]["minhash_detection_probability"]["0.8"], 0.933)
+        self.assertEqual(reg["params"]["boilerplate_eval_df"], 20)
+        self.assertTrue(reg["params"]["python_requires_stored_output"])
+        self.assertTrue(any("registry" in x for x in reg["not_covered"]) or reg["eval"]["missing_optional"] == [])
+        self.assertTrue(any(x.startswith("registry:") for x in reg["eval"]["missing_optional"]))       # no registry suite exists in this fake Drive: named, not silent
+        self.assertTrue(any("NOT found on Drive" in x for x in reg["not_covered"]))
+        self.assertEqual(len(reg["eval"]["tiers"]), 8)
+        self.assertTrue(all(v["shingles"] > 0 for t in reg["eval"]["tiers"] for v in t["files"].values()))
+        man = json.loads((self.cfg.rows / P.HOLD_DIRNAME / "toolace" / "manifest.json").read_text(encoding="utf-8"))
+        self.assertTrue(man["held"])
+        coding = json.loads((self.cfg.rows / "coding" / "manifest.json").read_text(encoding="utf-8"))
+        self.assertFalse(coding["held"])
+        self.assertEqual(coding["verification"].get("stored_output_equals_sandbox"), 1)
 
     def test_dev_and_validation_files_only_reach_the_eval_index(self):
         self.need("vocab_eval")
@@ -409,6 +625,7 @@ class TestEndToEnd(unittest.TestCase):
             for f in P.mirror_train_files(self.cfg, k):
                 self.assertNotIn("do_not_train", f.as_posix())
                 self.assertNotRegex(f.name, r"dev|validation")
+        self.assertEqual(self.results["vocab_eval"]["eval"]["index"]["max_eval_items_per_shingle"] >= 1, True)
         # and no row id of the converted datasets comes from the dev file
         ids = {json.loads(l)["id"] for _, l in P.iter_stage_a(self.cfg, "jaquad")}
         self.assertNotIn("v49acq_jaquad_de-001-00-000", ids)
@@ -431,6 +648,37 @@ class TestVocabFromBundleAndCache(unittest.TestCase):
             self.assertEqual(r1["vocab"], r2["vocab"])
             self.assertTrue((cfg.out / "state" / "vocab_cache.json").is_file())
             self.assertEqual(len(json.loads(cfg.vocab_file.read_text(encoding="utf-8"))["vocab"]), 3893)
+
+    def test_a_vocabulary_with_another_character_set_is_refused_unless_allowed(self):
+        vocab = json.loads(VOCAB.read_text(encoding="utf-8"))["vocab"]
+        swapped = dict(vocab)
+        victim = next(k for k in vocab if len(k) == 1 and ord(k) > 0x4e00)                    # one rare kanji becomes another character: same size, other set
+        swapped.pop(victim)
+        swapped["☃"] = vocab[victim]
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "drive" / "GeoCPU_v47_fullmodel_20261106"
+            TC.make_bundle(str(root), vocab=swapped)
+            logs = []
+            cfg = P.Cfg(root=str(root), work=str(Path(td) / "work"), only=("toolace",), require_v48=False, check_disk=False, log=logs.append)
+            with self.assertRaises(P.StepFailed) as cm:
+                P.step_vocab_eval(cfg)
+            self.assertIn("ALLOW_VOCAB_MISMATCH", str(cm.exception))
+            self.assertTrue(any("MISMATCH" in l and l.startswith("!") for l in logs))
+            cfg2 = P.Cfg(root=str(root), work=str(Path(td) / "work2"), only=("toolace",), require_v48=False, check_disk=False, log=logs.append, allow_vocab_mismatch=True)
+            r = P.step_vocab_eval(cfg2)
+            self.assertFalse(r["vocab"]["sha_matches_owner_pc_copy"])
+
+    def test_an_eval_manifest_without_any_text_is_refused(self):
+        vocab = json.loads(VOCAB.read_text(encoding="utf-8"))["vocab"]
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "drive" / "GeoCPU_v47_fullmodel_20261106"
+            TC.make_bundle(str(root), vocab=vocab)
+            (root / "jamcqa_manifest_test.jsonl").write_text(json.dumps({"id": "x", "prompt": "短い"}, ensure_ascii=False) + "\n", encoding="utf-8")     # a loose file wins
+            cfg = P.Cfg(root=str(root), work=str(Path(td) / "work"), only=("toolace",), require_v48=False, check_disk=False, log=lambda s: None)
+            with self.assertRaises(P.StepFailed) as cm:
+                P.step_vocab_eval(cfg)
+            self.assertIn("no 13-gram", str(cm.exception).replace("contributed no 13-gram at all", "no 13-gram"))
+            self.assertIn("jamcqa_manifest_test.jsonl", str(cm.exception))
 
     def test_a_vocabulary_derived_from_a_corpus_is_refused(self):
         with tempfile.TemporaryDirectory() as td:
@@ -455,6 +703,59 @@ class TestUnits(unittest.TestCase):
             with mock.patch.object(P.shutil, "disk_usage", return_value=du(10, 0, 100 << 30)):
                 self.assertTrue(P.step_dry_run(cfg)["pass"])
 
+
+    def test_dry_run_lists_stale_files_and_needs_room_for_the_converted_rows(self):
+        from unittest import mock
+        from collections import namedtuple
+        du = namedtuple("du", "total used free")
+        logs = []
+        with tempfile.TemporaryDirectory() as td:
+            cfg = P.Cfg(root=td, work=str(Path(td) / "w"), log=logs.append)
+            stale = Path(td) / A.EXTERNAL_DIRNAME / "x" / "data.parquet.part.stale-1"
+            stale.parent.mkdir(parents=True)
+            stale.write_bytes(b"x" * (1 << 20))
+            with mock.patch.object(P.shutil, "disk_usage", return_value=du(10, 0, 100 << 30)):
+                r = P.step_dry_run(cfg)
+            self.assertEqual(r["stale_files"], 1)
+            self.assertTrue(any("never deleted" in l and "stale" in l for l in logs), logs)
+            need, train = r["need_drive_bytes"], A.total_bytes(A.DATASETS, ("train",))
+            self.assertEqual(need, r["expected_total_bytes"] + 2 * train + (1 << 30))        # raw files + converted rows + final rows + dumps
+            self.assertGreater(need, 3 * r["expected_total_bytes"] // 2)                      # the old 'raw + 1.5 GiB' check was far too low
+            with mock.patch.object(P.shutil, "disk_usage", return_value=du(10, 0, need - 1)):
+                with self.assertRaises(P.StepFailed) as cm:
+                    P.step_dry_run(cfg)
+            self.assertIn("Drive reports", str(cm.exception))
+            P.preflight_drive(cfg, {"est_drive_bytes": 1 << 20})
+            with self.assertRaises(P.StepFailed):
+                P.preflight_drive(cfg, {"est_drive_bytes": 1 << 62})
+
+    def test_writing_steps_flush_drive_also_when_they_fail_and_a_failing_flush_hides_nothing(self):
+        calls = []
+        cfg = P.Cfg(log=lambda s: None, drive_sync=lambda: calls.append(1))
+
+        @P.step("w", flush_on_failure=True)
+        def writes(c):
+            P.require(False, "nope")
+
+        @P.step("r")
+        def reads(c):
+            P.require(False, "nope")
+
+        @P.step("boom", flush_on_failure=True)
+        def boom(c):
+            raise KeyError("k")
+        for fn in (writes, boom):
+            with self.assertRaises(P.StepFailed):
+                fn(cfg)
+        with self.assertRaises(P.StepFailed):
+            reads(cfg)
+        self.assertEqual(calls, [1, 1])                                                       # not after the read-only step
+        bad = P.Cfg(log=lambda s: None, drive_sync=lambda: (_ for _ in ()).throw(OSError("gone")))
+        with self.assertRaises(P.StepFailed) as cm:
+            writes(bad)
+        self.assertIn("nope", str(cm.exception))
+        for name in ("5 acquire", "7b convert full", "8 filters", "8b optional reviews", "9 final rows and report"):
+            self.assertIn(f'@step("{name}", flush_on_failure=True)', Path(P.__file__).read_text(encoding="utf-8"), name)
 
     def test_gate_helpers(self):
         with self.assertRaises(P.StepFailed):
@@ -529,67 +830,206 @@ class TestUnits(unittest.TestCase):
         self.assertEqual(P.dedupe_text(a), P.dedupe_text(b))
         self.assertEqual(P.dedupe_text(c), "pt")
 
-    def test_wizard_verdict_depends_on_the_measured_error_rate(self):
+    def test_wizard_is_never_promoted_automatically_whatever_the_measured_rate(self):
+        # review finding: one narrow measure (a lower bound) with thresholds nobody set must not lift a dataset the owner's plan says to avoid
         cfg = P.Cfg()
         good = {"arith_error_rate": {"statement_error_rate": 0.004, "statements_checked": 5000}}
         bad = {"arith_error_rate": {"statement_error_rate": 0.08, "statements_checked": 5000}}
         few = {"arith_error_rate": {"statement_error_rate": 0.0, "statements_checked": 10}}
-        self.assertEqual(P.adoption_verdict(cfg, "wizard", 100, good)["code"], "low_priority_candidate")
-        self.assertEqual(P.adoption_verdict(cfg, "wizard", 100, bad)["code"], "hold")
-        self.assertEqual(P.adoption_verdict(cfg, "wizard", 100, few)["code"], "hold")
+        for conv in (good, bad, few, {}):
+            v = P.adoption_verdict(cfg, "wizard", 100, conv)
+            self.assertEqual(v["code"], "hold", conv)
+            self.assertIn("あなたが決めてください", v["ja"])
+        self.assertIn("0.40%", P.adoption_verdict(cfg, "wizard", 100, good)["ja"])               # the measured rate is shown
+        self.assertIn("8.00%", P.adoption_verdict(cfg, "wizard", 100, bad)["ja"])
         self.assertEqual(P.adoption_verdict(cfg, "wizard", 0, good)["code"], "reject")
         self.assertEqual(P.adoption_verdict(cfg, "toolace", 100, {})["code"], "hold")
 
-    def test_coding_verdict_counts_the_verified_python_rows_of_the_final_set(self):
+    def test_coding_verdict_counts_only_the_verified_python_rows_of_the_final_set(self):
         cfg = P.Cfg()
-        v = P.adoption_verdict(cfg, "coding", 10, {}, {"stored_output_equals_sandbox": 7, "sandbox_only_no_stored_output": 2})
+        v = P.adoption_verdict(cfg, "coding", 10, {}, {"stored_output_equals_sandbox": 7, "unverified_no_execution": 2})
         self.assertEqual(v["code"], "candidate")
-        self.assertIn("出力一致 7行", v["ja"])
-        self.assertIn("実行のみ 2行", v["ja"])
+        self.assertIn("保存出力と一致したpython行 7行のみ", v["ja"])
+        self.assertIn("code_text行 2行は未実行・未検証", v["ja"])
 
-    def _scheduler(self, parallel, rc_of=None):
-        """Run _run_converters with a fake Popen (no process is started): returns (start order, peak concurrency)."""
+    def test_a_new_runtime_proves_the_sandbox_again_and_a_saved_result_is_never_trusted(self):
         from unittest import mock
-        started, live, peak = [], set(), [0]
+        with tempfile.TemporaryDirectory() as td:
+            cfg = P.Cfg(root=td, work=str(Path(td) / "w"), log=lambda s: None)
+            (cfg.out / "state").mkdir(parents=True)
+            (cfg.out / "state" / "sandbox_selftest_00000000.json").write_text(json.dumps({"backend": C.SANDBOX_BACKEND, "run_as": "nobody", "checks": []}), encoding="utf-8")
+            saved = P._CACHE.pop("sandbox", None)
+            try:
+                with mock.patch.object(P.checks, "sandbox_selftest", wraps=C.sandbox_selftest) as spy:
+                    P.ensure_sandbox_ok(cfg)                                               # a file from an earlier runtime does not count
+                    P.ensure_sandbox_ok(cfg)                                               # this process has proven it: not again
+                self.assertEqual(spy.call_count, 1)
+                self.assertEqual(len(list((cfg.out / "state").glob("sandbox_selftest_*.json"))), 2)
+                # on Colab (containment required) a cached result without an OS barrier is not enough
+                P._CACHE["sandbox"] = {"backend": C.SANDBOX_BACKEND, "run_as": None}
+                strict = P.Cfg(root=td, work=str(Path(td) / "w"), log=lambda s: None, require_os_containment=True)
+                with self.assertRaises(P.StepFailed):
+                    P.ensure_sandbox_ok(strict)                                            # (Windows / non-root here: the self-test itself fails)
+            finally:
+                if saved is not None:
+                    P._CACHE["sandbox"] = saved
+                else:
+                    P._CACHE.pop("sandbox", None)
+
+    def test_converter_tag_covers_the_converter_not_the_filters(self):
+        with tempfile.TemporaryDirectory() as td:
+            a, b = P.Cfg(root=td, work=str(Path(td) / "a")), P.Cfg(root=td, work=str(Path(td) / "b"), suffix="_2")
+            self.assertEqual(a.converter_tag(), b.converter_tag())                       # RUN_SUFFIX does not change it
+            self.assertNotEqual(a.code_tag()[:8], a.converter_tag()[:8])
+            self.assertEqual(sorted(a.converter_hashes()), ["checks.sandbox_and_normaliser", "convert.py", "vocabulary_chars"])
+            self.assertEqual(a.converter_hashes()["vocabulary_chars"], "none")
+            before = a.converter_tag()
+            Path(a.work).mkdir(parents=True)
+            a.vocab_file.write_text(json.dumps({"vocab": {"あ": 0, "い": 1}}), encoding="utf-8")
+            self.assertNotEqual(a.converter_tag(), before)                               # another vocabulary = other converted rows
+            self.assertEqual(P.Cfg(root=td, suffix="_9").stage_a_drive("x").parent.parent, Path(td) / P.STAGE_A_NAME)
+
+    def test_shard_ranges_tile_the_records_and_the_last_runs_to_the_end(self):
+        self.assertEqual(P.shard_ranges(10, 4), [(0, 4), (4, 8), (8, None)])
+        self.assertEqual(P.shard_ranges(8, 4), [(0, 4), (4, None)])
+        self.assertEqual(P.shard_ranges(3, 4), [(0, None)])
+        r = P.shard_ranges(113796, 20000)
+        self.assertEqual((len(r), r[0], r[-1]), (6, (0, 20000), (100000, None)))
+        self.assertTrue(all(a[1] == b[0] for a, b in zip(r, r[1:])))
+
+    def test_detection_table_matches_the_binomial_claims(self):
+        pr = P.detection_probs(128, 0.75)
+        self.assertEqual({j: round(p, 3) for j, p in pr.items()}, {0.9: 1.0, 0.85: 0.999, 0.8: 0.933, 0.75: 0.547, 0.7: 0.127})
+
+    def test_raw_rows_are_lenient_and_count_what_they_skip(self):
+        with tempfile.TemporaryDirectory() as td:
+            cfg = P.Cfg(root=td, work=str(Path(td) / "w"))
+            d = cfg.mirror_dir("tengentoppa")
+            d.mkdir(parents=True)
+            (d / "completed_sets.jsonl").write_bytes('{"instruction": "a", "refined_answer": "b。"}\nnot json\n'.encode("utf-8") + b'{"instruction": "\xff"}\n')
+            (d / "provenance.json").write_text(json.dumps({"files": [{"dest_rel": "DeL-TaiseiOzaki__Tengentoppa-sft-qwen2.5-32b-reasoning-100k/completed_sets.jsonl",
+                                                                       "role": "train", "may_train": True}]}), encoding="utf-8")
+            stats = {}
+            rows = list(P.raw_rows(cfg, "tengentoppa", stats))
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(stats, {"bad_lines": 1, "decode_replacements": 1})
+            self.assertEqual(P.n_records({"datasets": {"tengentoppa": {"n_raw": 2, "bad_lines": 1}}}, "tengentoppa"), 3)
+
+    def test_raw_suffix_gives_a_fresh_raw_folder_and_run_suffix_does_not(self):
+        cfg = P.Cfg(root="/r", suffix="_2", raw_suffix="_raw2")
+        self.assertEqual(cfg.ext, Path("/r/external_data_v49_raw2"))
+        self.assertEqual(cfg.out, Path("/r/v49_acquire_20261109_2"))
+        self.assertEqual(P.Cfg(root="/r", suffix="_2").ext, Path("/r/external_data_v49"))
+
+    def _scheduler(self, parallel, rc_of=None, wave_size=None, hooks=None, on_wave=None, raise_in_sleep=None):
+        """Run _run_converters with a fake Popen (no process is started): returns (start order, peak concurrency, error, fake processes)."""
+        from unittest import mock
+        started, live, peak, procs = [], set(), [0], []
         rc_of = rc_of or {}
 
         class FakeProc:
             def __init__(self, cmd, **kw):
                 self.key = cmd[cmd.index("--dataset") + 1]
                 self.polls = 0
+                self.stopped = []
                 started.append(self.key)
                 live.add(self.key)
                 peak[0] = max(peak[0], len(live))
+                procs.append(self)
 
             def poll(self):
+                if self.stopped:
+                    return -15
                 self.polls += 1
                 if self.polls < 2:
                     return None
                 live.discard(self.key)
                 return rc_of.get(self.key, 0)
+
+            def terminate(self):
+                self.stopped.append("terminate")
+                live.discard(self.key)
         with tempfile.TemporaryDirectory() as td:
-            cfg = P.Cfg(root=td, work=str(Path(td) / "w"), parallel=parallel, poll_s=0, heartbeat_s=1e9, log=lambda s: None)
-            with mock.patch.object(P.subprocess, "Popen", FakeProc):
+            kw = {} if hooks is None else {"drive_detach": hooks[0], "drive_attach": hooks[1]}
+            cfg = P.Cfg(root=td, work=str(Path(td) / "w"), parallel=parallel, poll_s=0, heartbeat_s=1e9, log=lambda s: None, **kw)
+            jobs = [P.new_job(k, stop=2000, out_root=cfg.conv_dir(k, smoke=True).parent) for k in P.CONVERT_ORDER]
+            ctx = [mock.patch.object(P.subprocess, "Popen", FakeProc)]
+            if raise_in_sleep is not None:
+                ctx.append(mock.patch.object(P.time, "sleep", side_effect=raise_in_sleep))
+            with ctx[0]:
                 try:
-                    P._run_converters(cfg, P.KEYS, 2000, smoke=True)
+                    if len(ctx) > 1:
+                        with ctx[1]:
+                            P._run_converters(cfg, jobs, smoke=True, limit=2000, wave_size=wave_size, on_wave=on_wave)
+                    else:
+                        P._run_converters(cfg, jobs, smoke=True, limit=2000, wave_size=wave_size, on_wave=on_wave)
                     err = None
-                except P.StepFailed as e:
+                except (P.StepFailed, KeyboardInterrupt) as e:
                     err = e
-        return started, peak[0], err
+            self.locks_left = sorted(p.name for p in (Path(td) / "w" / "locks").glob("*.lock")) if (Path(td) / "w" / "locks").exists() else []
+        return started, peak[0], err, procs
 
     def test_converters_are_started_slowest_first_and_never_more_than_parallel_at_once(self):
-        started, peak, err = self._scheduler(2)
+        started, peak, err, _ = self._scheduler(2)
         self.assertIsNone(err)
         self.assertEqual(started, list(P.CONVERT_ORDER))
         self.assertEqual(started[0], "coding")
         self.assertEqual(peak, 2)
-        started, peak, err = self._scheduler(1)
+        started, peak, err, _ = self._scheduler(1)
         self.assertEqual(peak, 1)
+        self.assertEqual(self.locks_left, [])                                       # every lock file is removed when its converter has finished
 
     def test_a_failing_converter_stops_the_step_and_names_it(self):
-        _, _, err = self._scheduler(2, {"jaquad": 3})
+        _, _, err, _ = self._scheduler(2, {"jaquad": 3})
         self.assertIsInstance(err, P.StepFailed)
         self.assertIn("jaquad rc=3", str(err))
+
+    def test_an_interrupt_stops_every_converter_and_removes_the_locks(self):
+        # review finding: Colab 'Interrupt execution' (KeyboardInterrupt) used to leave the converters running behind the next 'Run all'
+        started, peak, err, procs = self._scheduler(2, raise_in_sleep=KeyboardInterrupt())
+        self.assertIsInstance(err, KeyboardInterrupt)
+        self.assertEqual(len(procs), 2)
+        self.assertTrue(all(p.stopped == ["terminate"] for p in procs))
+        self.assertEqual(self.locks_left, [])
+
+    def test_a_second_converter_for_the_same_job_is_refused_while_the_first_is_alive(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as td:
+            cfg = P.Cfg(root=td, work=str(Path(td) / "w"), parallel=1, poll_s=0, log=lambda s: None)
+            lockdir = Path(td) / "w" / "locks"
+            lockdir.mkdir(parents=True)
+            (lockdir / "convert_toolace_full.lock").write_text(str(os.getpid()), encoding="utf-8")          # this very process is 'alive'
+            job = P.new_job("toolace", out_root=cfg.conv_dir("toolace").parent)
+            with mock.patch.object(P.subprocess, "Popen", side_effect=AssertionError("must not start")):
+                with self.assertRaises(P.StepFailed) as cm:
+                    P._run_window(cfg, [job], None, smoke=False)
+            self.assertIn("still running", str(cm.exception))
+            (lockdir / "convert_toolace_full.lock").write_text("0", encoding="utf-8")                         # a dead / stale lock does not block
+            self.assertFalse(P._pid_alive(0))
+            self.assertTrue(P._pid_alive(os.getpid()))
+
+    def test_waves_publish_what_is_done_and_unmount_drive_only_around_the_converters(self):
+        events = []
+        waves = []
+        started, peak, err, _ = self._scheduler(2, wave_size=2, hooks=(lambda: events.append("detach"), lambda: events.append("attach")),
+                                                on_wave=lambda ok, res: (waves.append([j["id"] for j in ok]), events.append("publish")))
+        self.assertIsNone(err)
+        self.assertEqual(waves, [["coding", "tengentoppa"], ["hotpot", "wizard"], ["jaquad", "toolace"]])
+        self.assertEqual(events, ["detach", "attach", "publish"] * 3)               # unmounted while converting, mounted again before anything is published
+        self.assertEqual(peak, 2)
+
+    def test_hooks_reattach_drive_even_when_a_converter_fails_and_the_finished_ones_are_still_published(self):
+        events, waves = [], []
+        started, peak, err, _ = self._scheduler(2, {"tengentoppa": 3}, wave_size=2, hooks=(lambda: events.append("detach"), lambda: events.append("attach")),
+                                                on_wave=lambda ok, res: waves.append([j["id"] for j in ok]))
+        self.assertIsInstance(err, P.StepFailed)
+        self.assertIn("tengentoppa rc=3", str(err))
+        self.assertEqual(events, ["detach", "attach"])                              # re-mounted although the window failed
+        self.assertEqual(waves, [["coding"]])                                       # the converter that finished is handed over before the step fails
+
+    def test_detach_and_attach_come_together(self):
+        with self.assertRaises(ValueError):
+            P.Cfg(drive_detach=lambda: None)
 
     def test_verify_acquired_fails_loudly_when_a_dataset_is_missing(self):
         with tempfile.TemporaryDirectory() as td:
@@ -599,6 +1039,7 @@ class TestUnits(unittest.TestCase):
 
     def test_cfg_paths_use_the_new_folder_names_and_the_suffix(self):
         cfg = P.Cfg(root="/r", suffix="_2")
+        self.assertEqual(cfg.stage_a_drive("coding").parent.parent, Path("/r/external_data_v49_stageA"))
         self.assertEqual(cfg.out, Path("/r/v49_acquire_20261109_2"))
         self.assertEqual(cfg.rows, Path("/r/external_data_v49_rows_2"))
         self.assertEqual(cfg.ext, Path("/r/external_data_v49"))

@@ -640,5 +640,131 @@ class RealTable(unittest.TestCase):
                 self.assertIn(name, table_paths, f"{d['repo']}: {name} exists upstream but is not in the table")
 
 
+class PartialCopies(Base):
+    """Review findings: a runtime that died after most of a 1 GB copy must not cost 1 GB again (or leave a new .stale-N each time)."""
+
+    def test_copy_resume_continues_an_exact_prefix_and_quarantines_anything_else(self):
+        with mock.patch.object(A, "CHUNK", 5):
+            data = bytes(range(97, 123)) * 3                                                         # 78 bytes
+            src = self.tmp / "src.bin"
+            src.write_bytes(data)
+            part = self.tmp / "dst.bin.part"
+            part.write_bytes(data[:33])                                                              # a prefix: continued
+            n, h, resumed = A._copy_resume(str(src), str(part))
+            self.assertEqual((n, h, resumed), (len(data), sha(data), 33))
+            self.assertEqual(part.read_bytes(), data)
+            n, h, resumed = A._copy_resume(str(src), str(part))                                       # already complete: verified, nothing appended
+            self.assertEqual((n, h, resumed), (len(data), sha(data), len(data)))
+            self.assertEqual(part.read_bytes(), data)
+            part.write_bytes(data[:20] + b"X" + data[21:40])                                          # one wrong byte inside the prefix: moved aside, copied afresh
+            n, h, resumed = A._copy_resume(str(src), str(part))
+            self.assertEqual((n, h, resumed), (len(data), sha(data), 0))
+            self.assertEqual(part.read_bytes(), data)
+            self.assertEqual(Path(str(part) + ".stale-1").read_bytes(), data[:20] + b"X" + data[21:40])
+            part2 = self.tmp / "longer.part"
+            part2.write_bytes(data + b"more")                                                         # longer than the source: not a prefix
+            self.assertEqual(A._copy_resume(str(src), str(part2))[2], 0)
+            self.assertTrue(Path(str(part2) + ".stale-1").is_file())
+            fresh = self.tmp / "new.part"                                                             # nothing there: a plain copy
+            self.assertEqual(A._copy_resume(str(src), str(fresh))[2], 0)
+            self.assertEqual(fresh.read_bytes(), data)
+
+    def test_a_partial_prefix_is_continued_by_acquire_without_a_stale_file(self):
+        data = self.hub.content[("orgA/coding", "data/train-0.parquet")]
+        final = self.ext / "orgA__coding/data/train-0.parquet"
+        final.parent.mkdir(parents=True)
+        Path(str(final) + ".part").write_bytes(data[:40])                                             # the runtime died after 40 of 72 bytes
+        self.run_acquire()
+        self.assertEqual(final.read_bytes(), data)
+        self.assertEqual([x for x in files_of(self.ext) if ".stale" in x or x.endswith(".part")], [])
+        self.assertTrue(any("continued the partial copy" in l and "40 bytes" in l for l in self.logs), self.logs)
+
+    def test_a_bad_partial_is_still_moved_aside_with_a_log_line(self):
+        final = self.ext / "orgA__coding/data/train-0.parquet"
+        final.parent.mkdir(parents=True)
+        Path(str(final) + ".part").write_bytes(b"A-train-bytes-XXXXXXXXXX")                            # starts like the data, then differs
+        self.run_acquire()
+        self.assertEqual(final.read_bytes(), self.hub.content[("orgA/coding", "data/train-0.parquet")])
+        self.assertEqual(Path(str(final) + ".part.stale-1").read_bytes(), b"A-train-bytes-XXXXXXXXXX")
+        self.assertTrue(any("did not match the file: moved aside" in l for l in self.logs), self.logs)
+
+
+class MovingHead(Base):
+    """Review finding: pinning to the live HEAD turned an upstream README edit between two runs into ExistingFileMismatch."""
+
+    class Hub(FakeHub):
+        def __init__(self, pairs):
+            super().__init__(pairs)
+            self.old = None
+            self.revisions = []
+
+        def _dataset_info(self, repo_id, *, files_metadata=False, token=None, revision=None, **kw):
+            self.revisions.append((repo_id, revision))
+            if revision and self.old is not None:                                                     # the recorded commit still serves the OLD files
+                head, self.content = self.content, dict(self.old)
+                try:
+                    return super()._dataset_info(repo_id, files_metadata=files_metadata, token=token, **kw)
+                finally:
+                    self.content = head
+            return super()._dataset_info(repo_id, files_metadata=files_metadata, token=token, **kw)
+
+    def setUp(self):
+        super().setUp()
+        self.hub = self.Hub(self.pairs)
+
+    def edit_a_readme_upstream(self):
+        self.hub.old = dict(self.hub.content)
+        self.hub.content[("orgA/coding", "README.md")] = self.hub.content[("orgA/coding", "README.md")] + b"\nA typo was fixed upstream.\n"
+
+    def test_a_rerun_fetches_the_recorded_commit_not_the_new_head(self):
+        self.run_acquire()
+        self.assertTrue(all(rev is None for _, rev in self.hub.revisions))                           # first run: nothing recorded, the head is taken
+        recorded = {r: self.prov(A.folder_of(r))["commit_sha"] for r in ("orgA/coding", "orgB/qa", "orgC/hot")}
+        self.edit_a_readme_upstream()
+        self.hub.revisions.clear()
+        self.hub.downloads.clear()
+        res = self.run_acquire()                                                                      # does not stop on the changed README
+        self.assertEqual(sorted(self.hub.revisions), sorted((r, sha_) for r, sha_ in recorded.items()))
+        self.assertEqual(self.hub.downloads, [])
+        self.assertTrue(all(f["status"] == "skipped_existing" for d in res["datasets"].values() for f in d["files"]))
+        self.assertTrue(any("fetching that commit, not the current head" in l for l in self.logs))
+
+    def test_without_pinning_the_changed_readme_is_refused(self):
+        self.run_acquire()
+        self.edit_a_readme_upstream()
+        with self.assertRaises(A.ExistingFileMismatch):
+            self.run_acquire(pin_existing=False)
+
+    def test_pinned_commit_helper(self):
+        ds = self.table[0]
+        self.assertIsNone(A._pinned_commit(self.ext, ds))                                              # nothing recorded yet
+        self.run_acquire()
+        self.assertEqual(A._pinned_commit(self.ext, ds), self.prov("orgA__coding")["commit_sha"])
+        (self.ext / "orgA__coding" / "provenance.json").write_text('{"commit_sha": "not a sha"}', encoding="utf-8")
+        self.assertIsNone(A._pinned_commit(self.ext, ds))
+        (self.ext / "orgA__coding" / "provenance.json").write_text("{broken", encoding="utf-8")
+        self.assertIsNone(A._pinned_commit(self.ext, ds))
+
+
+class FreshRawFolder(Base):
+    def test_ext_dirname_puts_the_files_in_a_fresh_folder_and_leaves_the_old_one_alone(self):
+        self.run_acquire()
+        before = stat_snapshot(self.ext)
+        res = self.run_acquire(ext_dirname=A.EXTERNAL_DIRNAME + "_raw2")
+        self.assertEqual(sorted(os.listdir(self.root)), [A.EXTERNAL_DIRNAME, A.EXTERNAL_DIRNAME + "_raw2"])
+        self.assertEqual(stat_snapshot(self.ext), before)                                              # the first folder is untouched
+        self.assertTrue(all(f["status"] == "downloaded" for d in res["datasets"].values() for f in d["files"]))
+        fresh = self.root / (A.EXTERNAL_DIRNAME + "_raw2")
+        self.assertTrue((fresh / "orgA__coding" / "data" / "train-0.parquet").is_file())
+        a = A.train_files(self.root, "coding", datasets=self.table, ext_dirname=A.EXTERNAL_DIRNAME + "_raw2")
+        self.assertTrue(all(str(x).startswith(str(fresh)) for x in a) and a)
+        self.assertIn("orgB/qa", A.load_manifest(self.root, self.table, ext_dirname=A.EXTERNAL_DIRNAME + "_raw2"))
+        dnt = A.do_not_train_files(self.root, self.table, ext_dirname=A.EXTERNAL_DIRNAME + "_raw2")
+        self.assertTrue(all(str(x).startswith(str(fresh)) for v in dnt.values() for x in v))
+        plan = A.acquire(self.root, dry_run=True, datasets=self.table, ext_dirname=A.EXTERNAL_DIRNAME + "_raw2", log=self.logs.append)
+        self.assertTrue(plan["dry_run"])
+        self.assertTrue(any(A.EXTERNAL_DIRNAME + "_raw2/" in l for l in self.logs))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

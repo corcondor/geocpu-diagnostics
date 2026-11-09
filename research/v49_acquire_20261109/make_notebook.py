@@ -61,24 +61,26 @@ Hugging Face にある公開データ6種を Google Drive に取ってきて、�
 ## 動くこと（上から順に）
 1. **取得**（約1.9GB）: 6つのデータセットを、ライセンスを先に確認してから、コミットを固定して取得します。大きさと sha256 をハブの値と照合します。
 2. **検査**: 件数をカードの値と照合し（違えば `MISMATCH` と大きく表示）、モデルの語彙に無い文字、長さ、読んで確かめるための100行を調べます。
-3. **変換**: 1,900文字以内の GeoCPU の行に直します。コードは安全な枠の中で実行し、保存されていた出力を実行結果で置き換えます。
-4. **絞り込み**: 完全一致と近い重複（MinHash）、評価データ（JMMLU・JamC-QA・T1-T8・v48 の評価セット・JaQuAD の dev・HotpotQA の validation）との13文字一致、旧コーパス423,348行との重複を取り除きます。
-5. **記録**: `registry.json` と、日本語の表 `REPORT_JA.md` を書きます。採用する件数は、検査のあとで決まります（事前には決めていません）。
+3. **サンドボックスの自己診断（7-0）**: データ中のコードを1行でも実行する前に、実行する子プロセスが root ではなく nobody で動くこと、Drive を読み書きできないこと、危険なコードを拒否することを、この Colab の上で確かめます。確かめられなければ止まります。弱い代わりの方法には切り替えません。
+4. **変換**: 1,900文字以内の GeoCPU の行に直します。python のコードはモデル自身の実行器と同じ規則（使えるのは math・cmath・decimal・fractions・statistics・itertools・functools・operator・collections だけ、クラスや属性代入は不可）で実行し、保存されていた出力を実行結果で置き換えます。**答え自身の保存出力と実行結果が一致した行だけ**を残します。コードを実行しているあいだは Drive をアンマウントします。長い2つ（coding・tengentoppa）は小分け（シャード）にして、できた分から Drive に保存します。
+5. **絞り込み**: 完全一致と近い重複（MinHash）、評価データ（JMMLU・JamC-QA・T1-T8・v48 の評価セット・python120 など登録簿の他の評価セット・JaQuAD の dev・HotpotQA の validation）との13文字一致、旧コーパス423,348行との重複、学習行に近い兄弟がいる dev / heldout の行を取り除きます。8b の任意の確認は時間の上限つきで、行は除きません。
+6. **記録**: `registry.json` と、日本語の表 `REPORT_JA.md` を書きます。採用する件数は、検査のあとで決まります（事前には決めていません）。保留のデータセット（toolace・wizard）は `external_data_v49_rows/_HOLD_do_not_mix/` に置きます。
 
 ## 守っていること
-- GPU は使いません。ランタイムは「ハードウェア アクセラレータ: なし（CPU）」のままにしてください。
-- Drive には **新しいフォルダにだけ** 書きます（`external_data_v49/`、`external_data_v49_rows/`、`v49_acquire_20261109/`）。既にあるファイルを上書きも削除もしません。内容の違うファイルが既にあれば、そこで止まります。
+- GPU は使いません。ランタイムは「ハードウェア アクセラレータ: なし（CPU）」のままにしてください。GPU が付いていると、セル3a で止まります。
+- Drive には **新しいフォルダにだけ** 書きます（`external_data_v49/`、`external_data_v49_stageA/`、`external_data_v49_rows/`、`v49_acquire_20261109/`）。既にあるファイルを上書きも削除もしません。内容の違うファイルが既にあれば、そこで止まります。書き込みは `.part` に書いてから名前を付け替えるので、途中で止まっても欠けたファイルは残りません。
 - パスワード・API キー・トークンは要りません。通信先は huggingface.co（とその配信元）と PyPI だけです。
 - 各セルの最後に `PASS` か `FAIL` が出ます。`FAIL` のときはそこで止まり、先へは進みません。
-- 途中で止まっても、もう一度「すべてのセルを実行」で続きから動きます（取得済みのファイルは検証して飛ばし、変換済みの行は Drive から戻します）。
+- 途中で止まっても、もう一度「すべてのセルを実行」で続きから動きます（取得済みのファイルは検証して飛ばし、変換済みの行・シャードは Drive から戻します）。実行中のセルを止めたとき（実行を中断）は、動いている変換プロセスも一緒に止めます。
 
 ## 使い方
-1. 「ランタイム → すべてのセルを実行」。セル3a で Drive のアクセス許可を聞かれます。
-2. 7a（試運転）が終わると、全体の所要時間の目安が出ます（実測値ではなく見積もりです。コードの実行検証が一番長くなります）。
+1. 「ランタイム → すべてのセルを実行」。セル3a で Drive のアクセス許可を聞かれます。コード実行のあいだ Drive を外すので（`UNMOUNT_DRIVE_DURING_CODE_RUNS`）、変換のたびにつなぎ直します。許可の画面がまた出たら、許可してください。
+2. 7a（試運転）が終わると、全体の所要時間の目安が出ます（実測値ではなく見積もりです。コードの実行検証が一番長くなります）。7b は時間がかかるので、**ブラウザのタブを開いたままに**してください（タブを閉じると実行中のセルが止まることがあります）。止まっても、できた分は Drive にあります。
 3. 最後に `REPORT_JA.md` の中身がセル10に出ます。読み方は README_JA.md にあります。
 
 ## 結果が違うフォルダに欲しいとき
-内容が違うファイルが既にあって止まったときは、セル3a の `RUN_SUFFIX` を `'_2'` のように変えて、もう一度実行してください。新しいフォルダに書きます。
+- 内容が違うファイルが既にあって **出力で** 止まったときは、セル3a の `RUN_SUFFIX` を `'_2'` のように変えて、もう一度実行してください。新しい出力フォルダに書きます。変換済みの行（`external_data_v49_stageA/`）は残るので、絞り込みからやり直すだけで、数時間かかる変換はやり直しません。
+- 取得した **元ファイル** が違っていて止まったときだけ、`RAW_SUFFIX` を変えます（新しいフォルダに取り直します）。
 """
 
 CELL_PIP = '''# 2. 必要なライブラリ（PyPI から。GPU は使いません）
@@ -86,10 +88,13 @@ import importlib.metadata as md
 import subprocess
 import sys
 
-r = subprocess.run([sys.executable, "-m", "pip", "install", "-q", "huggingface_hub", "pyarrow"], capture_output=True, text=True)
+r = subprocess.run([sys.executable, "-m", "pip", "install", "-q", "huggingface_hub>=0.24", "pyarrow"], capture_output=True, text=True)
 print((r.stdout + r.stderr)[-1500:])
 assert r.returncode == 0, "FAIL [2 pip] pip install が失敗しました。上の出力を見てください"
-print("PASS [2 pip] huggingface_hub", md.version("huggingface_hub"), "pyarrow", md.version("pyarrow"))
+for n in ("huggingface_hub", "pyarrow"):
+    loaded = getattr(sys.modules.get(n), "__version__", None)       # 読み込み済みの版と、いま入っている版が違うと、古い版のまま動いてしまう
+    assert loaded is None or loaded == md.version(n), f"FAIL [2 pip] {n} は読み込み済みが {loaded}、入れ直した版が {md.version(n)} です。「ランタイム → セッションを再起動」してから、もう一度すべてのセルを実行してください"
+print("PASS [2 pip] huggingface_hub", md.version("huggingface_hub"), "pyarrow", md.version("pyarrow"), "python", sys.version.split()[0])
 '''
 
 CELL_CONFIG = '''# 3a. Google Drive をつなぎ、設定を決める（Colab 専用）
@@ -99,16 +104,23 @@ try:
     from google.colab import drive
 except ImportError as e:
     raise AssertionError("FAIL [3a drive] これは Google Colab の上で動かすノートブックです（パソコンでは動かしません）") from e
+# CPU だけで動く作業です。GPU 付きのランタイムのままだと、要らない有料の計算資源を使ってしまうので、ここで止めます
+assert not (os.path.exists("/proc/driver/nvidia") or os.path.exists("/dev/nvidiactl")), "FAIL [3a cpu] このランタイムには GPU が付いています。「ランタイム → ランタイムのタイプを変更 → ハードウェア アクセラレータ: なし（CPU）」にしてから、もう一度実行してください"
 drive.mount("/content/drive")
 DRIVE_ROOT = "/content/drive/MyDrive/GeoCPU_v47_fullmodel_20261106"
 assert os.path.isdir(DRIVE_ROOT), f"FAIL [3a drive] {DRIVE_ROOT} が見つかりません。Drive のフォルダ名を確かめてください"
-RUN_SUFFIX = ""                 # 内容の違うファイルで止まったときだけ '_2' のように変える（新しい出力フォルダになります）
+RUN_SUFFIX = ""                 # 内容の違うファイルで出力が止まったときだけ '_2' のように変える（新しい出力フォルダ。変換済みの行は使い回す）
+RAW_SUFFIX = ""                 # 取得した元ファイルが違っていて止まったときだけ（新しい取得フォルダになります）
 STOP_ON_COUNT_MISMATCH = False  # True にすると、件数がカードと違った時点で止まります（False: 大きく表示して記録し、続けます）
+ALLOW_VOCAB_MISMATCH = False    # True: モデルの語彙がパソコン上の語彙と違っても進む（既定は止まる。語彙が本当に変わったときだけ）
 ONLY = None                     # 試運転で一部だけ動かすとき: ("jaquad", "toolace") など。None なら6つすべて
-print("PASS [3a drive]", DRIVE_ROOT, "| RUN_SUFFIX =", repr(RUN_SUFFIX), "| ONLY =", ONLY)
+UNMOUNT_DRIVE_DURING_CODE_RUNS = True   # データ中のコードを実行するあいだ Drive を外す（コードが万一抜け出しても Drive に届かないように）
+FLUSH_DRIVE_AFTER_STEPS = True          # 書き込みの多いステップのあと Drive を外してつなぎ直し、書き込みを確実にする
+print("PASS [3a drive]", DRIVE_ROOT, "| RUN_SUFFIX =", repr(RUN_SUFFIX), "| RAW_SUFFIX =", repr(RAW_SUFFIX), "| ONLY =", ONLY)
 '''
 
 CELL_MODULES = '''#@title 3b. コードを書き出して読み込む（折りたたみ。中身は acquire.py / checks.py / convert.py / pipeline.py と同じです）
+import hashlib
 import sys
 from pathlib import Path
 
@@ -124,10 +136,37 @@ EXTRA.mkdir(exist_ok=True)
 for name, text in EVAL_EXTRA.items():
     (EXTRA / name).write_text(text, encoding="utf-8")
 sys.path.insert(0, str(CODE))
+for _m in ("acquire", "checks", "convert", "pipeline"):          # 同じカーネルで2回目に動かすとき、古い版ではなくこの版を読み込むため
+    sys.modules.pop(_m, None)
 import acquire, checks, convert  # noqa: E401,F401
 import pipeline as P
 
-CFG = P.make_cfg(root=DRIVE_ROOT, suffix=RUN_SUFFIX, only=ONLY, stop_on_count_mismatch=STOP_ON_COUNT_MISMATCH, eval_extra_dir=str(EXTRA))
+for _m in (acquire, checks, convert, P):                          # 読み込まれたコードが、いま書き出した文面と同じことを確かめる
+    _file = Path(_m.__file__)
+    assert _file.parent == CODE, f"FAIL [3b modules] {_m.__name__} が {CODE} 以外から読み込まれました"
+    assert hashlib.sha256(_file.read_bytes()).hexdigest() == hashlib.sha256(FILES[_file.name].encode("utf-8")).hexdigest(), f"FAIL [3b modules] {_m.__name__} が埋め込みの版と違います。「ランタイム → セッションを再起動」してください"
+
+
+def _detach():                                                    # コードを実行するあいだ: Drive を外す
+    drive.flush_and_unmount()
+    assert not os.path.exists("/content/drive/MyDrive"), "FAIL [drive] Drive が外れていません"
+
+
+def _attach():
+    drive.mount("/content/drive")
+    assert os.path.isdir(DRIVE_ROOT), f"FAIL [drive] {DRIVE_ROOT} が見つかりません"
+
+
+def _sync():                                                      # 書き込みを確実にする: 外してつなぎ直す（Drive の書き込みは非同期）
+    drive.flush_and_unmount()
+    drive.mount("/content/drive")
+    assert os.path.isdir(DRIVE_ROOT), f"FAIL [drive] {DRIVE_ROOT} が見つかりません"
+
+
+CFG = P.make_cfg(root=DRIVE_ROOT, suffix=RUN_SUFFIX, raw_suffix=RAW_SUFFIX, only=ONLY, stop_on_count_mismatch=STOP_ON_COUNT_MISMATCH,
+                 allow_vocab_mismatch=ALLOW_VOCAB_MISMATCH, eval_extra_dir=str(EXTRA),
+                 drive_detach=_detach if UNMOUNT_DRIVE_DURING_CODE_RUNS else None, drive_attach=_attach if UNMOUNT_DRIVE_DURING_CODE_RUNS else None,
+                 drive_sync=_sync if FLUSH_DRIVE_AFTER_STEPS else None)
 R3 = P.step_modules(CFG)
 assert R3["pass"], R3["detail"]
 '''
@@ -161,22 +200,32 @@ for m in R6c["mismatches"]:
 print("読んで確かめる100行（元データ）:", CFG.out / "reading")
 '''
 
+CELL_SANDBOX = '''# 7-0. サンドボックスの自己診断: データ中のコードを実行する前に、この Colab の上で確かめます（Drive はまだつながっています）
+R70 = P.step_sandbox_selftest(CFG)
+assert R70["pass"], R70["detail"]
+'''
+
 CELL_SMOKE = '''# 7a. 変換の試運転: 各データセットの最初の2,000件だけ。行の形・長さ・語彙・マスクを検査し、通らなければ止まります
 R7a = P.step_convert_smoke(CFG)
 assert R7a["pass"], R7a["detail"]
 '''
 
-CELL_FULL = '''# 7b. 変換の本番。絞り込み前の行は Drive の v49_acquire_20261109/converted_unfiltered/ に残します（再実行では Drive から戻します）
+CELL_FULL = '''# 7b. 変換の本番。長い2つは小分け（シャード）にして、できた分から Drive の external_data_v49_stageA/ に残します（再実行では Drive から戻します）。タブは開いたままに
 R7b = P.step_convert_full(CFG)
 assert R7b["pass"], R7b["detail"]
 '''
 
-CELL_FILTERS = '''# 8. 絞り込み: 完全一致 → 近い重複（MinHash）→ 評価データとの13文字一致 → 旧コーパス423,348行との重複
+CELL_FILTERS = '''# 8. 絞り込み: 完全一致 → 近い重複（MinHash）→ 評価データとの13文字一致 → 旧コーパス423,348行との重複 → dev / heldout の近い兄弟
 R8 = P.step_filters(CFG)
 assert R8["pass"], R8["detail"]
 '''
 
-CELL_FINAL = '''# 9. 最終の行（train / dev / heldout）を external_data_v49_rows/<データセット>/ に、registry.json と REPORT_JA.md を v49_acquire_20261109/ に書きます
+CELL_REVIEWS = '''# 8b. 任意の確認（評価問題に似た行の目視用リスト・データセット間の重複）。時間の上限つきで、行は除きません
+R8b = P.step_reviews(CFG)
+assert R8b["pass"], R8b["detail"]
+'''
+
+CELL_FINAL = '''# 9. 最終の行（train / dev / heldout）を external_data_v49_rows/<データセット>/ に（保留の2つは _HOLD_do_not_mix/ に）、registry.json と REPORT_JA.md を v49_acquire_20261109/ に書きます
 R9 = P.step_finalize(CFG)
 assert R9["pass"], R9["detail"]
 '''
@@ -217,10 +266,11 @@ def build() -> dict:
              code(CELL_ACQUIRE, "acquire"),
              md("## 6. 元データの検査\n6a で train のファイルだけをこの Colab のディスクに写し、6b で語彙と評価データを確かめ、6c で件数・語彙外文字・長さを調べます。\n", "md-raw"),
              code(CELL_MIRROR, "mirror"), code(CELL_VOCAB, "vocab"), code(CELL_RAW, "raw"),
-             md("## 7. 変換\n7a は最初の2,000件だけの試運転、7b が本番です。7b は時間がかかります（コードの実行検証）。\n", "md-convert"),
-             code(CELL_SMOKE, "smoke"), code(CELL_FULL, "full"),
-             md("## 8. 絞り込み\n重複と評価データとの重複を取り除きます。各段階の件数が表になります。\n", "md-filters"), code(CELL_FILTERS, "filters"),
-             md("## 9. 書き出し\n最終の行・registry.json・REPORT_JA.md を Drive の新しいフォルダに書きます。\n", "md-final"), code(CELL_FINAL, "final"),
+             md("## 7. 変換\n7-0 はサンドボックスの自己診断（コードを動かす前に必ず通る）、7a は最初の2,000件だけの試運転、7b が本番です。7b は時間がかかります（コードの実行検証）。コードを実行するあいだ Drive は外れます。\n", "md-convert"),
+             code(CELL_SANDBOX, "sandbox"), code(CELL_SMOKE, "smoke"), code(CELL_FULL, "full"),
+             md("## 8. 絞り込み\n重複と評価データとの重複を取り除きます。各段階の件数が表になります。結果はこのセルの終わりに Drive に書かれます。8b は任意の確認で、時間の上限があります。\n", "md-filters"),
+             code(CELL_FILTERS, "filters"), code(CELL_REVIEWS, "reviews"),
+             md("## 9. 書き出し\n最終の行・registry.json・REPORT_JA.md を Drive の新しいフォルダに書き、つなぎ直したあとのDriveから全ファイルの sha256 を確かめます。\n", "md-final"), code(CELL_FINAL, "final"),
              md("## 10. 終わり\n", "md-finish"), code(CELL_FINISH, "finish")]
     return {"nbformat": 4, "nbformat_minor": 5,
             "metadata": {"colab": {"name": NOTEBOOK, "provenance": []}, "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},

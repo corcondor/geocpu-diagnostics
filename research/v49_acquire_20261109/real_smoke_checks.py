@@ -64,7 +64,7 @@ def main(out_path):
                          "seconds": round(time.time() - t, 2), "rss_mb_before": r0, "rss_mb_after": rss_mb(),
                          "per_source": {k: v2 for k, v2 in idx.per_source.items()}}
     t = time.time()
-    dc = C.decontaminate(rows, idx, boilerplate_df=50)                                # 2,000 rows: 50 ~ the 500 cut of a 20k-row run
+    dc = C.decontaminate(rows, idx, boilerplate_eval_df=20)                           # a shingle shared by 20+ eval items is template boilerplate
     res["decontaminate_2000_rows_df50"] = {k: dc[k] for k in ("n_rows", "rows_with_any_shared_shingle", "rows_boilerplate_only", "rows_with_real_overlap",
                                                                 "rows_flagged", "shared_count_hist")}
     res["decontaminate_2000_rows_df50"]["boilerplate_n"] = dc["boilerplate"]["n_shingles"]

@@ -60,6 +60,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path, PurePosixPath
+from typing import Optional
 
 ACQUIRE_VERSION = "1"
 SCHEMA = "v49_acquire_provenance/1"
@@ -531,6 +532,50 @@ def _copy_hashing(src, dst):
     return n, h.hexdigest()
 
 
+def _copy_resume(src, dst):
+    """Copy src to dst (never over a finished file).  An existing dst - the '.part' of a dead run - is CONTINUED when its bytes are exactly the first
+    bytes of src (compared byte for byte); anything else is moved aside by _quarantine (never deleted) and the copy starts again.  A runtime that
+    died after 900 MB of a 1 GB copy therefore costs 100 MB, not 1 GB, and leaves no new '.stale-N' file behind.
+    Returns (bytes in dst, sha256 of all of them, bytes that were already there)."""
+    h = hashlib.sha256()
+    n = resumed = 0
+    mode = "xb"
+    if os.path.lexists(dst):
+        have = os.path.getsize(dst) if os.path.isfile(dst) else -1
+        ok = 0 <= have <= os.path.getsize(src)
+        if ok:
+            with open(src, "rb") as fs, open(dst, "rb") as fd:
+                left = have
+                while left:
+                    a, b = fs.read(min(CHUNK, left)), fd.read(min(CHUNK, left))
+                    if not a or a != b:
+                        ok = False
+                        break
+                    h.update(a)
+                    n += len(a)
+                    left -= len(a)
+        if ok:
+            mode, resumed = "ab", n
+        else:
+            _quarantine(str(dst))
+            h, n = hashlib.sha256(), 0
+    with open(src, "rb") as fi, open(dst, mode) as fo:
+        fi.seek(n)
+        while True:
+            b = fi.read(CHUNK)
+            if not b:
+                break
+            fo.write(b)
+            h.update(b)
+            n += len(b)
+        fo.flush()
+        try:
+            os.fsync(fo.fileno())
+        except OSError:
+            pass
+    return n, h.hexdigest(), resumed
+
+
 def _write_new_text(path: Path, text: str) -> None:
     """Create a text file that did not exist; never overwrites."""
     if os.path.lexists(path):
@@ -596,11 +641,13 @@ def _commit(ctx, staged: Path, dg: dict, final: Path, rel: str) -> None:
         if os.path.isfile(part) and os.path.getsize(part) == dg["size"] and file_digests(part)["sha256"] == dg["sha256"]:
             reuse = True
             ctx.log(f"  complete {os.path.basename(part)} from an earlier run is correct: finishing it")
-        else:
-            q = _quarantine(part)
-            ctx.log(f"  stale partial copy moved aside (not deleted): {q}")
     if not reuse:
-        n, sha = _copy_hashing(staged, part)
+        had = os.path.lexists(part)
+        n, sha, resumed = _copy_resume(staged, part)               # continues a partial of an earlier run, or moves a bad one aside
+        if had and resumed:
+            ctx.log(f"  continued the partial copy {os.path.basename(part)} of an earlier run after {resumed:,} bytes")
+        elif had:
+            ctx.log(f"  the partial copy {os.path.basename(part)} of an earlier run did not match the file: moved aside (not deleted), copying again")
         if n != dg["size"] or sha != dg["sha256"]:
             raise VerificationError(f"{rel}: the copy on Drive differs from the verified staged file (kept as {part} for inspection)")
         if ctx.verify_after_copy:
@@ -736,7 +783,7 @@ def _write_provenance(ctx, st: dict, prov: dict) -> str:
 
 
 # ------------------------------------------------------------------------------------------------ dry run / main entry
-def _plan(datasets, root=None) -> dict:
+def _plan(datasets, root=None, ext_dirname: str = EXTERNAL_DIRNAME) -> dict:
     ds_out = []
     for ds in datasets:
         files = []
@@ -744,7 +791,7 @@ def _plan(datasets, root=None) -> dict:
             rel = dest_rel(ds, f)
             present = None
             if root is not None:
-                p = Path(root) / EXTERNAL_DIRNAME / rel
+                p = Path(root) / ext_dirname / rel
                 present = bool(os.path.isfile(p) and os.path.getsize(p) == f["size"])
             files.append({"role": f["role"], "path": f["path"], "size": f["size"], "dest_rel": rel, "already_present_size_ok": present})
         ds_out.append({"repo": ds["repo"], "key": ds["key"], "planning_sha": ds["planning_sha"], "licenses": list(ds["licenses"]),
@@ -754,14 +801,14 @@ def _plan(datasets, root=None) -> dict:
             "do_not_train_bytes": total_bytes(datasets, NO_TRAIN_ROLES)}
 
 
-def _dry_run(datasets, root, log) -> dict:
-    plan = _plan(datasets, root)
+def _dry_run(datasets, root, log, ext_dirname: str = EXTERNAL_DIRNAME) -> dict:
+    plan = _plan(datasets, root, ext_dirname)
     log("DRY RUN: no network, nothing is written.  Files that WOULD be fetched (revision = commit sha read from the Hub at run time):")
     for i, d in enumerate(plan["datasets"], 1):
         log(f"{i}. {d['repo']}  [{', '.join(d['licenses'])}]  planning commit {d['planning_sha'][:12]}")
         for f in d["files"]:
             mark = "" if f["already_present_size_ok"] is None else ("  (present, size ok: would be re-verified and skipped)" if f["already_present_size_ok"] else "")
-            log(f"     {f['role']:<10} {f['size']:>13,} B  {f['path']}  ->  {EXTERNAL_DIRNAME}/{f['dest_rel']}{mark}")
+            log(f"     {f['role']:<10} {f['size']:>13,} B  {f['path']}  ->  {ext_dirname}/{f['dest_rel']}{mark}")
         log(f"     subtotal {d['bytes']:,} B")
     tb = plan["total_bytes"]
     log(f"TOTAL: {plan['n_files']} files, {tb:,} bytes = {tb / 1e9:.2f} GB = {tb / 2**30:.2f} GiB "
@@ -775,7 +822,7 @@ def _in_colab() -> bool:
 
 
 def acquire(root, only=None, *, dry_run=False, now_utc=None, datasets=None, stage_dir=None, keep_stage=False,
-            verify_after_copy=True, allow_local=False, log=print) -> dict:
+            verify_after_copy=True, allow_local=False, log=print, ext_dirname: str = EXTERNAL_DIRNAME, pin_existing: bool = True) -> dict:
     """Fetch (or, with dry_run, only plan) the selected datasets into <root>/external_data_v49/.  Idempotent and resumable.
 
     root        the existing Drive folder (never created here); only NEW sub-folders of it are written.
@@ -784,6 +831,9 @@ def acquire(root, only=None, *, dry_run=False, now_utc=None, datasets=None, stag
     datasets    override the table (tests only).
     stage_dir   local-disk staging dir (default /content/_hf_stage_v49); must be outside root.
     allow_local real runs refuse to start off-Colab unless this is True (tests only: the owner's PC must not be loaded).
+    ext_dirname the folder under root that receives the files (default external_data_v49; the notebook's RAW_SUFFIX makes it a fresh one).
+    pin_existing a dataset that already has a provenance.json is fetched at THAT commit, not at the current head of the repo: an upstream edit
+                of a README between two runs must not turn a re-run into a refusal.
     """
     table = list(DATASETS if datasets is None else datasets)
     validate_table(table)
@@ -791,7 +841,7 @@ def acquire(root, only=None, *, dry_run=False, now_utc=None, datasets=None, stag
     if not sel:
         raise ValueError("no dataset selected")
     if dry_run:
-        return _dry_run(sel, root, log)
+        return _dry_run(sel, root, log, ext_dirname)
 
     if not allow_local and not _in_colab():
         raise AcquireError("refusing to download off Colab: this pipeline must not load the owner's PC (pass allow_local=True only for tests)")
@@ -819,7 +869,7 @@ def acquire(root, only=None, *, dry_run=False, now_utc=None, datasets=None, stag
 
     api_cls, dl = _hub()
     ctx = _Ctx()
-    ctx.ext = root / EXTERNAL_DIRNAME
+    ctx.ext = root / ext_dirname
     ctx.stage, ctx.download, ctx.log, ctx.now = stage, dl, log, now_utc
     ctx.keep_stage, ctx.verify_after_copy = keep_stage, verify_after_copy
     ctx.ext.mkdir(exist_ok=True)
@@ -828,10 +878,17 @@ def acquire(root, only=None, *, dry_run=False, now_utc=None, datasets=None, stag
     # ---- phase 1: listing, drift and LICENCE for every selected dataset before any data file is downloaded
     states = []
     for ds in sel:
-        info = api.dataset_info(ds["repo"], files_metadata=True, token=False)
+        pinned = _pinned_commit(ctx.ext, ds) if pin_existing else None
+        if pinned:
+            log(f"  {ds['repo']}: an earlier run recorded commit {pinned[:12]}; fetching that commit, not the current head")
+            info = api.dataset_info(ds["repo"], files_metadata=True, token=False, revision=pinned)
+        else:
+            info = api.dataset_info(ds["repo"], files_metadata=True, token=False)
         sha = _g(info, "sha")
         if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
             raise VerificationError(f"{ds['repo']}: the Hub did not return a commit sha")
+        if pinned and sha != pinned:
+            raise VerificationError(f"{ds['repo']}: asked for the recorded commit {pinned} and the Hub answered {sha}")
         live = _live_listing(info)
         st = {"ds": ds, "sha": sha, "exp": {}, "drift": {}}
         for f in ds["files"]:
@@ -874,48 +931,58 @@ def acquire(root, only=None, *, dry_run=False, now_utc=None, datasets=None, stag
 
 
 # ------------------------------------------------------------------------------------------------ for the converters
-def _provenance_of(root, ds) -> dict:
-    p = Path(root) / EXTERNAL_DIRNAME / folder_of(ds["repo"]) / "provenance.json"
+def _pinned_commit(ext, ds) -> Optional[str]:
+    """The commit sha recorded by an earlier run of this dataset (None when there is no valid provenance.json)."""
+    p = Path(ext) / folder_of(ds["repo"]) / "provenance.json"
+    try:
+        sha = json.loads(p.read_text(encoding="utf-8")).get("commit_sha")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return sha if isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{40}", sha) else None
+
+
+def _provenance_of(root, ds, ext_dirname: str = EXTERNAL_DIRNAME) -> dict:
+    p = Path(root) / ext_dirname / folder_of(ds["repo"]) / "provenance.json"
     if not os.path.isfile(p):
         raise AcquireError(f"{ds['repo']} has not been acquired: {p} is missing")
     return json.loads(p.read_text(encoding="utf-8"))
 
 
-def train_files(root, which, datasets=None) -> list:
+def train_files(root, which, datasets=None, ext_dirname: str = EXTERNAL_DIRNAME) -> list:
     """Paths of the TRAIN-eligible data files of one dataset (key, repo id or folder name).  dev/validation can never come out of here."""
     table = list(DATASETS if datasets is None else datasets)
     ds = select(table, [which])[0]
-    prov = _provenance_of(root, ds)
+    prov = _provenance_of(root, ds, ext_dirname)
     out = []
     for f in prov["files"]:
         if f["role"] == "train" and f["may_train"]:
             if any(part.startswith("do_not_train") for part in PurePosixPath(f["dest_rel"]).parts):
                 raise UnsafeLayout(f"{f['dest_rel']} is under a do_not_train folder but marked train")
-            out.append(Path(root) / EXTERNAL_DIRNAME / f["dest_rel"])
+            out.append(Path(root) / ext_dirname / f["dest_rel"])
     return out
 
 
-def do_not_train_files(root, datasets=None) -> dict:
+def do_not_train_files(root, datasets=None, ext_dirname: str = EXTERNAL_DIRNAME) -> dict:
     """{repo: [paths]} of the dev/validation files, for decontamination only."""
     table = list(DATASETS if datasets is None else datasets)
     out = {}
     for ds in table:
-        p = Path(root) / EXTERNAL_DIRNAME / folder_of(ds["repo"]) / "provenance.json"
+        p = Path(root) / ext_dirname / folder_of(ds["repo"]) / "provenance.json"
         if not os.path.isfile(p):
             continue
         prov = json.loads(p.read_text(encoding="utf-8"))
-        files = [Path(root) / EXTERNAL_DIRNAME / f["dest_rel"] for f in prov["files"] if f["role"] in NO_TRAIN_ROLES]
+        files = [Path(root) / ext_dirname / f["dest_rel"] for f in prov["files"] if f["role"] in NO_TRAIN_ROLES]
         if files:
             out[ds["repo"]] = files
     return out
 
 
-def load_manifest(root, datasets=None) -> dict:
+def load_manifest(root, datasets=None, ext_dirname: str = EXTERNAL_DIRNAME) -> dict:
     """{repo: provenance.json content} for every acquired dataset."""
     table = list(DATASETS if datasets is None else datasets)
     out = {}
     for ds in table:
-        p = Path(root) / EXTERNAL_DIRNAME / folder_of(ds["repo"]) / "provenance.json"
+        p = Path(root) / ext_dirname / folder_of(ds["repo"]) / "provenance.json"
         if os.path.isfile(p):
             out[ds["repo"]] = json.loads(p.read_text(encoding="utf-8"))
     return out
