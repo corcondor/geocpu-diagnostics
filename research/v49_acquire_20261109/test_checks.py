@@ -23,6 +23,22 @@ def tmpdir():
     return tempfile.TemporaryDirectory(prefix="test_checks_", ignore_cleanup_errors=True)
 
 
+def run_runtime_only(code, timeout=30.0):
+    """Run `code` in the REAL child with only its own validate() call replaced by a plain parse: the static rules are OFF, everything else (restricted
+    builtins and __import__, the module namespaces built from the frozen lists, the audit hook) is the real child.  Returns the child's result dict
+    {ok, stdout, error}.  Built here from checks._CHILD_SRC on purpose (not from a helper of checks.py), so the test also runs against older checks.py."""
+    src = C._CHILD_SRC.replace("tree = validate(code, cfg)", 'tree = ast.parse(code, filename="<row-code>", mode="exec")')
+    assert src != C._CHILD_SRC, "the validate() anchor of the child source moved"
+    marker = "@@CHECKS-RESULT-test@@"
+    cfg = C._profile_cfg("executor", None, False)
+    cfg.update({"cpu": int(timeout) + 1, "cap": 1 << 16, "marker": marker, "mem_mb": 1024})
+    r = C._spawn(src, [json.dumps(cfg), "code.py"], timeout=timeout, flags=["-s", "-B", "-X", "utf8", "-S"], python=None, acct=None, files={"code.py": code})
+    for line in reversed(r["out"].decode("utf-8", "replace").splitlines()):
+        if line.startswith(marker):
+            return json.loads(line[len(marker):])
+    raise AssertionError(f"the child gave no result line: returncode={r['returncode']} timed_out={r['timed_out']} err={r['err'][-300:]!r}")
+
+
 def write_jsonl(path, rows):
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         for r in rows:
@@ -765,6 +781,137 @@ class TestCodeBlocks(unittest.TestCase):
         self.assertEqual(C.extract_python_blocks("```python\r\nprint(7)\r\n```"), ["print(7)"])
 
 
+# ---- AST tripwire tables (round 5) --------------------------------------------------------------------------------------------------------------------
+# (class, field) pairs of the ast module that carry a NAME or a STRING.  Each is dealt with by validate() (checks._VALIDATE_SRC); the second column says how.
+AST_TEXT_FIELDS = {
+    ("Name", "id"): "name rules; an imported module's alias may only be the base of an attribute",
+    ("Attribute", "attr"): "attribute rules (underscore, DENIED_ATTRS, store, str.format) and the frozen list of the module",
+    ("FunctionDef", "name"): "a bound name: the name rules",
+    ("AsyncFunctionDef", "name"): "refused (async)",
+    ("ClassDef", "name"): "refused (class definitions)",
+    ("arg", "arg"): "a bound name: the name rules",
+    ("keyword", "arg"): "a call keyword binds to the callee's PARAMETER name (it is not only a dict key): refused when it starts with an underscore "
+                        "(Fraction(4, 8, _normalize=False) works on 3.10 / 3.11); any other name is harmless (dict(format=1), sorted(key=f))",
+    ("alias", "name"): "import: the root must be allowed, the name of `from m import n` must be on the frozen list of m",
+    ("alias", "asname"): "a bound name: the name rules",
+    ("ImportFrom", "module"): "the module must be an allowed root (or collections.abc)",
+    ("ExceptHandler", "name"): "a bound name: the name rules",
+    ("MatchAs", "name"): "a bound name: the name rules",
+    ("MatchStar", "name"): "a bound name: the name rules",
+    ("MatchMapping", "rest"): "a bound name: the name rules",
+    ("MatchClass", "kwd_attrs"): "refused: keyword attributes of class patterns are looked up with getattr",
+    ("Global", "names"): "refused (global / nonlocal)",
+    ("Nonlocal", "names"): "refused (global / nonlocal)",
+    ("TypeVar", "name"): "a bound name (3.12 type parameter): the name rules",
+    ("ParamSpec", "name"): "a bound name (3.12 type parameter): the name rules",
+    ("TypeVarTuple", "name"): "a bound name (3.12 type parameter): the name rules",
+    ("Constant", "value"): "str constants: format-string rules; inside an annotation: refused (string_annotation)",
+    ("Constant", "kind"): "only 'u' (u-prefixed string literal)",
+    ("TypeIgnore", "tag"): "only produced with type_comments=True; validate() parses without it",
+}
+AST_TEXT_FIELDS.update({(c, "type_comment"): "None: validate() parses without type_comments=True"
+                        for c in ("Assign", "For", "AsyncFor", "With", "AsyncWith", "FunctionDef", "AsyncFunctionDef", "arg")})
+# 3.8-era shims that ast.parse() never produces (a Constant is built instead); tolerated by name, asserted never to appear in a parse
+AST_LEGACY = ("Num", "Str", "Bytes", "NameConstant", "Ellipsis", "Index", "ExtSlice", "Suite", "AugLoad", "AugStore", "Param")
+# every other field: nodes, lists of nodes, ints, None / True / False.  FROZEN from the union of Python 3.10 and 3.12 (3.11 is a subset of 3.12),
+# typed with the ast module's own validator.  A field that is missing here on a newer Python is reported by the tripwire, not guessed.
+AST_NODE_FIELDS = {
+    "AnnAssign": "target annotation value simple",
+    "Assert": "test msg",
+    "Assign": "targets value",
+    "AsyncFor": "target iter body orelse",
+    "AsyncFunctionDef": "args body decorator_list returns type_params",
+    "AsyncWith": "items body",
+    "Attribute": "value ctx",
+    "AugAssign": "target op value",
+    "Await": "value",
+    "BinOp": "left op right",
+    "BoolOp": "op values",
+    "Call": "func args keywords",
+    "ClassDef": "bases keywords body decorator_list type_params",
+    "Compare": "left ops comparators",
+    "Delete": "targets",
+    "Dict": "keys values",
+    "DictComp": "key value generators",
+    "ExceptHandler": "type body",
+    "Expr": "value",
+    "Expression": "body",
+    "For": "target iter body orelse",
+    "FormattedValue": "value conversion format_spec",
+    "FunctionDef": "args body decorator_list returns type_params",
+    "FunctionType": "argtypes returns",
+    "GeneratorExp": "elt generators",
+    "If": "test body orelse",
+    "IfExp": "test body orelse",
+    "Import": "names",
+    "ImportFrom": "names level",
+    "Interactive": "body",
+    "JoinedStr": "values",
+    "Lambda": "args body",
+    "List": "elts ctx",
+    "ListComp": "elt generators",
+    "Match": "subject cases",
+    "MatchAs": "pattern",
+    "MatchClass": "cls patterns kwd_patterns",
+    "MatchMapping": "keys patterns",
+    "MatchOr": "patterns",
+    "MatchSequence": "patterns",
+    "MatchSingleton": "value",
+    "MatchValue": "value",
+    "Module": "body type_ignores",
+    "Name": "ctx",
+    "NamedExpr": "target value",
+    "Raise": "exc cause",
+    "Return": "value",
+    "Set": "elts",
+    "SetComp": "elt generators",
+    "Slice": "lower upper step",
+    "Starred": "value ctx",
+    "Subscript": "value slice ctx",
+    "Try": "body handlers orelse finalbody",
+    "TryStar": "body handlers orelse finalbody",
+    "Tuple": "elts ctx",
+    "TypeAlias": "name type_params value",
+    "TypeIgnore": "lineno",
+    "TypeVar": "bound",
+    "UnaryOp": "op operand",
+    "While": "test body orelse",
+    "With": "items body",
+    "Yield": "value",
+    "YieldFrom": "value",
+    "arg": "annotation",
+    "arguments": "posonlyargs args vararg kwonlyargs kw_defaults kwarg defaults",
+    "comprehension": "target iter ifs is_async",
+    "keyword": "value",
+    "match_case": "pattern guard body",
+    "withitem": "context_expr optional_vars",
+}
+
+
+def ast_classes():
+    """Every class below ast.AST (recursively) that belongs to the ast module, abstract bases and legacy shims included."""
+    import ast
+    seen, stack = [], [ast.AST]
+    while stack:
+        for sub in stack.pop().__subclasses__():
+            if sub not in seen:
+                seen.append(sub)
+                stack.append(sub)
+    return [c for c in seen if c.__module__ in ("ast", "_ast")]
+
+
+def unclassified_ast_pairs(classes):
+    """The (class name, field) pairs of `classes` that neither AST_TEXT_FIELDS nor AST_NODE_FIELDS knows (legacy shims are skipped by name)."""
+    out = set()
+    for c in classes:
+        if c.__name__ in AST_LEGACY:
+            continue
+        for f in getattr(c, "_fields", ()):
+            if (c.__name__, f) not in AST_TEXT_FIELDS and f not in AST_NODE_FIELDS.get(c.__name__, "").split():
+                out.add((c.__name__, f))
+    return sorted(out)
+
+
 class TestSandbox(unittest.TestCase):
     def test_runs_math_code_and_the_converter_self_test(self):
         ok, out, err = C.code_sandbox_check("print(1 + 1)\n")
@@ -932,11 +1079,11 @@ class TestSandbox(unittest.TestCase):
                          sorted(("int", "float", "str", "bool", "list", "tuple", "dict", "set", "frozenset", "complex", "bytes")))
         for code, needle in {
                 "from collections import Counter\nmatch Counter('a'):\n    case Counter():\n        pass\n": "only allowed on these builtin types",
-                "from collections import namedtuple\nP = namedtuple('P', 'format')\nmatch P('x'):\n    case P(f):\n        pass\n": "only allowed on these builtin types",
+                "from collections import Counter\nP = Counter\nmatch P('x'):\n    case P(f):\n        pass\n": "only allowed on these builtin types",
                 "import collections\nmatch 1:\n    case collections.OrderedDict():\n        pass\n": "only allowed on these builtin types",
                 "match 1:\n    case bytearray():\n        pass\n": "only allowed on these builtin types",       # not on the list
                 "match 1:\n    case Foo(x):\n        pass\n": "only allowed on these builtin types",
-                "from collections import namedtuple\nstr = namedtuple('P', 'x')\nmatch str(1):\n    case str(a):\n        pass\n": "is rebound",
+                "from collections import Counter\nstr = Counter\nmatch str(1):\n    case str(a):\n        pass\n": "is rebound",
                 "def int(x):\n    return x\nmatch 1:\n    case int():\n        pass\n": "is rebound",
                 "match 1:\n    case int() as int:\n        pass\n": "is rebound",
                 "import math as str\nmatch 1:\n    case str():\n        pass\n": "is rebound"}.items():
@@ -979,8 +1126,7 @@ class TestSandbox(unittest.TestCase):
         for what, tmpl in bound.items():
             self.assertEqual(C.static_check(tmpl.format(n="format")), "", what)                       # a variable called format reads no attribute
             self.assertEqual(C.static_check(tmpl.format(n="format_map")), "", what)
-            if what != "keyword.arg":                                                                  # a call keyword is only a dict key: not a name
-                self.assertTrue(C.static_check(tmpl.format(n="__class__")).startswith("name:"), what)
+            self.assertTrue(C.static_check(tmpl.format(n="__class__")).startswith("name:"), what)     # every one, call keywords included (round 6)
         for code in ("global {n}\n", "def f():\n    nonlocal {n}\n"):
             self.assertTrue(C.static_check(code.format(n="format")).startswith("global_nonlocal"), code)       # refused for every name
         if sys.version_info >= (3, 12):
@@ -1021,17 +1167,76 @@ class TestSandbox(unittest.TestCase):
         self.assertTrue(found <= reviewed, sorted(found - reviewed))
         self.assertIn(("MatchClass", "kwd_attrs"), found if sys.version_info >= (3, 10) else {("MatchClass", "kwd_attrs")})
 
+    def test_every_ast_node_class_and_field_of_this_python_is_classified(self):
+        # round 5 (G4): the corpus test above only sees the node classes that its 12 snippets instantiate, so a class that no snippet builds (say a new
+        # ast.Interpolation in a future Python) was invisible.  This one walks EVERY ast.AST subclass (recursively) and EVERY entry of its _fields and
+        # classifies the pair against two explicit tables: AST_TEXT_FIELDS (the fields that carry a name or a string; each one is dealt with by validate())
+        # and AST_NODE_FIELDS (fields that only hold nodes, lists of nodes, ints or None / True / False; frozen from the union of Python 3.10 and 3.12,
+        # typed with the ast module's own validator).  An unclassified pair FAILS, so a newer Python cannot add a carrier silently.  A class or field that
+        # exists only on some versions is simply absent from the walk on the others: tolerated, never a failure.
+        import ast
+        classes = ast_classes()
+        names = {c.__name__ for c in classes}
+        self.assertTrue({"Name", "Attribute", "Call", "FunctionDef", "ImportFrom", "Constant"} <= names, sorted(names)[:10])
+        self.assertEqual(unclassified_ast_pairs(classes), [], "a node field this test has not classified: decide whether it carries a name or a string "
+                                                              "(then validate() must deal with it) and add it to AST_TEXT_FIELDS or AST_NODE_FIELDS")
+        # the walk really reaches classes that the corpus test never instantiates (the weakness that was reported)
+        never_built = {"BinOp", "Compare", "Raise", "While", "Assert", "AugAssign", "Slice", "Starred", "IfExp", "Yield", "Set", "Lambda", "Subscript"}
+        self.assertTrue(never_built <= names, sorted(never_built - names))
+        # every text carrier of the table is a field of its class on this Python, or the class / field is absent from it (version difference): tolerated
+        table_pairs = set(AST_TEXT_FIELDS) | {(c, f) for c, fs in AST_NODE_FIELDS.items() for f in fs.split()}
+        live = {(c.__name__, f) for c in classes for f in getattr(c, "_fields", ())}
+        absent = sorted(table_pairs - live)
+        print(f"[ast tripwire] python {sys.version.split()[0]}: {len(classes)} classes, {len(live)} (class, field) pairs, all classified; "
+              f"{len(absent)} table pairs absent on this version: {absent}", file=sys.stderr)
+        # the legacy shims are never produced by ast.parse (so a field of theirs can never reach validate())
+        corpus = [code for _, code in C.SANDBOX_MUST_REJECT] + [C.SANDBOX_RUNS_PROGRAM, "x = [i for i in range(3) if i]\nf'{x!r:>{3}}'\nlambda a, *b, **c: a\n"]
+        found = set()
+        for src in corpus:
+            try:
+                tree = ast.parse(src)
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                self.assertNotIn(type(node).__name__, AST_LEGACY)
+                for fld in node._fields:
+                    v = getattr(node, fld, None)
+                    if isinstance(v, str) or (isinstance(v, list) and v and all(isinstance(e, str) for e in v)):
+                        found.add((type(node).__name__, fld))
+        self.assertTrue(found <= set(AST_TEXT_FIELDS), sorted(found - set(AST_TEXT_FIELDS)))
+
+    def test_the_ast_tripwire_flags_a_class_and_a_field_it_has_never_seen(self):
+        # simulate what a newer Python does: a brand-new node class with a string field (3.14 t-strings: ast.Interpolation.str), and a new field on an
+        # old class.  Neither is in any table, so both must be reported; once they are gone the walk is clean again.
+        import ast
+        import gc
+        self.assertEqual(unclassified_ast_pairs(ast_classes()), [])
+        fakes = [type("Interpolation", (ast.expr,), {"_fields": ("value", "str", "conversion", "format_spec"), "__module__": "ast"}),
+                 type("Call", (ast.expr,), {"_fields": ("func", "args", "keywords", "secret_name"), "__module__": "ast"})]   # a second 'Call' with one extra field
+        try:
+            self.assertEqual(unclassified_ast_pairs(ast_classes()),
+                             [("Call", "secret_name"), ("Interpolation", "conversion"), ("Interpolation", "format_spec"), ("Interpolation", "str"),
+                              ("Interpolation", "value")])
+        finally:
+            fakes.clear()
+            gc.collect()
+        self.assertEqual(unclassified_ast_pairs(ast_classes()), [])
+
     def test_module_namespaces_hide_submodules_at_run_time(self):
-        for code, needle in (("import statistics\nprint(statistics.random)", "AttributeError"),
+        # round 5: the static layer now refuses `statistics.random` / `from fractions import Decimal` itself (deny by default); the RUNTIME layer alone
+        # (static rules off in the child) must hide them too: see TestFrozenNames for the full matrix
+        for code, needle in (("import statistics\nprint(statistics.random)", "static:module_attr:statistics.random"),
                              ("import functools\nprint(functools.partial)", None),
-                             ("from fractions import Decimal\nprint(Decimal('1.5'))", None),
+                             ("from fractions import Decimal\nprint(Decimal('1.5'))", "static:import_name:Decimal"),
                              ("import collections\nfrom collections.abc import Sequence\nprint(collections.abc.Sequence is Sequence)", None)):
             ok, out, err = C.code_sandbox_check(code)
             if needle:
                 self.assertFalse(ok, code)
-                self.assertIn(needle, err)
+                self.assertTrue(err.startswith(needle), (code, err))
             else:
                 self.assertTrue(ok, (code, err))
+        self.assertEqual(run_runtime_only("import statistics\nprint(statistics.random)\n")["error"][:25], "exception:AttributeError:")
+        self.assertEqual(run_runtime_only("from fractions import Decimal\nprint(Decimal('1.5'))\n")["error"][:22], "exception:ImportError:")
         ok, out, err = C.code_sandbox_check("import math\nprint(type(math).__name__)")
         self.assertFalse(ok)                                                    # 'type' is not even a name
         ok, out, err = C.code_sandbox_check("import itertools\nprint(sorted(itertools.accumulate([1, 2, 3])))")
@@ -1045,6 +1250,12 @@ class TestSandbox(unittest.TestCase):
         self.assertIn("print(1 + 1)", names)
         self.assertIn("refused: operator.attrgetter walk", names)
         self.assertIn("os probe ran", names)
+        # round 5: the new payloads, the combined 'runs' program and the two checks of the runtime layer on its own are part of the 3d self-test
+        self.assertTrue(any(n.startswith("runs: the names that stay") for n in names), sorted(names))
+        for n in ("runtime layer alone (static rules off): excluded names are not in the module namespaces",
+                  "runtime layer alone (static rules off): listed names are there", "refused: functools.wraps", "refused: collections.namedtuple (eval of a template)",
+                  "refused: string annotation (typing evaluates it as an expression)", "refused: a module that fractions merely imports"):
+            self.assertIn(n, names)
         light = C.sandbox_selftest(light=True)
         self.assertTrue(light["ok"])
         self.assertLess(len(light["checks"]), len(full["checks"]))
@@ -1212,6 +1423,627 @@ class TestSandbox(unittest.TestCase):
         self.assertTrue(C.answers_equal("答え。", "答え"))
         self.assertFalse(C.answers_equal("2.007", "2.015361"))
         self.assertFalse(C.answers_equal("nan", "104"))
+
+
+VERSION_ADDED = {("math", "cbrt"): (3, 11), ("math", "exp2"): (3, 11), ("math", "sumprod"): (3, 12), ("itertools", "batched"): (3, 12),
+                 ("collections.abc", "Buffer"): (3, 12)}                 # listed names that older Pythons lack (the child's namespace simply does not have them)
+VERSION_REMOVED = {("collections.abc", "ByteString"): (3, 14)}           # listed names that newer Pythons dropped
+OLD_HIDE = {"attrgetter", "methodcaller", "call"}                        # what the round-4 child hid by name
+BY_STRING_HELPERS = {"attrgetter", "methodcaller", "call", "update_wrapper", "wraps", "getattr", "setattr", "delattr", "hasattr", "vars", "dir", "eval",
+                     "exec", "compile", "namedtuple", "singledispatch", "singledispatchmethod", "import_module", "__import__"}
+EXPLICITLY_EXCLUDED = {                                                  # the names the review of round 4 and the owner's brief name
+    "functools": ("update_wrapper", "wraps", "singledispatch", "singledispatchmethod", "partialmethod", "cached_property", "total_ordering", "namedtuple"),
+    "collections": ("namedtuple", "UserDict", "UserList", "UserString"),
+    "operator": ("attrgetter", "methodcaller", "call"),
+    "fractions": ("Decimal", "re", "sys", "numbers", "math", "operator", "functools"),
+    "statistics": ("namedtuple", "random", "Counter", "Decimal", "Fraction", "groupby", "itemgetter", "sqrt", "LinearRegression"),
+    "decimal": ("DecimalTuple",),
+}
+ROUND4_REPROS = {                        # the programs of the round-4 coverage review (harmless: static_check inputs, never run before the fix)
+    "rA1 update_wrapper transplants __code__": ("import functools\nimport statistics\n\n\ndef payload():\n    return sys.version_info[0]\n\n\n"
+                                                "functools.update_wrapper(statistics.mean, payload, assigned=('__code__',), updated=())\nprint(statistics.mean())\n",
+                                                "module_attr:functools.update_wrapper", "exception:AttributeError"),
+    "rA2 wraps and an aliased update_wrapper": ("import functools\nimport statistics\nfrom functools import update_wrapper as uw\n\n\ndef payload():\n"
+                                                "    return sys.version_info[0]\n\n\nfunctools.wraps(payload, assigned=('__code__',), updated=())(statistics.mean)\n"
+                                                "uw(statistics.fmean, payload, assigned=('__code__',), updated=())\nprint(statistics.mean(), statistics.fmean())\n",
+                                                "import_name:update_wrapper", "exception:ImportError"),
+    "rA3 attribute store by string": ("import functools\n\n\ndef f():\n    return 1\n\n\ndef g():\n    return 2\n\n\n"
+                                      "functools.update_wrapper(f, g, assigned=('__code__', '__name__', '__defaults__'), updated=())\nprint(f())\n",
+                                      "module_attr:functools.update_wrapper", "exception:AttributeError"),
+    # (rB1 as the reviewer wrote it ends in print(sorted(c.__name__ ...)), which the underscore rule refused already; the last line is made name-free here so
+    # that the program is accepted by a checker without the string-annotation rule, i.e. it really tests that rule)
+    "rB1 singledispatch + string annotation": ("import functools\n\n\n@functools.singledispatch\ndef describe(x):\n    return 'other'\n\n\n"
+                                               "def impl(x: \"(1).__class__\"):\n    return 'int'\n\n\ndescribe.register(impl)\n"
+                                               "print(len(describe.registry))\n",
+                                               "string_annotation:", "exception:AttributeError"),
+    "rB3 singledispatchmethod + return annotation": ("import functools\n\n\ndef impl(x: \"(1).__class__\"):\n    pass\n\n\n"
+                                                     "d = functools.singledispatchmethod(impl)\nd.register(impl)\n",
+                                                     "string_annotation:", "exception:AttributeError"),
+    "rC1 from-import of a module name": ("from fractions import re\nfrom statistics import random\nfrom fractions import numbers\nimport fractions\n"
+                                         "print(fractions.re.compile('a'))\n", "import_name:re", "exception:ImportError"),
+    "rC2 from-import of a name that does not exist": ("from math import this_name_does_not_exist\n", "import_name:this_name_does_not_exist", "exception:ImportError"),
+}
+
+
+def real_module(name):
+    import importlib
+    return importlib.import_module(name)
+
+
+def old_public(name):
+    """What the round-4 child handed out for a module: the public attributes that are not modules (attrgetter / methodcaller / call were hidden by name)."""
+    import types
+    return {k: v for k, v in vars(real_module(name)).items() if not k.startswith("_") and not isinstance(v, types.ModuleType) and k not in OLD_HIDE}
+
+
+def readme_gaps(module_name, row, dropped, namespace):
+    """(missing, leaked) of the names that the README table row `row` does not list.  `dropped` are the names this Python dropped for the module,
+    `namespace` is vars(module).  `leaked` = a function / class that the module merely IMPORTED from another module (statistics.mul is operator.mul on
+    Python 3.11 only): not API, and a different minor version leaks different ones, so a README written for 3.12 cannot be complete for every
+    version; these are tolerated (and reported).  `missing` = everything else (a name the module defines itself, a constant such as tau or
+    HAVE_THREADS, a class such as Counter that is not recognisable as an import): a failure."""
+    import types
+    missing, leaked = [], []
+    for n in sorted(dropped):
+        if "`" + n + "`" in row:
+            continue
+        v = namespace.get(n)
+        home = getattr(v, "__module__", None)
+        if isinstance(v, (types.FunctionType, types.BuiltinFunctionType, type)) and isinstance(home, str) and home.split(".")[0].lstrip("_") != module_name.split(".")[0]:
+            leaked.append(n)
+        else:
+            missing.append(n)
+    return missing, leaked
+
+
+def import_probe(module, names):
+    """A program for the child with the static rules OFF: lists every name of `names` that is reachable as module.name or by `from module import name`."""
+    lines = ["found = []", f"import {module} as zz"]
+    for n in names:
+        lines.append(f"try:\n    zz.{n}\n    found.append('zz.{n}')\nexcept Exception:\n    pass")
+        lines.append(f"try:\n    from {module} import {n}\n    found.append('from import {n}')\nexcept Exception:\n    pass")
+    lines.append("print(found)")
+    return "\n".join(lines) + "\n"
+
+
+class TestFrozenNames(unittest.TestCase):
+    """Round 5: deny by default.  Which names of the allowed modules are reachable is decided by ONE frozen list per module (checks.MODULE_NAMES),
+    enforced by the static rules AND by the namespaces the child builds."""
+
+    def test_the_lists_are_plain_frozen_tuples_and_both_layers_run_the_same_ones(self):
+        self.assertEqual(sorted(C.MODULE_NAMES), sorted(list(C.EXECUTOR_ROOTS) + ["collections.abc"]))
+        self.assertEqual(C.SUBMODULE_ATTRS, {"collections": ("abc",)})
+        for m, names in C.MODULE_NAMES.items():
+            self.assertIsInstance(names, tuple, m)
+            self.assertEqual(len(names), len(set(names)), f"{m}: duplicate names")
+            for n in names:
+                self.assertTrue(n.isidentifier() and not n.startswith("_"), (m, n))
+        self.assertEqual(C._VALIDATE_NS["MODULE_NAMES"], C.MODULE_NAMES)               # the validator ...
+        self.assertEqual(C._VALIDATE_NS["SUBMODULE_ATTRS"], C.SUBMODULE_ATTRS)
+        self.assertIn("MODULE_NAMES = {", C._CHILD_SRC)                                  # ... and the child run the same source text, tuples included
+        self.assertIn(repr(C.FUNCTOOLS_NAMES), C._CHILD_SRC)
+        self.assertEqual(C.FUNCTOOLS_NAMES, ("cache", "cmp_to_key", "lru_cache", "partial", "reduce"))
+        self.assertEqual(C.COLLECTIONS_NAMES, ("ChainMap", "Counter", "OrderedDict", "defaultdict", "deque"))
+        self.assertEqual(C.FRACTIONS_NAMES, ("Fraction",))
+        for forbidden in ("attrgetter", "methodcaller", "call"):
+            self.assertNotIn(forbidden, C.OPERATOR_NAMES)
+        for n in ("Decimal", "Context", "getcontext", "localcontext", "InvalidOperation", "DivisionByZero", "Overflow"):
+            self.assertIn(n, C.DECIMAL_NAMES)
+        self.assertEqual(sum(1 for n in C.DECIMAL_NAMES if n.startswith("ROUND_")), 8)
+        # a module without a frozen list is not importable, however it is asked for
+        for kw in ({"allowed_modules": ["math", "random"]}, {"allow_third_party": True}):
+            with self.assertRaises(ValueError):
+                C.static_check("import math\n", **kw)
+            with self.assertRaises(ValueError):
+                C.code_sandbox_run("print(1)", run_as=None, **kw)
+
+    def test_every_listed_name_exists_on_this_python_or_is_version_optional(self):
+        missing = []
+        for m, names in C.MODULE_NAMES.items():
+            have = vars(real_module(m))
+            missing += [(m, n) for n in names if n not in have]
+        for key in missing:
+            self.assertTrue(key in VERSION_ADDED and sys.version_info[:2] < VERSION_ADDED[key] or key in VERSION_REMOVED and sys.version_info[:2] >= VERSION_REMOVED[key],
+                            f"{key} is listed but this Python ({sys.version.split()[0]}) does not have it and it is not a known version-optional name")
+        for (m, n), ver in VERSION_ADDED.items():                                         # the table is honest about itself
+            self.assertIn(n, C.MODULE_NAMES[m])
+            if (m, n) not in missing:
+                self.assertGreaterEqual(sys.version_info[:2], ver, (m, n))
+        print(f"[frozen names] python {sys.version.split()[0]}: {sum(len(v) for v in C.MODULE_NAMES.values())} listed names, "
+              f"{len(missing)} absent here (version-optional): {sorted(missing)}", file=sys.stderr)
+
+    def test_no_listed_name_is_underscored_a_module_a_frame_a_helper_that_takes_names_or_from_outside_the_allowed_modules(self):
+        import types
+        home_ok = set(C.MODULE_NAMES) | {"_functools", "_operator", "_decimal", "_collections", "_collections_abc", "_statistics", "builtins"}
+        self_modules = set()
+        for m, names in C.MODULE_NAMES.items():
+            have = vars(real_module(m))
+            for n in names:
+                self.assertFalse(n.startswith("_"), (m, n))
+                self.assertNotIn(n, BY_STRING_HELPERS, (m, n))
+                if n not in have:
+                    continue                                                              # version-optional name this Python lacks
+                v = have[n]
+                self.assertNotIsInstance(v, (types.ModuleType, types.FrameType, types.CodeType, types.TracebackType, types.CellType, types.GeneratorType), (m, n))
+                if isinstance(v, types.BuiltinFunctionType):
+                    s = v.__self__
+                    if isinstance(s, types.ModuleType):                                   # every C function of math has its module as __self__ (unavoidable; the
+                        self_modules.add(s.__name__)                                      # name `__self__` is refused statically); it must be one of OUR modules
+                        self.assertIn(s.__name__, home_ok | {"itertools", "cmath", "math"}, (m, n))
+                    else:
+                        self.assertIsNone(s, (m, n))
+                if isinstance(v, (types.FunctionType, type, types.BuiltinFunctionType)):
+                    self.assertIn(getattr(v, "__module__", None), home_ok, f"{m}.{n} comes from {getattr(v, '__module__', None)!r}")
+        self.assertTrue(self_modules <= {"math", "cmath", "decimal", "itertools", "_functools", "_operator"}, self_modules)
+
+    def test_nothing_is_exposed_that_the_old_child_did_not_expose(self):
+        for m, names in C.MODULE_NAMES.items():
+            old = old_public(m)
+            for n in names:
+                if n in vars(real_module(m)):
+                    self.assertIn(n, old, f"{m}.{n} was not reachable before: the new list may only remove")
+
+    def test_the_readme_table_lists_every_name_that_was_dropped(self):
+        path = os.path.join(HERE, "README_JA.md")
+        if not os.path.isfile(path):
+            self.skipTest("README_JA.md is not next to the tests")
+        rows = {}
+        with open(path, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+        for line in lines:
+            if line.startswith("| ") and line.count("|") >= 4:
+                cells = [c.strip() for c in line.strip().strip("|").split("|")]
+                rows[cells[0]] = cells[1]
+        for m in C.MODULE_NAMES:
+            self.assertIn(m, rows, f"README_JA.md has no table row for {m}")
+            dropped = set(old_public(m)) - set(C.MODULE_NAMES[m])                           # the yield loss the owner is shown must be complete
+            missing, leaked = readme_gaps(m, rows[m], dropped, vars(real_module(m)))
+            self.assertEqual(missing, [], f"{m}: dropped but README_JA.md does not say so")
+            if leaked:                                                                      # only ever a leaked import of THIS minor version (round 6)
+                print(f"[readme table] python {sys.version.split()[0]}: {m} leaks {leaked} (imports of another module; not in the table, tolerated)", file=sys.stderr)
+        # the 3.11 leak that the round-5 review found is now in the table itself (so the tolerance above is not what makes 3.11 pass)
+        self.assertIn("`mul`", rows["statistics"])
+
+    def test_the_readme_gap_helper_tolerates_leaked_imports_only(self):
+        import operator
+        import statistics
+        row = "`Counter` `tau`"
+        # a function that statistics imported from operator, missing from the row: tolerated; a constant or a class of its own: a failure
+        self.assertEqual(readme_gaps("statistics", row, {"Counter", "mul"}, {"mul": operator.mul, "Counter": statistics.NormalDist}), ([], ["mul"]))
+        self.assertEqual(readme_gaps("statistics", row, {"tau", "newconst"}, {"tau": 6.28, "newconst": 1.0}), (["newconst"], []))
+        self.assertEqual(readme_gaps("statistics", row, {"helper"}, {"helper": statistics.mean}), (["helper"], []))            # defined by statistics itself
+        self.assertEqual(readme_gaps("statistics", "", {"Foo"}, {"Foo": statistics.NormalDist}), (["Foo"], []))
+        self.assertEqual(readme_gaps("collections.abc", "", {"x"}, {"x": operator.add}), ([], ["x"]))                           # _operator is not collections
+        self.assertEqual(readme_gaps("operator", "", {"y"}, {"y": operator.add}), (["y"], []))                                  # _operator is operator's own C part
+
+    def test_every_excluded_name_is_refused_statically_and_absent_in_the_child_namespace(self):
+        excluded = {m: sorted(set(old_public(m)) - set(C.MODULE_NAMES[m])) for m in C.MODULE_NAMES}
+        for m, names in EXPLICITLY_EXCLUDED.items():
+            for n in names:
+                if n in old_public(m):                                                    # (call is not there on 3.10; re / sys etc. are modules: not public here)
+                    self.assertIn(n, excluded[m], (m, n))
+                self.assertTrue(C.static_check(f"from {m} import {n}\n").startswith("import_name:" + n), (m, n, C.static_check(f"from {m} import {n}\n")))
+                self.assertNotEqual(C.static_check(f"import {m} as zz\nprint(zz.{n})\n"), "", (m, n))
+        total = 0
+        for m, names in excluded.items():
+            for n in names:
+                total += 1
+                a = C.static_check(f"from {m} import {n}\n")
+                self.assertTrue(a.startswith("import_name:" + n), (m, n, a))
+                b = C.static_check(f"import {m} as zz\nprint(zz.{n})\n")
+                self.assertTrue(b.startswith(("module_attr:" + m + "." + n, "attr:")), (m, n, b))
+                if total % 25 == 0:                                                       # a sample through the full entry point as well
+                    c = C.code_sandbox_run(f"import {m} as zz\nprint(zz.{n})\n", run_as=None)
+                    self.assertEqual((c["ok"], c["category"], c["stdout"]), (False, "static", ""), (m, n, c))
+            if names:                                                                     # the child namespace itself (static rules off): none of them is there
+                res = run_runtime_only(import_probe(m, names))
+                self.assertTrue(res["ok"], (m, res))
+                self.assertEqual(res["stdout"].strip(), "[]", f"{m}: reachable in the child although excluded")
+        self.assertGreaterEqual(total, 40)                                                # the matrix is not empty (44 names on 3.12, 40 on 3.10)
+        # the harmless probe the owner asked for, in the form that works in this sandbox (hasattr is not one of its builtins, so try / except Exception)
+        res = run_runtime_only("import functools\ntry:\n    functools.update_wrapper\n    print(True)\nexcept Exception:\n    print(False)\n")
+        self.assertEqual((res["ok"], res["stdout"].strip()), (True, "False"))
+        res = C._runtime_layer_run("import functools\ntry:\n    functools.update_wrapper\n    print(True)\nexcept Exception:\n    print(False)\n", run_as=None)
+        self.assertEqual((res["ok"], res["stdout"].strip()), (True, "False"))
+        res = C.code_sandbox_run("import functools\nprint(hasattr(functools, 'update_wrapper'))\n", run_as=None)
+        self.assertTrue(res["error"].startswith("static:module_name:"), res)             # the module may not even be passed to a function
+        res = run_runtime_only("print(hasattr(1, 'real'))\n")
+        self.assertTrue(res["error"].startswith("exception:NameError"), res)             # and hasattr is not a name of the sandbox at all
+
+    def test_every_listed_name_is_accepted_statically_and_reachable_at_run_time(self):
+        for m, names in C.MODULE_NAMES.items():
+            present = [n for n in names if n in vars(real_module(m))]
+            for n in names:
+                self.assertEqual(C.static_check(f"from {m} import {n}\n"), "", (m, n))
+                self.assertEqual(C.static_check(f"import {m} as zz\nprint(zz.{n})\n"), "", (m, n))
+            code = (f"from {m} import (" + ", ".join(present) + ")\n" + f"import {m} as zz\n" + "x = [" + ", ".join("zz." + n for n in present) + "]\n"
+                    + "print(len(x))\n")
+            ok, out, err = C.code_sandbox_check(code, timeout=20, run_as=None)
+            self.assertEqual((ok, out.strip()), (True, str(len(present))), (m, err))
+        # a name a newer Python adds and this one lacks: listed, so allowed statically, then an ordinary per-row ImportError / AttributeError here
+        if sys.version_info < (3, 12):
+            ok, out, err = C.code_sandbox_check("from math import sumprod\nprint(sumprod([1, 2], [3, 4]))\n", run_as=None)
+            self.assertFalse(ok)
+            self.assertTrue(err.startswith("exception:ImportError"), err)
+
+    def test_ordinary_exercise_programs_keep_running(self):
+        programs = (
+            (C.SANDBOX_RUNS_PROGRAM, C.SANDBOX_RUNS_EXPECT + "\n"),
+            ("import math\nprint(math.comb(10, 3), math.isqrt(99), round(math.log2(8)), math.prod([1, 2, 3]), math.gcd(12, 18), math.lcm(4, 6))\n", "120 9 3 6 6 12\n"),
+            ("import cmath\nprint(cmath.sqrt(-4), round(abs(cmath.exp(1j * cmath.pi) + 1), 9))\n", "2j 0.0\n"),
+            ("from decimal import Decimal, ROUND_HALF_UP, Context, getcontext, localcontext\nprint(Decimal('2.675').quantize(Decimal('0.01'), rounding=ROUND_HALF_UP), "
+             "Context(prec=5).divide(Decimal(1), Decimal(7)))\n", "2.68 0.14286\n"),
+            ("from fractions import Fraction\nprint(sum(Fraction(1, n * (n + 1)) for n in range(1, 10)), Fraction(3, 6).limit_denominator(10))\n", "9/10 1/2\n"),
+            ("from statistics import NormalDist, median, stdev, StatisticsError\nprint(NormalDist(0, 1).cdf(0), median([3, 1, 2]), round(stdev([1, 2, 3, 4]), 4))\n", "0.5 2 1.291\n"),
+            ("import statistics\nprint(statistics.mean([1, 2, 3, 4]), statistics.multimode('aabbc'), statistics.fmean([1, 2]), statistics.quantiles([1, 2, 3, 4], n=4))\n",
+             "2.5 ['a', 'b'] 1.5 [1.25, 2.5, 3.75]\n"),
+            ("import operator\nprint(sorted([(1, 'b'), (0, 'a')], key=operator.itemgetter(0)), operator.truediv(1, 4), operator.countOf([1, 1, 2], 1))\n",
+             "[(0, 'a'), (1, 'b')] 0.25 2\n"),
+            ("import itertools\nprint(list(itertools.accumulate([1, 2, 3])), len(list(itertools.permutations(range(4)))), [(k, len(list(g))) for k, g in itertools.groupby('aabbb')])\n",
+             "[1, 3, 6] 24 [('a', 2), ('b', 3)]\n"),
+            ("from collections import Counter, OrderedDict, ChainMap, deque\nd = deque(range(5))\nd.rotate(2)\nprint(list(d), Counter('mississippi').most_common(2), "
+             "list(OrderedDict(a=1, b=2)), ChainMap({'a': 1}, {'a': 2, 'b': 3})['b'])\n", "[3, 4, 0, 1, 2] [('i', 4), ('s', 4)] ['a', 'b'] 3\n"),
+            ("from collections.abc import Sequence, Mapping\nimport collections\nprint(isinstance([1], Sequence), isinstance({}, Mapping), collections.abc.Sequence is Sequence)\n",
+             "True True True\n"),
+            ("from functools import cmp_to_key, cache, reduce\n\n\n@cache\ndef fib(n):\n    return n if n < 2 else fib(n - 1) + fib(n - 2)\n\n\n"
+             "print(fib(30), sorted([3, 1, 2], key=cmp_to_key(lambda a, b: b - a)), reduce(lambda a, b: a * b, range(1, 6)))\n", "832040 [3, 2, 1] 120\n"),
+            ("import math as m, collections.abc as abc_\nprint(m.floor(2.5), isinstance([], abc_.Iterable))\n", "2 True\n"),
+        )
+        for code, want in programs:
+            ok, out, err = C.code_sandbox_check(code, timeout=20, run_as=None)
+            self.assertEqual((ok, out), (True, want), (code[:80], err))
+
+    def test_the_round_4_repro_programs_are_stopped_by_each_layer_on_its_own(self):
+        for name, (code, static_prefix, runtime_error) in ROUND4_REPROS.items():
+            why = C.static_check(code)
+            self.assertTrue(why.startswith(static_prefix), (name, why))                  # layer (b): static
+            r = C.code_sandbox_run(code, run_as=None)
+            self.assertEqual((r["ok"], r["category"], r["stdout"]), (False, "static", ""), (name, r))
+            res = run_runtime_only(code)                                                  # layer (a): the namespace has no such name (static rules off)
+            self.assertFalse(res["ok"], (name, res))
+            self.assertTrue(res["error"].startswith(runtime_error), (name, res["error"]))
+            self.assertEqual(res["stdout"], "", name)
+
+    def test_string_annotations_are_refused_everywhere_an_annotation_can_be(self):
+        bad = ('def f(x: "(1).real"):\n    pass\n', 'def f(x) -> "(1).real":\n    pass\n', 'z: "(1).real" = 3\n', 'def f(*a: "int"):\n    pass\n',
+               'def f(**k: "int"):\n    pass\n', 'def f(*, x: "int"):\n    pass\n', 'def f(x, /, y: "int"):\n    pass\n', 'def f(x: list["int"]):\n    pass\n',
+               'def f(x: f"{1}"):\n    pass\n', 'def f(x: int = 1, y: "str" = ""):\n    pass\n', 'def f(x):\n    def g(y: "int"):\n        pass\n')
+        for code in bad:
+            self.assertTrue(C.static_check(code).startswith("string_annotation:"), (code, C.static_check(code)))
+            self.assertEqual(C.code_sandbox_run(code, run_as=None)["category"], "static", code)
+        good = "def f(x: int, y: float = 1.0, *a: int, **k: float) -> int:\n    return x\n\nz: int = 3\nw: list = [1]\nprint(f(1), z, w, 'a' + 'b')\n"
+        self.assertEqual(C.static_check(good), "")
+        ok, out, err = C.code_sandbox_check(good, run_as=None)
+        self.assertEqual((ok, out), (True, "1 3 [1] ab\n"), err)
+
+    def test_module_alias_rules(self):
+        ok_codes = ("import math as m\nprint(m.sqrt(4))\n", "import collections.abc\nprint(collections.abc.Sequence)\n",
+                    "import collections\nprint(collections.abc.Sequence)\n", "import collections.abc as ca\nprint(ca.Mapping)\n",
+                    "import math\nimport math\nprint(math.pi)\n", "import math\n\n\ndef f(x):\n    return math.sqrt(x)\n\n\nprint(f(4))\n",
+                    "from math import sqrt as s\nprint(s(4))\n", "import functools\nprint(functools.partial)\n",
+                    "import statistics\nprint(statistics.NormalDist.from_samples)\n", "import math\nprint(f'{math.pi:.3f}')\n",
+                    "import math\nmatch 3.14:\n    case math.pi:\n        print(1)\n    case _:\n        print(0)\n")
+        for code in ok_codes:
+            self.assertEqual(C.static_check(code), "", code)
+        rebound = ("import math\nmath = 3\n", "import math\ndef f(math):\n    return math\n", "import math as m\nimport cmath as m\n", "import math\nfor math in [1]:\n    pass\n",
+                   "import math\ndef math():\n    pass\n", "from math import pi as math\nimport math\n", "import math\nprint([math for math in [1]])\n",
+                   "import math\ntry:\n    pass\nexcept Exception as math:\n    pass\n", "import math\nmatch 1:\n    case int() as math:\n        pass\n")
+        for code in rebound:
+            self.assertTrue(C.static_check(code).startswith("module_alias:"), (code, C.static_check(code)))
+        escaped = ("import math\nx = math\nprint(x.pi)\n", "import math\nprint(math)\n", "import collections\nx = collections.abc\nprint(x.Sequence)\n",
+                   "import math\nprint((lambda m: m.pi)(math))\n", "import collections.abc as ca\nprint([ca])\n", "import functools\nx = functools\nprint(x.update_wrapper)\n")
+        for code in escaped:
+            self.assertTrue(C.static_check(code).startswith("module_name:"), (code, C.static_check(code)))
+        for code, want in (("import collections\nprint(collections.namedtuple)\n", "module_attr:collections.namedtuple"),
+                           ("import collections.abc as ca\nprint(ca.abc)\n", "module_attr:collections.abc.abc"),
+                           ("import collections.abc\nprint(collections.abc.Foo)\n", "module_attr:collections.abc.Foo"),
+                           ("import functools as ft\nprint(ft.wraps)\n", "module_attr:functools.wraps"),
+                           ("import math\nprint(math.nope)\n", "module_attr:math.nope"),
+                           # round 6: `from collections import abc` is the submodule (the child serves it as an attribute of collections) and is held to
+                           # exactly the rules of `import collections.abc as abc`
+                           ("from collections import abc\nprint(abc.update_wrapper)\n", "module_attr:collections.abc.update_wrapper"),
+                           ("from collections import abc\nprint(abc.abc)\n", "module_attr:collections.abc.abc"),
+                           ("from collections import abc as c\nprint(c.Foo)\n", "module_attr:collections.abc.Foo"),
+                           ("from collections import abc\nx = abc\nprint(x.Sequence)\n", "module_name:"),
+                           ("from collections import abc\nprint(abc)\n", "module_name:"),
+                           ("from collections import abc\nabc = 1\n", "module_alias:"),
+                           ("from collections import abc\ndef f(abc):\n    return abc\n", "module_alias:"),
+                           ("import collections\nfrom collections import abc as collections\n", "module_alias:"),
+                           ("from collections import abc\nprint(abc.__class__)\n", "attr:__class__"),
+                           ("from collections import abc, namedtuple\n", "import_name:namedtuple"),
+                           ("from collections import abc as __x\n", "name:__x"),
+                           ("import operator\nprint(operator.attrgetter)\n", "attr:attrgetter")):
+            self.assertTrue(C.static_check(code).startswith(want), (code, C.static_check(code)))
+
+    def test_the_3d_payload_lists_cover_the_review_gaps(self):
+        must = [code for _, code in C.SANDBOX_MUST_REJECT]
+        for needle in ("from functools import update_wrapper", "from functools import wraps", "functools.update_wrapper", "from functools import singledispatch",
+                       "from collections import namedtuple", 'def f(x: "(1).real"):', "from fractions import re"):
+            self.assertTrue(any(needle in code for code in must), needle)
+        for name, code in C.SANDBOX_MUST_REJECT:
+            self.assertNotEqual(C.static_check(code), "", name)                           # every payload is refused STATICALLY on every Python
+        for word in ("reduce", "partial", "lru_cache", "Counter", "deque", "defaultdict", "Fraction", "Decimal", "statistics.mean", "itertools.combinations",
+                     "operator.add", "math.gcd", "cmath.sqrt"):
+            self.assertIn(word.split(".")[-1], C.SANDBOX_RUNS_PROGRAM, word)             # the 'runs' program of the 3d self-test uses every one of them
+        self.assertEqual(C.static_check(C.SANDBOX_RUNS_PROGRAM), "")
+        ok, out, err = C.code_sandbox_check(C.SANDBOX_RUNS_PROGRAM, run_as=None)
+        self.assertEqual((ok, out.strip()), (True, C.SANDBOX_RUNS_EXPECT), err)
+        for name, probe in C.SANDBOX_RUNTIME_HIDDEN.items():                              # every runtime probe of the self-test names something the real module has
+            self.assertTrue(set(probe) <= set(vars(real_module(name))), (name, set(probe) - set(vars(real_module(name)))))
+            self.assertFalse(set(probe) & set(C.MODULE_NAMES[name]), name)                # ... and that is NOT on the list
+
+
+def _attr_chain(n):
+    return "import math\nx = math" + ".pi" * n + "\n"                       # n attribute links on a module name (a 1,100-link one is 3,321 bytes)
+
+
+def _format_nest(n):
+    return "print('" + "{:" * n + "{}" + "}" * n + "'.format(1))\n"         # n levels of nested format spec
+
+
+def _nested_shapes():
+    """Pathological programs of every shape that nests; each is a few KB.  A 1,000 deep nest of brackets is refused by the tokenizer itself (200 levels)."""
+    return {
+        "parentheses": "x = " + "(" * 1000 + "1" + ")" * 1000 + "\n",
+        "lists": "x = " + "[" * 1000 + "]" * 1000 + "\n",
+        "maps": "x = " + "{1: " * 1000 + "1" + "}" * 1000 + "\n",
+        "calls inside calls": "x = " + "abs(" * 1000 + "1" + ")" * 1000 + "\n",
+        "lambdas": "f = " + "lambda: " * 1000 + "1\n",
+        "unary minus": "x = " + "-" * 1000 + "1\n",
+        "not": "x = " + "not " * 1000 + "1\n",
+        "binary operator chain": "x = " + "+".join(["1"] * 1000) + "\n",
+        "subscript chain": "x = [0]" + "[0]" * 1000 + "\n",
+        "call chain": "f = abs\nx = f" + "()" * 1000 + "\n",
+        "conditional chain": "x = " + "1 if 1 else " * 1000 + "1\n",
+        "attribute chain 1,100": _attr_chain(1100),
+        "attribute chain 990 (3 KB)": _attr_chain(990),
+        "nested format spec 1,100": _format_nest(1100),
+        "elif ladder of 600": "x = 5\nif x == 0:\n    y = 0\n" + "".join(f"elif x == {i}:\n    y = {i}\n" for i in range(1, 600)),
+    }
+
+
+class TestCheckerResourceLimits(unittest.TestCase):
+    """Round 6 (R1): ONE crafted row must never make the static layer raise or run for seconds.  convert.Checks._sandbox turns any exception out of the
+    checker into SandboxUnavailable, which stops the whole converter run; a RecursionError from a long attribute chain did exactly that when the converter
+    was called from a deep stack (test_convert.TestCoding.test_a_pathological_python_row_is_one_reject_and_not_the_end_of_the_run)."""
+
+    def setUp(self):
+        import time
+        self.clock = time.perf_counter
+
+    def unlimited_validate(self):
+        """The validator text with the tree-depth limit switched off: what the later passes (module_of, the walk) can take when the limit does not protect them."""
+        src = C._VALIDATE_SRC
+        patched = src.replace("MAX_AST_DEPTH = 200", "MAX_AST_DEPTH = 10 ** 9")
+        self.assertNotEqual(patched, src, "the depth-limit anchor moved")
+        ns = {}
+        exec(compile(patched, "<validate-without-the-depth-limit>", "exec"), ns)
+        return ns
+
+    def test_the_limits_are_what_the_readme_says(self):
+        self.assertEqual((C._VALIDATE_NS["MAX_AST_DEPTH"], C._VALIDATE_NS["MAX_FORMAT_NEST"]), (200, 8))
+
+    def test_attribute_chains_of_100_500_990_and_1100_links(self):
+        for n, want in ((100, ""), (190, ""), (500, "too_deep:"), (990, "too_deep:"), (1100, "too_deep:")):
+            t0 = self.clock()
+            r = C.static_check(_attr_chain(n))                                  # must RETURN (the old code raised RecursionError at 1,100)
+            dt = self.clock() - t0
+            self.assertEqual(r == "", want == "", (n, r))
+            self.assertTrue(r.startswith(want), (n, r))
+            self.assertLess(dt, 1.0, (n, dt))
+        self.assertLess(len(_attr_chain(1100)), 4096)
+
+    def test_a_3_kb_row_of_a_long_chain_is_fast(self):
+        code = _attr_chain(990)
+        self.assertLess(len(code), 3100)
+        t0 = self.clock()
+        for _ in range(20):
+            C.static_check(code)
+        self.assertLess((self.clock() - t0) / 20, 0.25)                         # was about 0.4 s per call (quadratic), seconds on a loaded machine
+
+    def test_nested_format_specs(self):
+        for n, ok in ((1, True), (2, True), (5, True), (8, True), (9, False), (10, False), (50, False), (1100, False)):
+            r = C.static_check(_format_nest(n))
+            if ok:
+                self.assertEqual(r, "", n)
+            else:
+                self.assertTrue(r.startswith("format_string:nested too deep"), (n, r))
+        # a spec that is accepted statically but too deep for str.format itself (2 levels) is an ordinary row failure at run time, not a hole
+        c = C.code_sandbox_run(_format_nest(5), run_as=None)
+        self.assertEqual((c["ok"], c["category"]), (False, "exception"), c)                 # (IndexError here: .format(1) has one argument; ValueError with more)
+        # the check recurses at most MAX_FORMAT_NEST + 1 levels, whatever the input
+        with self.assertRaises(C._VALIDATE_NS["StaticReject"]):
+            C._VALIDATE_NS["_check_format"]("{:" * 100000 + "{}" + "}" * 100000)
+
+    def test_every_shape_of_nesting_is_a_reject_with_a_category_and_never_an_exception(self):
+        for name, code in _nested_shapes().items():
+            t0 = self.clock()
+            r = C.static_check(code)
+            self.assertLess(self.clock() - t0, 1.0, name)
+            self.assertTrue(r.startswith(("too_deep:", "syntax:", "format_string:nested too deep")), (name, r))
+            res = C.code_sandbox_run(code, run_as=None)                          # the public entry point: a dict, category 'static', no child is started
+            self.assertEqual((res["ok"], res["category"]), (False, "static"), (name, res))
+            self.assertTrue(res["error"].startswith("static:"), (name, res["error"]))
+            self.assertEqual(C.code_sandbox_check(code, run_as=None)[0], False, name)
+        # the two named in the review get the categories that name them
+        self.assertTrue(C.static_check(_attr_chain(1100)).startswith("too_deep:"))
+        self.assertTrue(C.static_check(_nested_shapes()["lambdas"]).startswith(("too_deep:", "syntax:")))
+
+    def test_the_depth_limit_does_not_touch_ordinary_programs(self):
+        ladder = "x = 5\nif x == 0:\n    y = 0\n" + "".join(f"elif x == {i}:\n    y = {i}\n" for i in range(1, 100))
+        for code in (ladder, "print(" + " + ".join(["1"] * 150) + ")\n", "".join(" " * i + "if 1:\n" for i in range(90)) + " " * 90 + "pass\n",
+                     C.SANDBOX_RUNS_PROGRAM, "x = " + "(" * 150 + "1" + ")" * 150 + "\n"):
+            self.assertEqual(C.static_check(code), "", code[:60])
+        c = C.code_sandbox_run(ladder + "print(y)\n", run_as=None)
+        self.assertEqual((c["ok"], c["stdout"]), (True, "5\n"), c)
+        for code in ("x = 5\nif x == 0:\n    y = 0\n" + "".join(f"elif x == {i}:\n    y = {i}\n" for i in range(1, 400)), "print(" + " + ".join(["1"] * 400) + ")\n"):
+            self.assertTrue(C.static_check(code).startswith("too_deep:"), code[:60])
+
+    def test_module_of_is_iterative_and_linear_even_without_the_depth_limit(self):
+        ns = self.unlimited_validate()
+        cfg = C._profile_cfg("executor", None, False)
+        # a chain on a module alias, 1,100 links: the old recursive _module_of raised RecursionError here; and a 990-link one took 0.4 s (quadratic)
+        for n in (990, 1100):
+            t0 = self.clock()
+            ns["validate"](_attr_chain(n), cfg)                                  # accepted: only the first link is a module attribute
+            self.assertLess(self.clock() - t0, 0.5, n)
+        # through the submodule path (collections -> collections.abc -> ...), where the chain really is resolved link by link
+        ns["validate"]("import collections\nx = collections.abc.Sequence" + ".x" * 1100 + "\n", cfg)
+        with self.assertRaises(ns["StaticReject"]) as cm:
+            ns["validate"]("import collections\nx = collections" + ".abc" * 1100 + "\n", cfg)
+        self.assertTrue(str(cm.exception).startswith("module_attr|collections.abc.abc"), str(cm.exception))
+        # the answer did not change: same verdicts as the limited validator on shallow input
+        for code in ("import math\nprint(math.pi)\n", "import math\nprint(math)\n", "import collections\nprint(collections.abc.Sequence)\n",
+                     "import collections.abc as ca\nprint(ca.Foo)\n", "from collections import abc\nprint(abc.Mapping)\n"):
+            try:
+                ns["validate"](code, cfg)
+                a = ""
+            except ns["StaticReject"] as e:
+                a = str(e).replace("|", ":", 1)
+            self.assertEqual(a, C.static_check(code), code)
+
+    def test_the_format_check_and_the_tree_measure_do_not_recurse_per_level(self):
+        ns = self.unlimited_validate()
+        deep = ns["ast"].parse(_attr_chain(1100))
+        self.assertTrue(ns["_ast_too_deep"](deep, 200))
+        self.assertFalse(ns["_ast_too_deep"](deep, 5000))                         # measured iteratively: a tree deeper than the recursion limit is no problem
+        self.assertFalse(ns["_ast_too_deep"](ns["ast"].parse("x = 1\n"), 200))
+        self.assertTrue(ns["_ast_too_deep"](ns["ast"].parse("x = 1\n"), 3))        # Module > Assign > Name > Store is 4 levels
+
+    def test_anything_that_runs_out_of_stack_or_memory_is_a_reject(self):
+        import ast
+        from unittest import mock
+        for exc in (RecursionError("maximum recursion depth exceeded"), MemoryError()):
+            with mock.patch.object(ast, "parse", side_effect=exc):                        # (e) the parser itself
+                self.assertTrue(C.static_check("print(1)\n").startswith("too_deep:"), exc)
+            with mock.patch.dict(C._VALIDATE_NS, {"_ast_too_deep": mock.Mock(side_effect=exc)}):   # (c) inside the checker, after the parse
+                self.assertTrue(C.static_check("print(1)\n").startswith("too_deep:"), exc)
+            with mock.patch.dict(C._VALIDATE_NS, {"validate": mock.Mock(side_effect=exc)}):         # the second net in static_check itself
+                self.assertTrue(C.static_check("print(1)\n").startswith("too_deep:"), exc)
+        for exc, want in ((ValueError("source code string cannot contain null bytes"), "syntax:ValueError"), (OverflowError("x"), "syntax:OverflowError")):
+            with mock.patch.object(ast, "parse", side_effect=exc):
+                self.assertEqual(C.static_check("print(1)\n"), want)
+        # a lone surrogate cannot be encoded: ast.parse raises UnicodeEncodeError (a ValueError); still a reject, and the entry point still returns a dict
+        lone = "x = '" + chr(0xD800) + "'\n"
+        self.assertNotEqual(C.static_check(lone), "")
+        self.assertEqual(C.code_sandbox_run(lone, run_as=None)["category"], "static")
+
+    def test_a_real_stack_overflow_inside_the_checker_is_a_reject(self):
+        # no mock: use up the stack and call the checker with a few frames left.  Whichever frame the overflow lands in (the checker's own, validate(),
+        # the parse, the walk), static_check must RETURN; some depth must land inside it, and the answer is either 'passed' or 'too_deep'.
+        code = "import math\nx = [abs(i) for i in range(3)]\nprint(math.pi)\n"
+        frame, depth_now = sys._getframe(), 0
+        while frame is not None:
+            depth_now, frame = depth_now + 1, frame.f_back
+        limit = sys.getrecursionlimit()
+
+        def deeper(n):
+            return C.static_check(code) if n <= 0 else deeper(n - 1)
+        seen = set()
+        for headroom in range(1, 90):
+            try:
+                seen.add(deeper(limit - depth_now - headroom)[:9])
+            except RecursionError:
+                pass                                                              # the overflow landed in this test's own frames: not the checker's business
+        self.assertTrue(seen <= {"", "too_deep:"}, seen)
+        self.assertIn("too_deep:", seen)
+        self.assertIn("", seen)
+
+    def test_the_real_child_gives_the_same_reject_as_the_parent(self):
+        import time
+        cfg = C._profile_cfg("executor", None, False)
+        for code, want in ((_attr_chain(1100), "static:too_deep:"), (_format_nest(1100), "static:format_string:nested too deep")):
+            r = C._run_in_child(code, dict(cfg), 20.0, child_src=C._CHILD_SRC, max_output_chars=1000, mem_mb=None, python=None, acct=None,
+                                allow_third_party=False, t0=time.time())              # bypasses the parent's static_check: the CHILD's validate() answers
+            self.assertEqual((r["ok"], r["category"]), (False, "static"), r)
+            self.assertTrue(r["error"].startswith(want), r)
+
+    def test_the_child_text_carries_the_same_validator_and_the_runtime_only_variant_still_finds_its_anchor(self):
+        self.assertTrue(C._CHILD_SRC.startswith(C._VALIDATE_SRC))
+        self.assertIn("tree = validate(code, cfg)", C._CHILD_SRC)
+        self.assertNotIn("tree = validate(code, cfg)", C._CHILD_SRC_STATIC_OFF)
+
+
+class TestCallKeywordNames(unittest.TestCase):
+    """Round 6 (R2): a call keyword binds to the callee's parameter name, private ones included."""
+
+    def test_a_keyword_that_starts_with_an_underscore_is_refused(self):
+        for code in ("from fractions import Fraction\nprint(Fraction(4, 8, _normalize=False))\n", "print(dict(_x=1))\n", "print(dict(__x=1))\n", "print(dict(_=1))\n",
+                     "print(dict(__class__=1))\n", "f = lambda **k: k\nprint(f(_a=1))\n", "import math\nprint(math.isclose(1, 1, _rel=1))\n",
+                     "print(sorted([2, 1], _key=abs))\n"):
+            r = C.static_check(code)
+            self.assertTrue(r.startswith("name:_"), (code, r))
+        c = C.code_sandbox_run("from fractions import Fraction\nprint(Fraction(4, 8, _normalize=False))\n", run_as=None)
+        self.assertEqual((c["ok"], c["category"], c["error"], c["stdout"]), (False, "static", "static:name:_normalize", ""), c)
+
+    def test_the_private_keyword_really_was_reachable_on_the_old_pythons(self):
+        # (information, not a guard) why the rule exists: Fraction.__new__ has a keyword-only _normalize on 3.10 / 3.11
+        from fractions import Fraction
+        try:
+            a = Fraction(4, 8, _normalize=False)
+        except TypeError:
+            self.skipTest("this Python's Fraction has no _normalize parameter (3.12+)")
+        self.assertEqual((a.numerator, a.denominator), (4, 8))
+
+    def test_ordinary_keywords_still_work(self):
+        program = (
+            "import math, statistics, itertools\n"
+            "from decimal import Decimal, Context, ROUND_HALF_UP\n"
+            "from fractions import Fraction\n"
+            "from functools import lru_cache, partial\n"
+            "from collections import Counter, deque\n"
+            "print(sorted([3, 1, 2], key=lambda v: -v), sorted([3, 1, 2], reverse=True))\n"
+            "print(1, 2, sep='-', end='!')\n"
+            "print()\n"
+            "print(round(2.567, ndigits=1), max([1, 5, 3], key=lambda v: -v), min([], default=0), sum([1, 2], start=10), int('11', base=2))\n"
+            "print(Context(prec=3, rounding=ROUND_HALF_UP).create_decimal('1.2355'), Fraction(numerator=1, denominator=3))\n"
+            "print(statistics.quantiles([1, 2, 3, 4, 5, 6, 7, 8], n=4), math.isclose(0.1 + 0.2, 0.3, rel_tol=1e-9))\n"
+            "print(list(itertools.product(range(2), repeat=2)), Counter(a=2, b=1).most_common(1), list(deque(range(5), maxlen=2)), dict(a=1, b=2))\n"
+            "@lru_cache(maxsize=None)\n"
+            "def sq(n):\n"
+            "    return n * n\n"
+            "print(sq(4), partial(int, base=2)('101'), dict(format=1, type=2))\n")
+        self.assertEqual(C.static_check(program), "")
+        c = C.code_sandbox_run(program, run_as=None)
+        self.assertTrue(c["ok"], c)
+        self.assertEqual(c["stdout"].splitlines(), ["[3, 2, 1] [3, 2, 1]", "1-2!", "2.6 1 0 13 3", "1.24 1/3", "[2.25, 4.5, 6.75] True",
+                                                    "[(0, 0), (0, 1), (1, 0), (1, 1)] [('a', 2)] [3, 4] {'a': 1, 'b': 2}", "16 5 {'format': 1, 'type': 2}"], c["stdout"])
+
+    def test_the_known_limit_a_mapping_unpacked_into_a_call_is_not_seen(self):
+        # NOT a guard that the hole is open: it pins what README_JA.md says.  The names inside **{...} are dict keys built at run time; the static layer
+        # cannot read them, so `Fraction(4, 8, **{'_normalize': False})` is not refused by it (the runtime namespaces and the OS are what hold).  If the
+        # rule is ever extended (for instance by refusing `**` in calls) this test must change together with the README.
+        self.assertEqual(C.static_check("from fractions import Fraction\nprint(Fraction(4, 8, **{'_normalize': False}))\n"), "")
+
+
+class TestFromCollectionsImportAbc(unittest.TestCase):
+    """Round 6 (R3): `from collections import abc` is `import collections.abc as abc`: the child's `collections` namespace already carries `.abc`."""
+
+    def test_it_is_allowed_and_works(self):
+        for code in ("from collections import abc\nprint(isinstance([1], abc.Iterable), isinstance({}, abc.Mapping), issubclass(list, abc.Sequence))\n",
+                     "from collections import abc as c\nprint(isinstance([1], c.Iterable), isinstance({}, c.Mapping), issubclass(list, c.Sequence))\n",
+                     "import collections\nfrom collections import abc\nprint(isinstance([1], abc.Iterable), isinstance({}, collections.abc.Mapping), issubclass(list, abc.Sequence))\n"):
+            self.assertEqual(C.static_check(code), "", code)
+            c = C.code_sandbox_run(code, run_as=None)
+            self.assertEqual((c["ok"], c["stdout"]), (True, "True True True\n"), c)
+        r = run_runtime_only("from collections import abc\nprint(abc.Iterable is not None)\n")           # the child alone (static rules off) serves it
+        self.assertEqual((r["ok"], r["stdout"]), (True, "True\n"), r)
+
+    def test_the_other_names_of_collections_stay_refused_and_the_module_rules_still_apply(self):
+        for n in ("namedtuple", "UserDict", "UserList", "UserString", "abcd", "ChainMapp"):
+            self.assertTrue(C.static_check(f"from collections import {n}\n").startswith("import_name:" + n), n)
+        self.assertTrue(C.static_check("from collections.abc import abc\n").startswith("import_name:abc"))
+        self.assertTrue(C.static_check("from collections import abc\n", allowed_modules=["math"]).startswith("import:collections"))
+        self.assertEqual(C.static_check("from collections import abc\n"), "")
+        for code, want in (("from collections import abc\nprint(abc.update_wrapper)\n", "module_attr:collections.abc.update_wrapper"),
+                           ("from collections import abc\nprint(abc.__subclasshook__)\n", "attr:__subclasshook__"),
+                           ("from collections import abc\nprint(abc.Foo)\n", "module_attr:collections.abc.Foo"),
+                           ("from collections import abc\nx = abc\n", "module_name:"),
+                           ("from collections import abc\nprint([abc])\n", "module_name:"),
+                           ("from collections import abc\nabc = 1\n", "module_alias:"),
+                           ("from collections import abc\nfor abc in [1]:\n    pass\n", "module_alias:"),
+                           ("from collections import abc\nimport math as abc\n", "module_alias:")):
+            self.assertTrue(C.static_check(code).startswith(want), (code, C.static_check(code)))
 
 
 class TestSample(unittest.TestCase):

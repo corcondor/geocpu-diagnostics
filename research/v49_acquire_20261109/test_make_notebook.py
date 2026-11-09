@@ -69,7 +69,11 @@ class Notebook(unittest.TestCase):
             if c["cell_type"] == "code":
                 self.assertIsNone(c["execution_count"])
                 self.assertEqual(c["outputs"], [])
-        self.assertLess(len(self.raw), 1_100_000, "the notebook must stay about 1 MB (it embeds four modules)")
+        # The ceiling was 1,100,000 and the notebook was 1,084,144 bytes.  Round 6 raised it DELIBERATELY to 1,200,000 instead of trimming comments out of
+        # the embedded modules: the embedded copies must be exactly the files (test_embedded_files_equal_the_sources below) and cell 3b checks that what it
+        # loads equals what is embedded, so an embedded copy with fewer comments than the file would be a second, different text to keep in step, and
+        # stripping comments from the shipped files themselves would remove the reviewed reasoning that sits next to every rule.
+        self.assertLess(len(self.raw), 1_200_000, "the notebook must stay about 1 MB (it embeds four modules); the ceiling was raised from 1.1 MB in round 6")
         self.assertEqual(self.raw.decode("utf-8"), self.raw.decode("utf-8").replace("\r", ""))   # no CR in the file
 
     def test_notebook_build_is_deterministic(self):
@@ -258,6 +262,16 @@ class Notebook(unittest.TestCase):
                      "RAW_SUFFIX", "nobody", "アンマウント", "_HOLD_do_not_mix", "タブを開いたまま", "シャード", "保存出力", "弱い代わりの方法には切り替えません",
                      "あなたが押すもの", "このまま実行", "許可", "すべてのセルを実行", "セッションを再起動", "3c", "3d", "約20回", "再接続"):
             self.assertIn(must, intro)
+
+    def test_intro_and_readme_say_how_a_sandbox_failure_and_a_row_that_kills_the_child_differ(self):
+        # round 4: the sandbox itself failing stops the run; one row whose code kills the child is rejected as code_crash, counted and visible
+        intro = "".join(self.nb["cells"][0]["source"])
+        readme = (HERE / "README_JA.md").read_text(encoding="utf-8")
+        for name, text in (("intro", intro), ("README", readme)):
+            for must in ("code_crash", "print(1)", "止まります", "50行", "2%", "REPORT_JA.md"):
+                self.assertIn(must, text, f"{name}: {must}")
+        for must in ("sandbox_failed:code_crash:returncode=N", "3221225725", "-11", "ラウンド3", "ちょうど同じ", "crashy_x", ".part-", "Linux / Colab の上での動き"):
+            self.assertIn(must, readme, f"README: {must}")
 
 
 class Readme(unittest.TestCase):

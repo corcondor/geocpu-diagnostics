@@ -395,7 +395,7 @@ class TestCoding(RowAsserts):
                                         "static:no_print": 1, "static:class_def:class definitions are disabled": 1, "empty_stdout": 1})
         self.assertEqual(s["verification"], {"stored_output_equals_sandbox": 2})
         self.assertEqual(s["python"], {"rows_kept_stored_output_equals_sandbox": 2, "ran_in_sandbox_but_had_no_stored_output": 2,
-                                       "note": s["python"]["note"]})
+                                       "rows_rejected_code_crash": 0, "note": s["python"]["note"]})
         self.assertEqual(C.summarize(st, CKX)["backends"]["sandbox"], "checks.code_sandbox_check(profile=executor)")
 
     def test_policy_switches(self):
@@ -446,6 +446,37 @@ class TestCoding(RowAsserts):
         self.assertEqual(s["rejects"], {"untagged_code_fence": 1, "row_too_long": 1, "static:import:numpy": 1, "no_code_block": 1})
         self.assertEqual(s["code_text_languages"], {"rust": 1, "java": 1})
         self.assertEqual(rows[0]["target"], "\n" + rust["messages"][1]["content"])
+
+    def test_a_pathological_python_row_is_one_reject_and_not_the_end_of_the_run(self):
+        # round 6.  The old checker recursed once per link of an attribute chain, so a chain of about 1,000 links made checks.static_check RAISE
+        # RecursionError.  What that did to the converter depends on the stack the converter is called from, and the row cap (1,900 characters, about 570
+        # links) keeps a chain from reaching the sandbox when the stack is shallow.  Measured on Python 3.12 with the old checker (the sweep is kept in the
+        # r6 notes): a chain that passes the first static_check (convert._coding_python_row) and overflows in the SECOND one (code_sandbox_check, called
+        # from Checks._sandbox) becomes SandboxUnavailable and STOPS the whole run; with 520 frames already on the stack that was the 470-link chain
+        # (1,453 bytes).  Others only became 'exception:RecursionError' rows (wrong category).  Here the converter is called from a stack that leaves
+        # about 480 frames, and every chain length from 380 to 570 links is converted: each must be an ordinary 'static:too_deep' reject.
+        def py(code):
+            return msg("p", f"{FENCE}python\n{code}\n{FENCE}")
+        chains = [py("import math\nx = math" + ".pi" * n + "\nprint(x)") for n in range(380, 571)]
+        spec = py("print('" + "{:" * 1100 + "{}" + "}" * 1100 + "'.format(1))")
+        deep = py("x = " + "+".join(["1"] * 1000) + "\nprint(x)")
+        frame, used = sys._getframe(), 0
+        while frame is not None:
+            used, frame = used + 1, frame.f_back
+
+        def from_a_deep_stack(k):
+            if k > 0:
+                return from_a_deep_stack(k - 1)
+            return run("coding", chains[:100] + [RUST_OK] + chains[100:] + [spec, deep], ck=CKX)      # run() raises SandboxUnavailable if the run would stop
+        rows, st = from_a_deep_stack(max(0, sys.getrecursionlimit() - used - 480))
+        s = self.check_stats(st)
+        self.assertEqual([r["code_lang"] for r in rows], ["rust"])
+        self.assertTrue(all(k.startswith("static:") for k in s["rejects"]), s["rejects"])
+        self.assertEqual({k.split(":")[1]: v for k, v in s["rejects"].items()}, {"too_deep": len(chains) + 1, "format_string": 1}, s["rejects"])
+        # the same rows from a normal stack
+        rows, st = run("coding", [chains[0], RUST_OK, chains[-1], spec, deep], ck=CKX)
+        self.assertEqual([r["code_lang"] for r in rows], ["rust"])
+        self.assertEqual({k.split(":")[1]: v for k, v in dict(st.rejects).items()}, {"too_deep": 3, "format_string": 1})
 
     def test_masked_row_must_be_clean(self):
         emoji_user = msg("print 1 \U0001F600", f"{FENCE}python\nprint(1)\n{FENCE}\n出力:\n{FENCE}\n1\n{FENCE}")
@@ -1281,6 +1312,334 @@ class TestSandboxFailsLoudly(RowAsserts):
         with C.forward_termination_to_sandbox(None, posix=True) as installed:             # no sandbox module: nothing to forward to
             self.assertFalse(installed)
         self.assertEqual(len(killed), n)
+
+
+def py_row(label, code, stored):
+    return msg(f"{label}を表示するPythonコードを書いて。", f"{PY_PLAN}\n{FENCE}python\n{code}\n{FENCE}\n出力:\n{FENCE}\n{stored}\n{FENCE}\n結果は {stored} です。")
+
+
+class TestCodeCrashCanary(RowAsserts):
+    """Round 4 (F1): a child that ends without a result line ('crash:returncode=N') used to be treated as a broken sandbox for EVERY row, so one
+    statically accepted row whose code overflows the C stack (a 300,000-deep map() chain) stopped the converter for good (exit 4 on every re-run).
+    Now a canary (print(1) in a fresh child, same profile / account / limits / timeout) tells the two apart: canary ok -> that ROW killed the child,
+    one counted reject 'sandbox_failed:code_crash:returncode=N'; canary fails too (or 'crash:spawn', or an exception out of the checks module) -> stop.
+    Too many such rows in one run -> stop as well."""
+
+    CRASH = "crash:returncode=-11:Segmentation fault"
+    MARK = "print('CRASHME')"
+    CANARY = "print(1)"                                                                          # the trivial known-good snippet (the task says: print(1))
+
+    def setUp(self):
+        self.ext = C._load_external_checks()
+        if self.ext is None:
+            self.skipTest("checks.py not available")
+        self.real = self.ext.code_sandbox_check
+
+    def fake(self, calls, row_result=None, canary=None, default=None):
+        """code_sandbox_check that logs every call; the marked row returns row_result, the canary snippet returns canary(), every other snippet returns
+        `default` (or runs for real when there is none)."""
+        def f(code, timeout, **kw):
+            calls.append((code, timeout, dict(kw)))
+            if code.strip() == self.CANARY:
+                if canary is not None:
+                    return canary()
+            elif self.MARK in code and row_result is not None:
+                return row_result() if callable(row_result) else row_result
+            if default is not None:
+                return default
+            return self.real(code, timeout, **kw)
+        return f
+
+    def patched(self, fn):
+        from unittest import mock
+        return mock.patch.object(self.ext, "code_sandbox_check", fn)
+
+    def test_a_row_that_kills_the_child_is_one_counted_reject_when_the_canary_passes(self):
+        ck = C.Checks(vocab=CK.vocab)
+        calls = []
+        recs = [py_row("a", "print('one')", "one"), py_row("b", self.MARK, "CRASHME"), py_row("c", "print('three')", "three")]
+        with self.patched(self.fake(calls, row_result=(False, "", self.CRASH))):
+            rows, st = run("coding", recs, ck=ck)
+        self.assertEqual(len(rows), 2)                                                        # the run went on after the crash
+        self.assertEqual(dict(st.rejects), {"sandbox_failed:code_crash:returncode=-11": 1})   # one row, greppable, no stderr tail in the key
+        self.assertEqual((ck.code_runs, ck.code_crashes), (3, 1))
+        s = C.summarize(st, ck)
+        self.assertTrue(s["balanced"])
+        self.assertEqual(s["python"]["rows_rejected_code_crash"], 1)                          # counted in the manifest next to the other python numbers
+        # the canary ran right after the crashed row, in a fresh child with the same timeout and the same profile / run_as / limits (same kwargs) as the rows
+        self.assertEqual(len(calls), 4)
+        self.assertEqual([c[0].strip() == self.CANARY for c in calls], [False, False, True, False])
+        self.assertEqual(calls[1][1:], calls[2][1:])
+        self.assertEqual(calls[2][2], {"profile": "executor"})
+        self.assertEqual([len(v) for v in st.reject_examples.values()], [1])                  # the crashed row is kept as the example of its reject reason
+        self.assertEqual(list(st.reject_examples), ["sandbox_failed:code_crash:returncode=-11"])
+
+    def test_the_canary_snippet_really_runs_in_the_real_sandbox(self):
+        ck = C.Checks(vocab=CK.vocab)
+        self.assertEqual(C.CANARY_CODE.strip(), self.CANARY)
+        self.assertIsNone(ck._canary_failure())
+
+    def test_a_canary_that_fails_too_stops_the_run(self):
+        recs = [py_row("a", "print('one')", "one"), py_row("b", self.MARK, "CRASHME"), py_row("c", "print('three')", "three")]
+        for label, canary in (("crashes", lambda: (False, "", "crash:returncode=-11:")), ("times out", lambda: (False, "", "timeout:5.0s")),
+                              ("prints something else", lambda: (True, "2\n", "")), ("raises", lambda: (_ for _ in ()).throw(OSError(28, "No space left on device")))):
+            with self.subTest(label):
+                ck = C.Checks(vocab=CK.vocab)
+                calls = []
+                with self.patched(self.fake(calls, row_result=(False, "", self.CRASH), canary=canary)):
+                    with self.assertRaises(C.SandboxUnavailable) as cm:
+                        run("coding", recs, ck=ck)
+                self.assertIn("canary", str(cm.exception))
+                self.assertIn("in the middle of the run", str(cm.exception))
+                self.assertEqual(len(calls), 3)                                               # row 1, the crashed row, the canary: nothing ran afterwards
+                self.assertEqual(ck.code_crashes, 0)                                          # it was never counted as the code's doing
+
+    def test_spawn_failures_and_exceptions_stop_without_a_canary(self):
+        for label, result in (("crash:spawn", (False, "", "crash:spawn:OSError: [Errno 28] No space left on device")), ("bare crash", (False, "", "crash")),
+                              ("raises", lambda: (_ for _ in ()).throw(self.ext.SandboxError("user 'nobody' does not exist on this machine")))):
+            with self.subTest(label):
+                ck = C.Checks(vocab=CK.vocab)
+                calls = []
+                with self.patched(self.fake(calls, row_result=result)):
+                    with self.assertRaises(C.SandboxUnavailable):
+                        run("coding", [py_row("b", self.MARK, "CRASHME")], ck=ck)
+                self.assertEqual(len(calls), 1)                                               # no canary: these are never a verdict about the code
+                self.assertFalse(any(c[0].strip() == self.CANARY for c in calls))
+
+    def test_ordinary_code_outcomes_never_start_a_canary(self):
+        ck = C.Checks(vocab=CK.vocab)
+        for reason in ("timeout:5.0s", "exception:ZeroDivisionError: division by zero", "exception:MemoryError: ", "output_limit:captured output exceeded 8192 characters",
+                       "static:import:os"):
+            calls = []
+            with self.patched(self.fake(calls, row_result=(False, "", reason))):
+                self.assertEqual(ck.run_python(self.MARK), {"ok": False, "stdout": "", "reason": reason})
+            self.assertEqual(len(calls), 1, reason)
+        self.assertEqual(ck.code_crashes, 0)
+        zero = py_row("divide", "print(1 / 0)", "x")
+        rows, st = run("coding", [zero], ck=ck)
+        self.assertEqual(dict(st.rejects), {"sandbox_failed:exception:ZeroDivisionError: division by zero": 1})
+
+    def test_more_than_50_code_crash_rows_in_one_run_stop_the_run(self):
+        ck = C.Checks(vocab=CK.vocab)
+        calls = []
+        with self.patched(self.fake(calls, row_result=(False, "", self.CRASH), canary=lambda: (True, "1\n", ""), default=(True, "1\n", ""))):
+            for i in range(1, 51):                                                            # 50 crashes, one in every 60 rows: 1.7 % each time, so only the count matters
+                for _ in range(59):
+                    self.assertTrue(ck.run_python("print(1)")["ok"])
+                self.assertEqual(ck.run_python(self.MARK)["reason"], "code_crash:returncode=-11")
+            self.assertEqual(ck.code_crashes, 50)                                             # 50 is still allowed ...
+            for _ in range(59):
+                ck.run_python("print(1)")
+            with self.assertRaises(C.SandboxUnavailable) as cm:                              # ... the 51st stops
+                ck.run_python(self.MARK)
+        msg_ = str(cm.exception)
+        self.assertIn("51 of the 3060 rows", msg_)                                            # the message names the counts
+        self.assertIn("more than 50 rows", msg_)
+
+    def test_a_share_above_2_percent_stops_the_run_but_only_once_50_rows_have_executed(self):
+        def fresh():
+            return C.Checks(vocab=CK.vocab)
+        with self.patched(self.fake([], row_result=(False, "", self.CRASH), canary=lambda: (True, "1\n", ""), default=(True, "1\n", ""))):
+            ck = fresh()                                                                      # 3 crashes in the first 10 rows: a share of 10 rows means nothing yet
+            for _ in range(7):
+                ck.run_python("print(1)")
+            for _ in range(3):
+                ck.run_python(self.MARK)
+            self.assertEqual((ck.code_runs, ck.code_crashes), (10, 3))
+            ck = fresh()                                                                      # 1 crash in 50 rows is exactly 2 %: allowed ("exceeds")
+            for _ in range(49):
+                ck.run_python("print(1)")
+            ck.run_python(self.MARK)
+            self.assertEqual((ck.code_runs, ck.code_crashes), (50, 1))
+            for _ in range(9):
+                ck.run_python("print(1)")
+            with self.assertRaises(C.SandboxUnavailable) as cm:                              # a 2nd crash in row 60: 3.3 % of 60 rows
+                ck.run_python(self.MARK)
+            self.assertIn("2 of the 60 rows", str(cm.exception))
+            self.assertIn("2%", str(cm.exception))
+            ck = fresh()
+            for _ in range(60):
+                ck.run_python("print(1)")
+            for _ in range(2):                                                                # 2 crashes in 62 rows = 3.2 %: stop at the 2nd
+                try:
+                    ck.run_python(self.MARK)
+                except C.SandboxUnavailable:
+                    break
+            else:
+                self.fail("a share above 2 % did not stop the run")
+            ck = fresh()                                                                      # 1 crash in 200 rows (0.5 %) is fine
+            for _ in range(199):
+                ck.run_python("print(1)")
+            self.assertEqual(ck.run_python(self.MARK)["reason"], "code_crash:returncode=-11")
+
+    def test_the_real_nested_map_chain_is_a_per_row_reject_not_a_stop(self):
+        # the confirmer's repro, through the real sandbox: statically accepted, kills the child with a stack overflow (3221225725 on Windows, -11 on Linux)
+        code = "it = iter([1])\nfor _ in range(300000):\n    it = map(abs, it)\nprint(next(it))"
+        ck = C.Checks(vocab=CK.vocab)
+        good = py_row("sum", "print(sum(range(1, 11)))", "55")
+        rows, st = run("coding", [py_row("deep", code, "1"), good], ck=ck)
+        keys = list(st.rejects)
+        if not (keys and keys[0].startswith("sandbox_failed:code_crash:")):
+            self.skipTest(f"this Python does not die on the deep chain here (reject: {keys})")
+        self.assertRegex(keys[0], r"^sandbox_failed:code_crash:returncode=-?\d+$")
+        self.assertEqual(len(rows), 1)                                                        # the next row was converted: the run did not stop
+        self.assertEqual(rows[0]["reference_final_answer"], "55")
+        self.assertEqual((ck.code_runs, ck.code_crashes), (2, 1))
+
+    def test_the_cli_finishes_with_the_code_crash_counted_in_the_manifest(self):
+        if pa is None:
+            self.skipTest("pyarrow missing")
+        import io
+        from contextlib import redirect_stderr
+        recs = [py_row("a", "print('one')", "one"), py_row("b", self.MARK, "CRASHME"), py_row("c", "print('three')", "three")]
+        with tempfile.TemporaryDirectory() as raw, tempfile.TemporaryDirectory() as out:
+            p = Path(raw) / "data" / "train-00000-of-00001.parquet"
+            p.parent.mkdir()
+            pq.write_table(pa.Table.from_pylist(recs), p)
+            with self.patched(self.fake([], row_result=(False, "", self.CRASH))), redirect_stderr(io.StringIO()):
+                code = C.main(["--dataset", "coding", "--raw-dir", raw, "--out-dir", out, "--sample-dump", "0"])
+            self.assertEqual(code, 0)
+            man = json.loads((Path(out) / "coding" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertTrue(man["balanced"])
+            self.assertEqual(man["rejects"], {"sandbox_failed:code_crash:returncode=-11": 1})
+            self.assertEqual(man["python"]["rows_rejected_code_crash"], 1)
+            self.assertEqual(man["n_out"], 2)
+            self.assertEqual(list((Path(out) / "coding").glob("*.part-*")), [])
+
+
+class TestNoPartFilesAfterAFailedRun(RowAsserts):
+    """Round 4 (F2): after the fatal exit (rc 4) the converter left train / dev / heldout .jsonl.part-<pid> in the local output folder, one more set per
+    retry, and pipeline._run_window's heartbeat sums every *.part-* file.  A failed run removes its OWN .part-<pid> files and nothing else."""
+
+    OTHER = ("train.jsonl.part-99999999", "dev.jsonl.part-99999999", "heldout.jsonl.part-99999999")
+
+    def setUp(self):
+        self.ext = C._load_external_checks()
+        if self.ext is None or pa is None:
+            self.skipTest("checks.py or pyarrow not available")
+
+    def parts(self, out):
+        return sorted(p.name for p in (Path(out) / "coding").glob("*.part-*"))
+
+    def raw_with(self, raw, recs):
+        p = Path(raw) / "data" / "train-00000-of-00001.parquet"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        pq.write_table(pa.Table.from_pylist(recs), p)
+
+    def test_the_cli_removes_its_own_part_files_when_the_sandbox_stops_the_run(self):
+        import io
+        from contextlib import redirect_stderr
+        from unittest import mock
+        real = self.ext.code_sandbox_check
+        n = []
+
+        def flaky(code, timeout, **kw):
+            n.append(1)
+            if len(n) >= 2:
+                raise self.ext.SandboxError("user 'nobody' does not exist on this machine")
+            return real(code, timeout, **kw)
+        recs = [py_row("a", "print('one')", "one"), py_row("b", "print('two')", "two"), py_row("c", "print('three')", "three")]
+        with tempfile.TemporaryDirectory() as raw, tempfile.TemporaryDirectory() as out:
+            self.raw_with(raw, recs)
+            (Path(out) / "coding").mkdir()
+            for name in self.OTHER:                                                           # leftovers of ANOTHER process (or of an older run): never touched
+                (Path(out) / "coding" / name).write_text("x", encoding="utf-8")
+            (Path(out) / "coding" / "train.jsonl").write_text("finished rows\n", encoding="utf-8")       # a finished file of an earlier run: never touched
+            for attempt in range(2):                                                          # the retry must not add a second set
+                err = io.StringIO()
+                with mock.patch.object(self.ext, "code_sandbox_check", flaky), redirect_stderr(err):
+                    n.clear()
+                    code = C.main(["--dataset", "coding", "--raw-dir", raw, "--out-dir", out, "--sample-dump", "0"])
+                self.assertEqual(code, 4)
+                self.assertIn("SANDBOX FAILED DURING THE RUN", err.getvalue())
+                self.assertEqual(self.parts(out), sorted(self.OTHER), attempt)               # only the foreign leftovers remain: this run's own files are gone
+                self.assertEqual((Path(out) / "coding" / "train.jsonl").read_text(encoding="utf-8"), "finished rows\n")
+                self.assertFalse((Path(out) / "coding" / "manifest.json").exists())
+            for name in self.OTHER:
+                self.assertEqual((Path(out) / "coding" / name).read_text(encoding="utf-8"), "x")
+
+    def test_the_canary_failure_exit_also_leaves_nothing_behind(self):
+        import io
+        from contextlib import redirect_stderr
+        from unittest import mock
+        real = self.ext.code_sandbox_check
+
+        def broken(code, timeout, **kw):
+            if "CRASHME" in code or code.strip() == "print(1)":
+                return False, "", "crash:returncode=-9:"
+            return real(code, timeout, **kw)
+        recs = [py_row("a", "print('one')", "one"), py_row("b", "print('CRASHME')", "CRASHME")]
+        with tempfile.TemporaryDirectory() as raw, tempfile.TemporaryDirectory() as out:
+            self.raw_with(raw, recs)
+            err = io.StringIO()
+            with mock.patch.object(self.ext, "code_sandbox_check", broken), redirect_stderr(err):
+                code = C.main(["--dataset", "coding", "--raw-dir", raw, "--out-dir", out, "--sample-dump", "0"])
+            self.assertEqual(code, 4)
+            self.assertIn("canary", err.getvalue())
+            self.assertEqual(self.parts(out), [])
+            self.assertEqual(sorted(p.name for p in (Path(out) / "coding").iterdir()), [])
+
+    def test_any_other_failure_of_run_dataset_removes_the_part_files_too(self):
+        from unittest import mock
+        recs = [py_row("a", "print('one')", "one"), py_row("b", "print('two')", "two")]
+        with tempfile.TemporaryDirectory() as raw, tempfile.TemporaryDirectory() as out:
+            self.raw_with(raw, recs)
+            seen = []
+            real_validate = C.validate_row
+
+            def boom(row, ck):
+                if seen:
+                    raise KeyboardInterrupt()                                                  # a BaseException: Interrupt execution / SIGINT
+                seen.append(1)
+                return real_validate(row, ck)
+            with mock.patch.object(C, "validate_row", boom):
+                with self.assertRaises(KeyboardInterrupt):
+                    C.run_dataset("coding", raw, out, CKX, sample_dump=0)
+            self.assertEqual(seen, [1])                                                       # one row had been written to the .part file before it failed
+            self.assertEqual(self.parts(out), [])
+            with mock.patch.object(C.SplitWriter, "close", side_effect=OSError("disk full")):          # the failure comes while the files are being finished
+                with self.assertRaises(OSError):
+                    C.run_dataset("coding", raw, out, CKX, sample_dump=0)
+            self.assertEqual(self.parts(out), [])
+
+    def test_a_finished_run_leaves_no_part_files_and_a_failed_write_removes_its_own(self):
+        from unittest import mock
+        recs = [py_row("a", "print('one')", "one")]
+        with tempfile.TemporaryDirectory() as raw, tempfile.TemporaryDirectory() as out:
+            self.raw_with(raw, recs)
+            s = C.run_dataset("coding", raw, out, CKX, sample_dump=2)
+            self.assertEqual(s["n_out"], 1)
+            self.assertEqual(self.parts(out), [])
+            target = Path(out) / "x.txt"
+            with mock.patch("os.replace", side_effect=OSError("killed before the rename")):
+                with self.assertRaises(OSError):
+                    C._write_new(target, "x" * 100)
+            self.assertEqual(sorted(p.name for p in Path(out).glob("x.txt*")), [])            # the .part-<pid> of the failed write is gone
+
+    def test_splitwriter_abort_removes_only_its_own_files(self):
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td) / "k"
+            d.mkdir()
+            (d / "train.jsonl").write_text("done\n", encoding="utf-8")
+            (d / "train.jsonl.part-1").write_text("someone else\n", encoding="utf-8")
+            w = C.SplitWriter(d)
+            w.write_line("train", '{"a": 1}')
+            self.assertEqual(len(list(d.glob("*.part-*"))), 4)
+            w.abort()
+            self.assertEqual(sorted(p.name for p in d.iterdir()), ["train.jsonl", "train.jsonl.part-1"])
+            w.abort()                                                                         # idempotent
+
+    def test_a_merge_that_fails_in_the_middle_removes_its_part_files(self):
+        recs = [py_row(str(i), f"print({i} * 3)", str(i * 3)) for i in range(1, 5)]
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            self.raw_with(td / "raw", recs)
+            for i, (a, b) in enumerate([(0, 2), (2, None)]):
+                C.run_dataset("coding", td / "raw", td / f"shard{i}", CKX, limit=b, start=a, sample_dump=0)
+            (td / "shard1" / "coding" / "heldout.jsonl").unlink()                              # the 2nd shard lost a file: the merge fails after it started writing
+            with self.assertRaises(FileNotFoundError):
+                C.merge_shards("coding", [td / "shard0", td / "shard1"], td / "merged", sample_dump=0)
+            self.assertEqual(list((td / "merged" / "coding").glob("*.part-*")), [])
 
 
 if __name__ == "__main__":

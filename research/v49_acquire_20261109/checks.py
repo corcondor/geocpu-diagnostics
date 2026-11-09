@@ -1854,7 +1854,62 @@ class SandboxError(RuntimeError):
     """The sandbox cannot be started the way it must be (no weaker fallback exists)."""
 
 
-_VALIDATE_SRC = r'''
+# --- WHICH NAMES OF THE ALLOWED MODULES ARE REACHABLE: DENY BY DEFAULT, AN EXPLICIT FROZEN LIST PER MODULE.
+# Round 4 of the review found that a deny-LIST of dangerous names can never be complete: functools.update_wrapper / wraps take the attribute NAMES to
+# copy as plain strings (assigned=('__code__',)) and call setattr / getattr with them inside the module, so an attribute name reaches an object
+# without an ast.Attribute node that the validator could see; functools.singledispatch(...).register() evaluates a STRING annotation as an
+# expression (typing.get_type_hints); collections.namedtuple builds its class from an eval() template.  So the other way round: only the names
+# listed below can be imported or reached as `module.name`, at BOTH layers (the same tuples are in the source that the validator and the child run):
+#   static  - `from m import n` needs n in the list of m; `import m [as a]` + `a.n` needs n in the list of m (and the alias may not be rebound or
+#             passed around: see validate()); anything else is refused as static:import_name:<n> / static:module_attr:<m>.<n>.
+#   runtime - the namespace the child hands out for `import m` is built ONLY from this list (intersected with what the running Python really
+#             has: a name that a newer Python adds is simply absent on an older one -> AttributeError / ImportError = an ordinary per-row reject).
+# Nothing that is not listed is reachable even if the static layer were bypassed.  A name that a NEWER Python adds is NOT exposed until someone
+# reviews it and adds it here.  Underscore names are never listed; no entry is a module, a frame / code object, or a helper that takes an
+# attribute name as a string (operator.attrgetter / methodcaller / call, functools.update_wrapper / wraps).
+def _t(names: str) -> Tuple[str, ...]:
+    return tuple(names.split())
+
+
+MATH_NAMES = _t("acos acosh asin asinh atan atan2 atanh cbrt ceil comb copysign cos cosh degrees dist e erf erfc exp exp2 expm1 fabs factorial floor "
+                "fmod frexp fsum gamma gcd hypot inf isclose isfinite isinf isnan isqrt lcm ldexp lgamma log log10 log1p log2 modf nan nextafter perm "
+                "pi pow prod radians remainder sin sinh sqrt sumprod tan tanh tau trunc ulp")                    # every public function and constant; cbrt exp2 (3.11) sumprod (3.12) are version-optional
+CMATH_NAMES = _t("acos acosh asin asinh atan atanh cos cosh e exp inf infj isclose isfinite isinf isnan log log10 nan nanj phase pi polar rect sin sinh "
+                 "sqrt tan tanh tau")                                                                              # every public function and constant
+DECIMAL_NAMES = _t("Decimal Context getcontext setcontext localcontext BasicContext DefaultContext ExtendedContext "
+                   "ROUND_05UP ROUND_CEILING ROUND_DOWN ROUND_FLOOR ROUND_HALF_DOWN ROUND_HALF_EVEN ROUND_HALF_UP ROUND_UP "
+                   "DecimalException Clamped ConversionSyntax DivisionByZero DivisionImpossible DivisionUndefined FloatOperation Inexact InvalidContext "
+                   "InvalidOperation Overflow Rounded Subnormal Underflow MAX_EMAX MAX_PREC MIN_EMIN MIN_ETINY")  # NOT listed: DecimalTuple (a collections.namedtuple class, built by
+#   eval of a template; Decimal.as_tuple() still returns instances of it), HAVE_CONTEXTVAR / HAVE_THREADS (build flags nobody needs)
+FRACTIONS_NAMES = _t("Fraction")                                                                                   # NOT listed: Decimal (fractions only imports it; it is decimal's name)
+STATISTICS_NAMES = _t("mean fmean geometric_mean harmonic_mean median median_grouped median_high median_low mode multimode pstdev pvariance quantiles "
+                      "stdev variance correlation covariance linear_regression StatisticsError NormalDist")      # the public API (correlation, covariance and linear_regression exist
+#   since 3.10).  NormalDist is plain Python (math + random.Random inside the module; no name-by-string helper, no eval).  NOT listed: LinearRegression (a namedtuple class; linear_regression() still returns instances) and the module's own imports
+#   that leak as attributes (Counter Decimal Fraction bisect_left bisect_right count defaultdict erf exp fabs fsum groupby hypot itemgetter log
+#   namedtuple reduce repeat sqrt sumprod tau): they are not statistics' API, and namedtuple is one of them
+COLLECTIONS_NAMES = _t("ChainMap Counter OrderedDict defaultdict deque")                                          # NOT listed: namedtuple (eval of a template) and UserDict / UserList /
+#   UserString (only useful as base classes, and class definitions are refused).  `collections.abc` is a submodule: see SUBMODULE_ATTRS
+COLLECTIONS_ABC_NAMES = _t("AsyncGenerator AsyncIterable AsyncIterator Awaitable Buffer ByteString Callable Collection Container Coroutine Generator "
+                           "Hashable ItemsView Iterable Iterator KeysView Mapping MappingView MutableMapping MutableSequence MutableSet Reversible "
+                           "Sequence Set Sized ValuesView")                                                        # the abstract base classes; Buffer (3.12) is version-optional
+OPERATOR_NAMES = _t("abs add and_ concat contains countOf delitem eq floordiv ge getitem gt iadd iand iconcat ifloordiv ilshift imatmul imod imul index "
+                    "indexOf inv invert ior ipow irshift is_ is_not isub itemgetter itruediv ixor le length_hint lshift lt matmul mod mul ne neg not_ "
+                    "or_ pos pow rshift setitem sub truediv truth xor")                                            # arithmetic / comparison / logic / sequence functions; itemgetter takes
+#   item KEYS (obj[key]), never attribute names.  NOT listed: attrgetter, methodcaller and call (they take attribute names or call by string), and every
+#   __dunder__ alias (underscore names are never listed)
+FUNCTOOLS_NAMES = _t("cache cmp_to_key lru_cache partial reduce")                                                  # NOT listed: update_wrapper and wraps (setattr / getattr by the NAMES in
+#   assigned= / updated=), singledispatch and singledispatchmethod (register() evaluates string annotations through typing.get_type_hints),
+#   partialmethod and cached_property (descriptors for class bodies, which are refused), total_ordering (class decorator; setattr by name),
+#   and the leaked imports / helpers (GenericAlias RLock WRAPPER_ASSIGNMENTS WRAPPER_UPDATES get_cache_token namedtuple recursive_repr).  lru_cache /
+#   cache call update_wrapper themselves, but only with their fixed default names
+ITERTOOLS_NAMES = _t("accumulate batched chain combinations combinations_with_replacement compress count cycle dropwhile filterfalse groupby islice "
+                     "pairwise permutations product repeat starmap takewhile tee zip_longest")                    # every public name (none takes an attribute name); batched is 3.12+
+MODULE_NAMES = {"math": MATH_NAMES, "cmath": CMATH_NAMES, "decimal": DECIMAL_NAMES, "fractions": FRACTIONS_NAMES, "statistics": STATISTICS_NAMES,
+                "itertools": ITERTOOLS_NAMES, "functools": FUNCTOOLS_NAMES, "operator": OPERATOR_NAMES, "collections": COLLECTIONS_NAMES,
+                "collections.abc": COLLECTIONS_ABC_NAMES}
+SUBMODULE_ATTRS = {"collections": ("abc",)}            # `collections.abc` is reachable as an attribute of collections (and has its own list above)
+
+_VALIDATE_SRC = "\nMODULE_NAMES = " + repr(MODULE_NAMES) + "\nSUBMODULE_ATTRS = " + repr(SUBMODULE_ATTRS) + "\n" + r'''
 import ast, re, string
 class StaticReject(Exception):
     pass
@@ -1867,7 +1922,13 @@ _STR_FORMATTERS = ('format','format_map')
 MATCH_CLASS_OK = ('int','float','str','bool','list','tuple','dict','set','frozenset','complex','bytes')
 _FMT_TRAVERSAL = re.compile(r"\{[^{}]*__")
 _FIELD_OK = re.compile(r"[0-9]+|[A-Za-z][A-Za-z0-9_]*")
-def _check_format(s):
+# Resource limits of the static layer itself (round 6).  One crafted row must never make the checker raise or run for seconds: str.format itself
+# refuses a nested format spec deeper than 2 levels at run time, and no honest math program nests its syntax tree 200 levels deep (a left-leaning
+# chain `a + b + c + ...` or an `elif` ladder gets one level per term, so those need about 200 terms to be refused).  Both limits are checked BEFORE
+# anything recurses over the input, so they bound every later walk; whatever still runs out of stack or memory becomes the reject `too_deep`.
+MAX_FORMAT_NEST = 8
+MAX_AST_DEPTH = 200
+def _check_format(s, depth=0):
     try:
         parts = list(string.Formatter().parse(s))
     except ValueError:
@@ -1876,7 +1937,19 @@ def _check_format(s):
         if field and not _FIELD_OK.fullmatch(field):
             raise StaticReject("format_string|only plain {}, {0} and {name} fields are allowed (no attribute or index access)")
         if spec:
-            _check_format(spec)
+            if depth >= MAX_FORMAT_NEST:
+                raise StaticReject("format_string|nested too deep (more than %d levels of nested format specs)" % MAX_FORMAT_NEST)
+            _check_format(spec, depth + 1)
+def _ast_too_deep(tree, limit):
+    # iterative (an explicit stack): the depth is measured without recursing, so a tree of any depth can be measured; stops at the first node below `limit`
+    stack = [(tree, 1)]
+    while stack:
+        node, depth = stack.pop()
+        if depth > limit:
+            return True
+        for child in ast.iter_child_nodes(node):
+            stack.append((child, depth + 1))
+    return False
 def _attr_bad(a, cfg):
     priv = a.startswith("__") if cfg["allow_private_attrs"] else a.startswith("_")
     return priv or a in DENIED_ATTRS or a.startswith(_READ_PREFIXES)
@@ -1886,8 +1959,23 @@ def _strname_bad(a, cfg):
     # a name that is carried as a plain STRING in the tree but is looked up as an ATTRIBUTE at run time (from-import names): the attribute
     # rules plus the two str formatters, which are only allowed on a string literal (ast.Attribute branch below)
     return _attr_bad(a, cfg) or a in _STR_FORMATTERS
+def _no_string_annotation(a):
+    # a STRING inside an annotation is evaluated as an EXPRESSION by typing.get_type_hints (functools.singledispatch.register calls it): the
+    # validator never parses it, so `def f(x: "(1).real")` would run code it refuses everywhere else.  Nothing that is allowed needs a string
+    # annotation (classes are refused, so there are no forward references), so any str / f-string anywhere in an annotation is refused.
+    for n in ast.walk(a):
+        if (isinstance(n, ast.Constant) and isinstance(n.value, str)) or isinstance(n, ast.JoinedStr):
+            raise StaticReject("string_annotation|a string inside an annotation is refused (typing evaluates it as an expression)")
 _MATCH_CLASS_NODE = getattr(ast, 'MatchClass', ())
 def validate(code, cfg):
+    # The public entry point (the parent's static_check and the child both call it).  Whatever runs out of stack or memory while a row is being checked
+    # is a REJECT of that row ('too_deep'), never an exception: an exception out of the checker that reaches convert.Checks._sandbox becomes
+    # SandboxUnavailable ('the sandbox failed'), which stops the whole converter run, and anywhere else it is a row counted under the wrong category.
+    try:
+        return _validate(code, cfg)
+    except (RecursionError, MemoryError):
+        raise StaticReject("too_deep|ran out of recursion depth or memory while checking the code")
+def _validate(code, cfg):
     roots = set(cfg["roots"])
     if not isinstance(code, str):
         raise StaticReject("type|code must be a str")
@@ -1899,9 +1987,14 @@ def validate(code, cfg):
         tree = ast.parse(code, filename="<row-code>", mode="exec")
     except SyntaxError as e:
         raise StaticReject("syntax|%s" % e.msg)
-    except (ValueError, RecursionError, MemoryError) as e:
+    except (RecursionError, MemoryError):
+        raise StaticReject("too_deep|the parser ran out of recursion depth or memory")
+    except Exception as e:                                           # ValueError (null bytes on older Pythons, a lone surrogate), OverflowError, ...
         raise StaticReject("syntax|%s" % type(e).__name__)
+    if _ast_too_deep(tree, MAX_AST_DEPTH):                           # before ANY walk: every later pass (and the child's compile) is bounded by this
+        raise StaticReject("too_deep|the syntax tree is nested more than %d levels deep" % MAX_AST_DEPTH)
     bound, class_pattern_names = set(), set()
+    mod_alias, other_bound = {}, set()                      # name -> the module paths that `import` binds it to; names bound in any OTHER way
     for node in ast.walk(tree):
         if isinstance(node, (ast.Global, ast.Nonlocal)):
             raise StaticReject("global_nonlocal|global/nonlocal declarations are disabled")
@@ -1931,14 +2024,27 @@ def validate(code, cfg):
                 raise StaticReject("name|" + _bound)
             if isinstance(_bound, str) and not isinstance(node, ast.alias):
                 bound.add(_bound)
+                other_bound.add(_bound)
         if isinstance(node, ast.arg):
             if _name_bad(node.arg, cfg):
                 raise StaticReject("name|" + node.arg)
             bound.add(node.arg)
+            other_bound.add(node.arg)
+            if node.annotation is not None:
+                _no_string_annotation(node.annotation)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.returns is not None:
+            _no_string_annotation(node.returns)
+        if isinstance(node, ast.AnnAssign):
+            _no_string_annotation(node.annotation)
         if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
             bound.add(node.id)
-        if isinstance(node, ast.alias):
-            bound.add(node.asname or node.name.split(".")[0])
+            other_bound.add(node.id)
+        if isinstance(node, ast.keyword) and node.arg is not None and node.arg.startswith("_"):
+            # A call keyword is NOT just a dict key: `f(name=v)` binds `name` to the callee's PARAMETER of that name, private ones included
+            # (`Fraction(4, 8, _normalize=False)` builds an unreduced fraction on Python 3.10 / 3.11).  Honest code never passes a private
+            # parameter, so any keyword that starts with an underscore is refused.  A `**mapping` whose keys are built at run time cannot be seen
+            # here (README_JA.md says so); the runtime layer and the OS are what hold in that case.
+            raise StaticReject("name|" + node.arg)
         if isinstance(node, ast.Attribute):
             a = node.attr
             if _attr_bad(a, cfg):
@@ -1952,8 +2058,11 @@ def validate(code, cfg):
                 _check_format(v.value)
         if isinstance(node, ast.Import):
             for n in node.names:
-                if n.name.split(".")[0] not in roots or ("." in n.name and n.name not in ALLOWED_DOTTED):
+                if n.name.split(".")[0] not in roots or n.name.split(".")[0] not in MODULE_NAMES or ("." in n.name and n.name not in ALLOWED_DOTTED):
                     raise StaticReject("import|" + n.name)
+                _key = n.asname or n.name.split(".")[0]              # `import a.b` binds `a`; `import a.b as c` binds `c` to a.b
+                bound.add(_key)
+                mod_alias.setdefault(_key, set()).add(n.name if n.asname else n.name.split(".")[0])
         if isinstance(node, ast.ImportFrom):
             mod = node.module or ""
             if node.level or not mod or mod.split(".")[0] not in roots or ("." in mod and mod not in ALLOWED_DOTTED):
@@ -1961,13 +2070,67 @@ def validate(code, cfg):
             for a in node.names:
                 if a.name == "*" or a.name.startswith("_"):
                     raise StaticReject("wildcard_import|wildcard or private import")
-                if a.name in IMPORT_DENIED or _strname_bad(a.name, cfg):
+                if a.name in SUBMODULE_ATTRS.get(mod, ()) and a.name not in IMPORT_DENIED and not _strname_bad(a.name, cfg):
+                    # `from collections import abc` binds the SUBMODULE collections.abc (the child's `collections` namespace carries it as an
+                    # attribute, see _CHILD_SRC), so the bound name is handled exactly like `import collections.abc as abc`: a module alias
+                    # (rebinding and passing it around are refused below) whose attributes must be on the frozen list of collections.abc.
+                    _key = a.asname or a.name
+                    bound.add(_key)
+                    mod_alias.setdefault(_key, set()).add(mod + "." + a.name)
+                    continue
+                # DENY BY DEFAULT: a name must be on the frozen list of its module (MODULE_NAMES); the deny rules stay as a second net
+                if a.name in IMPORT_DENIED or _strname_bad(a.name, cfg) or a.name not in MODULE_NAMES.get(mod, ()):
                     raise StaticReject("import_name|" + a.name)
+                bound.add(a.asname or a.name)
+                other_bound.add(a.asname or a.name)
         if isinstance(node, ast.Constant) and isinstance(node.value, str) and _FMT_TRAVERSAL.search(node.value):
             raise StaticReject("format_string|attribute traversal inside a format string")
     clash = sorted(class_pattern_names & bound)                  # `str = namedtuple(...)` would turn `case str(x)` into a pattern on another class
     if clash:
         raise StaticReject("match_class|a name that a class pattern uses is rebound in this code: " + ", ".join(clash))
+    # Deny by default for `import m [as a]` + `a.n`: n has to be on the frozen list of m.  Sound only if `a` always means the module: it may not be
+    # bound in any other way (same rebinding detection as the builtin class names above), and the module may only be used as the base of an
+    # attribute (`m.n`), never passed, stored or returned (`x = m` would hide `x.update_wrapper` from this check; the child's namespace still would not have it).
+    for _a, _paths in sorted(mod_alias.items()):
+        if _a in other_bound or len(_paths) != 1:
+            raise StaticReject("module_alias|the name of an imported module is bound again in this code: " + _a)
+    if mod_alias:
+        _mod_memo = {}
+        def _module_of(e):
+            # The module path that expression `e` stands for (None when it is not a module).  ITERATIVE and memoised: a chain of k attributes costs k
+            # steps in total over the whole tree, never one recursion level per link (a 1,100-link chain used to raise RecursionError, and a
+            # 990-link one took 0.4 s because every node walked its whole chain again: quadratic).  MAX_AST_DEPTH already keeps chains short; this
+            # keeps the pass linear and recursion-free on its own, so it does not depend on that limit.
+            chain = []
+            while True:
+                if id(e) in _mod_memo:
+                    m = _mod_memo[id(e)]
+                    break
+                if isinstance(e, ast.Name):
+                    p = mod_alias.get(e.id)
+                    m = next(iter(p)) if p else None
+                    _mod_memo[id(e)] = m
+                    break
+                if isinstance(e, ast.Attribute):
+                    chain.append(e)
+                    e = e.value
+                    continue
+                m = None
+                break
+            for a in reversed(chain):                                 # innermost attribute first
+                m = (m + "." + a.attr) if (m is not None and a.attr in SUBMODULE_ATTRS.get(m, ())) else None
+                _mod_memo[id(a)] = m
+            return m
+        used_as_base = {id(e.value) for e in ast.walk(tree) if isinstance(e, ast.Attribute)}
+        for e in ast.walk(tree):
+            if isinstance(e, (ast.Name, ast.Attribute)):
+                m = _module_of(e)
+                if m is not None and id(e) not in used_as_base:
+                    raise StaticReject("module_name|the module " + m + " can only be used as " + m + ".<name> (it cannot be passed around, stored or returned)")
+            if isinstance(e, ast.Attribute):
+                m = _module_of(e.value)
+                if m is not None and e.attr not in SUBMODULE_ATTRS.get(m, ()) and e.attr not in MODULE_NAMES.get(m, ()):
+                    raise StaticReject("module_attr|" + m + "." + e.attr)
     return tree
 '''
 
@@ -1998,20 +2161,24 @@ if resource is not None:
     _lim("RLIMIT_NPROC", 64)
     _lim("RLIMIT_NOFILE", 64)
 ROOTS = set(cfg["roots"])
-_HIDE = {"attrgetter", "methodcaller", "call"}
-def _public(mod):
-    # a namespace of the PUBLIC, NON-MODULE attributes of a module: nothing like random._os, fractions.sys or dataclasses.inspect
-    return types.SimpleNamespace(**{k: v for k, v in vars(mod).items() if not k.startswith("_") and not isinstance(v, types.ModuleType) and k not in _HIDE})
+def _public(modname, mod):
+    # DENY BY DEFAULT: a namespace built ONLY from the frozen list MODULE_NAMES[modname] (see checks.py), intersected with what this Python really
+    # has.  An unlisted name is simply not there (AttributeError / ImportError = an ordinary per-row reject): no helper that takes an attribute name as
+    # a string, no re-exported import, no module (random._os, fractions.sys), whatever the static layer did or did not see.
+    have = vars(mod)
+    return types.SimpleNamespace(**{k: have[k] for k in MODULE_NAMES[modname]
+                                    if k in have and not k.startswith("_") and not isinstance(have[k], types.ModuleType)})
 NS = {}
 for r in sorted(ROOTS):
     try:
-        NS[r] = _public(importlib.import_module(r))
+        if r in MODULE_NAMES:
+            NS[r] = _public(r, importlib.import_module(r))
     except Exception:
         pass
 DOTTED = {}
 if "collections" in NS:
     try:
-        DOTTED["collections.abc"] = _public(importlib.import_module("collections.abc"))
+        DOTTED["collections.abc"] = _public("collections.abc", importlib.import_module("collections.abc"))
         NS["collections"].abc = DOTTED["collections.abc"]
     except Exception:
         pass
@@ -2106,6 +2273,10 @@ def _profile_cfg(profile: str, allowed_modules: Optional[Iterable[str]], allow_t
     roots = list(allowed_modules) if allowed_modules is not None else list(cfg["roots"])
     if allow_third_party:
         roots += [r for r in THIRD_PARTY_ROOTS if r not in roots]
+    no_list = sorted(r for r in set(roots) if r not in MODULE_NAMES)
+    if no_list:                                                         # deny by default: a module is only importable with a reviewed, frozen list of names
+        raise ValueError(f"no frozen name list for {no_list}: add a reviewed tuple to MODULE_NAMES in checks.py before allowing the module "
+                         f"(the listed modules are {sorted(MODULE_NAMES)})")
     cfg["roots"] = sorted(set(roots))
     cfg["dunder_names"] = list(cfg["dunder_names"])
     cfg["third_party"] = bool(allow_third_party)
@@ -2114,12 +2285,17 @@ def _profile_cfg(profile: str, allowed_modules: Optional[Iterable[str]], allow_t
 
 def static_check(code: str, *, profile: str = "executor", allowed_modules: Optional[Iterable[str]] = None,
                  allow_third_party: bool = False) -> str:
-    """'' when the code passes the static rules, else '<category>:<detail>' (syntax, too_long, global_nonlocal, async, class_def, name,
-    attr, attr_store, import, import_name, wildcard_import, format_string, match_class).  Profile 'executor' = the GeoCPU math worker's rules
+    """'' when the code passes the static rules, else '<category>:<detail>' (syntax, too_long, too_deep, global_nonlocal, async, class_def, name,
+    attr, attr_store, import, import_name, wildcard_import, format_string, match_class, string_annotation, module_alias, module_name,
+    module_attr).  It never raises on a program, however pathological: a syntax tree nested more than 200 levels, more than 8 nested format
+    specs, or anything that exhausts the stack or memory while being checked is the reject `too_deep` (or `format_string`).  Profile 'executor' = the GeoCPU math worker's rules
     (imports only from math cmath decimal fractions statistics itertools functools operator collections; no classes, no attribute
     assignment, no underscore attributes, no open/eval/exec/compile/getattr/globals..., no 'os'/'sys'/'subprocess'/'socket'
     attributes, no frame / code introspection attributes, str.format only on a literal with plain fields, no keyword attribute in a
-    match class pattern and class patterns only on the builtin types int float str bool list tuple dict set frozenset complex bytes).
+    match class pattern and class patterns only on the builtin types int float str bool list tuple dict set frozenset complex bytes,
+    no string inside an annotation) and DENY BY DEFAULT for names: `from m import n` and `m.n` need n on the frozen list of m
+    (MODULE_NAMES: import_name / module_attr); a module alias may not be bound twice (module_alias) nor used other than as `m.n`
+    (module_name).  Modules without a frozen list are refused with ValueError (`allowed_modules`, `allow_third_party`).
     This is the ONLY profile:
     the earlier 'wide' profile (classes, random, re, json ...) was removed because the model's own executor cannot run such code."""
     cfg = _profile_cfg(profile, allowed_modules, allow_third_party)
@@ -2127,6 +2303,8 @@ def static_check(code: str, *, profile: str = "executor", allowed_modules: Optio
         _VALIDATE_NS["validate"](code, cfg)
     except _VALIDATE_NS["StaticReject"] as e:
         return str(e).replace("|", ":", 1)
+    except (RecursionError, MemoryError):                  # validate() already turns these into the reject 'too_deep'; this is the second net: nothing may escape
+        return "too_deep:ran out of recursion depth or memory while checking the code"
     return ""
 
 
@@ -2261,8 +2439,8 @@ def code_sandbox_run(code: str, timeout: float = 5.0, *, profile: str = "executo
     Defence in depth (see the comment above SANDBOX_PROFILES: the Python layers are a filter, the OS is the boundary): only code that
     passes the static rules is ever executed and the child checks it again; python -S -s -B -X utf8 (no site / user site / .pyc;
     -I is not used because it would ignore PYTHONHASHSEED=0, which makes set order of strings reproducible); cwd = a fresh temp
-    dir; stdin closed; minimal environment; restricted builtins; modules are handed out as namespaces of their public non-module
-    attributes; an audit hook refuses sockets / subprocesses / ctypes / file writes / reads outside the python library; output is
+    dir; stdin closed; minimal environment; restricted builtins; modules are handed out as namespaces built ONLY from the frozen
+    name list of each module (MODULE_NAMES, deny by default: an unlisted name is not there); an audit hook refuses sockets / subprocesses / ctypes / file writes / reads outside the python library; output is
     capped at max_output_chars; wall-clock `timeout` (the whole process group is killed).  On POSIX: RLIMIT_CPU / AS (mem_mb, default
     1024; 4096 with third party) / FSIZE / CORE / NPROC / NOFILE and, when this process is root (Colab), the child runs as the
     unprivileged user 'nobody' (run_as='auto'; None disables; a name forces it).  Windows has no `resource`: only the wall-clock
@@ -2273,11 +2451,18 @@ def code_sandbox_run(code: str, timeout: float = 5.0, *, profile: str = "executo
     if rej:
         return {"ok": False, "stdout": "", "error": "static:" + rej, "category": "static", "seconds": time.time() - t0}
     acct = _resolve_run_as(run_as)
+    return _run_in_child(code, cfg, timeout, child_src=_CHILD_SRC, max_output_chars=max_output_chars, mem_mb=mem_mb, python=python, acct=acct,
+                         allow_third_party=allow_third_party, t0=t0)
+
+
+def _run_in_child(code: str, cfg: dict, timeout: float, *, child_src: str, max_output_chars: int, mem_mb: Optional[int], python: Optional[str],
+                  acct: Optional[Tuple[int, int, str]], allow_third_party: bool, t0: float) -> dict:
+    """The second half of code_sandbox_run: start `child_src` once on `code` (already statically checked by the caller) and read its result line."""
     marker = "@@CHECKS-RESULT-" + secrets.token_hex(8) + "@@"
     cfg.update({"cpu": int(math.ceil(timeout)) + 1, "cap": int(max_output_chars), "marker": marker,
                 "mem_mb": mem_mb if mem_mb is not None else (4096 if allow_third_party else 1024)})
     flags = ["-s", "-B", "-X", "utf8"] + ([] if allow_third_party else ["-S"])
-    r = _spawn(_CHILD_SRC, [json.dumps(cfg), "code.py"], timeout=timeout, flags=flags, python=python, acct=acct, files={"code.py": code})
+    r = _spawn(child_src, [json.dumps(cfg), "code.py"], timeout=timeout, flags=flags, python=python, acct=acct, files={"code.py": code})
     secs = time.time() - t0
     if r["spawn_error"]:
         return {"ok": False, "stdout": "", "error": "crash:spawn:" + r["spawn_error"][:200], "category": "crash", "seconds": secs}
@@ -2306,6 +2491,52 @@ def code_sandbox_check(code: str, timeout: float = 5.0, **kw: Any) -> Tuple[bool
     return r["ok"], r["stdout"], r["error"]
 
 
+# The child with its own validate() call replaced by a plain parse: the static rules are OFF in it, everything else (restricted builtins, restricted
+# __import__, the frozen name lists that build the module namespaces, the audit hook, the limits, the OS account) is exactly the real child.  It exists only
+# so that the RUNTIME layer can be tested on its own (the static layer refuses every probe that would reach it): by the unit tests and by the self-test.
+_CHILD_SRC_STATIC_OFF = _CHILD_SRC.replace("tree = validate(code, cfg)", 'tree = ast.parse(code, filename="<row-code>", mode="exec")')
+if _CHILD_SRC_STATIC_OFF == _CHILD_SRC:                                            # pragma: no cover  (the anchor above changed: fail loudly, not silently)
+    raise ImportError("checks.py: _CHILD_SRC_STATIC_OFF anchor not found")
+
+
+def _runtime_layer_run(code: str, timeout: float = 5.0, *, python: Optional[str] = None, run_as: Union[None, bool, str] = "auto",
+                       max_output_chars: int = 8192) -> dict:
+    """FOR THE SELF-TEST AND THE UNIT TESTS ONLY, never for a row: run `code` in the real child with the STATIC RULES OFF (the other layers stay on)
+    to see what the runtime layer alone hands out.  Same result dict as code_sandbox_run."""
+    t0 = time.time()
+    return _run_in_child(code, _profile_cfg("executor", None, False), timeout, child_src=_CHILD_SRC_STATIC_OFF, max_output_chars=max_output_chars,
+                         mem_mb=None, python=python, acct=_resolve_run_as(run_as), allow_third_party=False, t0=t0)
+
+
+# one ordinary program that uses names of every kind that must keep working (3d runs it on the real Colab Python: 3.10 - 3.12)
+SANDBOX_RUNS_PROGRAM = (
+    "from functools import reduce, partial, lru_cache\n"
+    "from collections import Counter, deque, defaultdict\n"
+    "from fractions import Fraction\n"
+    "from decimal import Decimal\n"
+    "import statistics, itertools, operator, math, cmath\n"
+    "@lru_cache(maxsize=None)\n"
+    "def sq(n):\n"
+    "    return n * n\n"
+    "d = defaultdict(int)\n"
+    "for ch in 'abca':\n"
+    "    d[ch] += 1\n"
+    "print(reduce(operator.mul, [1, 2, 3, 4]), partial(operator.add, 3)(4), sq(5), Counter('aab').most_common(1), list(deque([1, 2, 3], maxlen=2)), sorted(d.items()))\n"
+    "print(Fraction(1, 3) + Fraction(1, 6), Decimal('0.1') + Decimal('0.2'), statistics.mean([1, 2, 3]), len(list(itertools.combinations(range(4), 2))), "
+    "math.gcd(12, 18), cmath.sqrt(-4))\n")
+SANDBOX_RUNS_EXPECT = "24 7 25 [('a', 2)] [2, 3] [('a', 2), ('b', 1), ('c', 1)]\n1/2 0.3 2 6 6 2j"
+# names that must NOT be in the module namespaces the child hands out (probed with the static rules off; all of them exist in the real modules)
+SANDBOX_RUNTIME_HIDDEN = {
+    "functools": ("update_wrapper", "wraps", "singledispatch", "singledispatchmethod", "partialmethod", "cached_property", "total_ordering", "namedtuple",
+                  "WRAPPER_ASSIGNMENTS"),
+    "collections": ("namedtuple", "UserDict", "UserList", "UserString"),
+    "operator": ("attrgetter", "methodcaller"),
+    "fractions": ("re", "Decimal", "sys", "math"),
+    "statistics": ("random", "namedtuple", "Counter", "sqrt"),
+    "decimal": ("DecimalTuple", "HAVE_THREADS"),
+}
+
+
 # payloads that the static rules must refuse (each is harmless if it ever ran: it only prints or raises)
 SANDBOX_MUST_REJECT = (
     ("import os", "import os\nprint(os.getcwd())\n"),
@@ -2327,7 +2558,28 @@ SANDBOX_MUST_REJECT = (
     ("match keyword attribute: format_map walks to __globals__", "def g():\n    pass\ns = '{a._' + '_globals__}'\nmatch s:\n    case str(format_map=f):\n        print(f({'a': g})[:60])\n"),
     ("match keyword attribute with a benign-looking name", "match 3:\n    case int(real=r):\n        print(r)\n"),
     ("match class pattern on a name that is not a builtin type", "from collections import Counter\nmatch Counter('a'):\n    case Counter():\n        print(1)\n"),
-    ("match class pattern on a rebound builtin name", "from collections import namedtuple\nstr = namedtuple('P', 'x')\nmatch str(1):\n    case str(a):\n        print(a)\n"),
+    ("match class pattern on a rebound builtin name", "from collections import Counter\nstr = Counter\nmatch str(1):\n    case str(a):\n        print(a)\n"),
+    # round 5 (deny by default): names of the allowed modules that take an attribute NAME as a string, evaluate a string, or are not API at all.  Each is
+    # refused by the static rules on every Python (a name that a given Python lacks would otherwise fail at run time and look like an ordinary row error)
+    ("functools.update_wrapper: setattr by the names in assigned=", "from functools import update_wrapper\ndef f():\n    return 1\ndef g():\n    return 2\n"
+                                                                    "update_wrapper(f, g, assigned=('__code__',), updated=())\nprint(f())\n"),
+    ("functools.wraps", "from functools import wraps\nprint(wraps)\n"),
+    ("functools.update_wrapper through the module", "import functools\nprint(functools.update_wrapper)\n"),
+    ("functools.update_wrapper through an import alias", "import functools as ft\nprint(ft.update_wrapper)\n"),
+    ("functools.singledispatch (evaluates string annotations)", "from functools import singledispatch\nprint(singledispatch)\n"),
+    ("collections.namedtuple (eval of a template)", "from collections import namedtuple\nprint(namedtuple('P', 'x'))\n"),
+    ("string annotation (typing evaluates it as an expression)", "def f(x: \"(1).real\"):\n    pass\n"),
+    ("string annotation on the return value", "def f(x) -> \"(1).real\":\n    pass\n"),
+    ("a module that fractions merely imports", "from fractions import re\nprint(re)\n"),
+    ("a name that does not exist in the module", "from math import this_name_does_not_exist\n"),
+    ("a submodule behind a module attribute", "import statistics\nprint(statistics.random)\n"),
+    ("a module passed around (x = functools)", "import functools\nx = functools\nprint(x.update_wrapper)\n"),
+    ("an import alias that is bound again", "import functools\nfunctools = 1\nprint(functools)\n"),
+    # round 6 (resource limits of the checker itself): each is under 4 KB, harmless if it ever ran (it only prints or raises), and must come back as a normal
+    # reject on every Python and every machine, never as an exception out of the checker (which stops the converter) and never after seconds of work
+    ("an attribute chain of 1,100 links (the validator used to recurse once per link)", "import math\nx = math" + ".pi" * 1100 + "\n"),
+    ("1,100 nested format specs (the format check used to recurse once per level)", "print('" + "{:" * 1100 + "{}" + "}" * 1100 + "'.format(1))\n"),
+    ("a call keyword that is a private parameter name (Fraction._normalize)", "from fractions import Fraction\nprint(Fraction(4, 8, _normalize=False))\n"),
 )
 _PROBE_SRC = r'''
 import json, os
@@ -2395,6 +2647,8 @@ def sandbox_selftest(*, timeout: float = 20.0, python: Optional[str] = None, req
                 ("statistics", "import statistics\nprint(statistics.mean([1, 2, 3]))\n", "2"),
                 ("collections", "import collections\nprint(collections.Counter('aab').most_common(1))\n", "[('a', 2)]"),
                 ("collections.abc", "from collections.abc import Iterable\nprint(isinstance([1], Iterable))\n", "True"),
+                ("from collections import abc (the child's `collections` namespace carries the submodule)", "from collections import abc\nprint(isinstance([1], abc.Iterable))\n", "True"),
+                ("ordinary call keywords", "print(sorted([3, 1, 2], key=lambda v: -v), round(2.567, ndigits=1), dict(a=1))\n", "[3, 2, 1] 2.6 {'a': 1}"),
                 ("operator", "import operator\nprint(operator.add(1, 2), operator.mul(3, 4))\n", "3 12"),
                 ("functools", "from functools import reduce\nprint(reduce(lambda a, b: a * b, [1, 2, 3, 4]))\n", "24"),
                 ("itertools", "import itertools\nprint(list(itertools.permutations([1, 2, 3]))[0])\n", "(1, 2, 3)"),
@@ -2402,15 +2656,28 @@ def sandbox_selftest(*, timeout: float = 20.0, python: Optional[str] = None, req
                 ("str.format literal", "print('{:>5}|{name}'.format(3, name='x'))\n", "3|x"),
                 ("function and loop", "def f(n):\n    return sum(i * i for i in range(n))\nprint(f(10))\n", "285"),
                 ("match without a class pattern", "match (3, 4):\n    case (a, b) if a < b:\n        print(a + b)\n    case _:\n        print(0)\n", "7"),
-                ("match with a positional builtin class pattern", "match 5:\n    case int(n):\n        print(n + 1)\n", "6")):
+                ("match with a positional builtin class pattern", "match 5:\n    case int(n):\n        print(n + 1)\n", "6"),
+                ("the names that stay (reduce partial lru_cache Counter deque defaultdict Fraction Decimal statistics.mean itertools.combinations "
+                 "operator.add math.gcd cmath.sqrt)", SANDBOX_RUNS_PROGRAM, SANDBOX_RUNS_EXPECT)):
             r = code_sandbox_run(code, timeout, python=python, run_as=run_as)
             add("runs: " + name, r["ok"] and r["stdout"].strip() == expect, r["error"] or r["stdout"].strip())
         for name, code in SANDBOX_MUST_REJECT:
             r = code_sandbox_run(code, timeout, python=python, run_as=run_as)
             add("refused: " + name, (not r["ok"]) and r["category"] == "static", r["error"] or ("RAN: " + r["stdout"].strip()[:80]))
-        r = code_sandbox_run("import statistics\nprint(statistics.random)\n", timeout, python=python, run_as=run_as)
-        add("module namespaces hide submodules (statistics.random)", (not r["ok"]) and ("AttributeError" in r["error"] or r["category"] == "static"),
-            r["error"] or ("RAN: " + r["stdout"].strip()[:80]))
+        # the RUNTIME layer on its own (static rules off in the child): the namespaces are built only from the frozen lists, so every probe below is hidden
+        lines = ["found = []"]
+        for m, names in SANDBOX_RUNTIME_HIDDEN.items():
+            lines.append("import " + m)
+            for n in names:
+                lines.append("try:\n    %s.%s\n    found.append('%s.%s')\nexcept Exception:\n    pass" % (m, n, m, n))
+                lines.append("try:\n    from %s import %s\n    found.append('from %s import %s')\nexcept Exception:\n    pass" % (m, n, m, n))
+        lines.append("print(found)")
+        r = _runtime_layer_run("\n".join(lines) + "\n", timeout, python=python, run_as=run_as)
+        add("runtime layer alone (static rules off): excluded names are not in the module namespaces", r["ok"] and r["stdout"].strip() == "[]",
+            r["error"] or ("REACHABLE: " + r["stdout"].strip()[:200]))
+        r = _runtime_layer_run("import functools, collections\nprint(functools.partial(max, 0)(3), len(collections.Counter('aab')))\n", timeout, python=python,
+                               run_as=run_as)
+        add("runtime layer alone (static rules off): listed names are there", r["ok"] and r["stdout"].strip() == "3 2", r["error"] or r["stdout"].strip())
         r = code_sandbox_run("while True:\n    pass\n", 1.0, python=python, run_as=run_as)
         add("endless loop is stopped", (not r["ok"]) and r["category"] in ("timeout", "exception", "crash"), r["error"])
         r = code_sandbox_run("print('x' * 100000)\n", timeout, python=python, run_as=run_as, max_output_chars=1000)

@@ -26,7 +26,9 @@ Rules every converter obeys (all re-checked by validate_row() on every emitted r
     titles; the four synthetic datasets have NO natural group, so they split by ROW (SPLIT_UNIT says so in every manifest: their
     dev / heldout files are not group-independent from train).  heldout 3 %, dev 1 %, train 96 %
   * python rows are executed by checks.code_sandbox_check(profile="executor") only (no builtin fallback) and kept only when the answer's
-    own stored output equals the sandbox output
+    own stored output equals the sandbox output.  A broken sandbox stops the run (exit 4, own .part files removed); one row whose CODE kills the
+    sandbox child (canary print(1) passes right afterwards) is rejected as sandbox_failed:code_crash:returncode=N and counted (more than 50 such
+    rows in one run, or more than 2 % of the rows that executed code, stops the run too)
 
 Nothing is fetched here; --raw-dir holds files that were downloaded elsewhere.  Output files are only ever created, never
 overwritten: if a target exists with a different sha256 the new content is kept under a .new-<sha8> name and the run fails (exit 3).
@@ -215,19 +217,43 @@ def _load_external_checks():
 
 class SandboxUnavailable(RuntimeError):
     """python rows cannot be verified here: the executor-profile sandbox of checks.py is missing or failed its self-test (at start-up), or it
-    BROKE in the middle of the run (it could not start a child, the child died without a result, the unprivileged user vanished).
-    There is no weaker fallback, and a broken sandbox is never turned into per-row rejects: the converter stops (exit code 4)."""
+    BROKE in the middle of the run (it could not start a child, the child died without a result AND a trivial known-good snippet also fails,
+    the unprivileged user vanished, too many children were killed).  There is no weaker fallback, and a broken sandbox is never turned into
+    per-row rejects: the converter stops (exit code 4).  (One row whose CODE kills the child is a per-row reject 'sandbox_failed:code_crash:...',
+    see Checks.run_python.)"""
 
 
 # What code_sandbox_check reports as 'crash' / 'crash:spawn:...' is a failure of the SANDBOX (the child could not be started, or ended
 # without a result line), not a verdict about the code under test.  Everything else is the code's own outcome and stays a per-row reject:
 # static:* (refused by the rules), timeout:*, output_limit:*, exception:* (wrong code, MemoryError at the memory limit, ...).
+# One exception to 'crash is the machine': 'crash:returncode=N:...' (the child ended without a result line) can also be the CODE's doing, e.g. a
+# statically accepted 300,000-deep chain of map() objects kills the child with a stack overflow (returncode 3221225725 on Windows, -11 on
+# Linux).  Checks.run_python tells the two apart with a canary (below); 'crash:spawn:...' and exceptions raised out of the checks module are
+# never a verdict about the code and always stop the run.
 SANDBOX_INFRA_CATEGORIES = ("crash", "spawn")
+CHILD_DEATH_PREFIX = "crash:returncode="
+CODE_CRASH_REASON = "code_crash"                      # the reject reason is 'sandbox_failed:code_crash:returncode=N' (greppable in manifest / report)
+CANARY_CODE = "print(1)\n"                            # a trivial snippet that must always run: if it fails right after a child died, the machine is broken
+CODE_CRASH_MAX_ROWS = 50                              # more code_crash rows than this in one converter run: stop (a machine that kills children is not 'code')
+CODE_CRASH_MAX_SHARE = 0.02                           # ... or a larger share of the rows that executed code ...
+CODE_CRASH_SHARE_MIN_ROWS = 50                        # ... once at least this many rows have executed code (a share of 3 rows means nothing)
 
 
 def sandbox_reason_is_infrastructure(reason: str) -> bool:
-    """True for a code_sandbox_check error string that says the sandbox itself failed ('crash:spawn:OSError: [Errno 28] ...', 'crash:returncode=...')."""
+    """True for a code_sandbox_check error string that SAYS the sandbox failed ('crash:spawn:OSError: [Errno 28] ...', 'crash:returncode=...').  That is
+    the first stage only: 'crash:spawn' always stops the run, but 'crash:returncode=...' is settled by Checks.run_python's canary (the row's own code
+    can kill the child)."""
     return str(reason).split(":", 1)[0] in SANDBOX_INFRA_CATEGORIES
+
+
+def sandbox_reason_is_child_death(reason: str) -> bool:
+    """True for 'crash:returncode=N:...': the child ended without a result line.  The only infrastructure reason that the code under test can cause."""
+    return str(reason).startswith(CHILD_DEATH_PREFIX)
+
+
+def code_crash_reason(reason: str) -> str:
+    """'crash:returncode=3221225725:<stderr tail>' -> 'code_crash:returncode=3221225725' (the stderr tail is dropped: it would make every reject key different)."""
+    return f"{CODE_CRASH_REASON}:returncode=" + str(reason)[len(CHILD_DEATH_PREFIX):].split(":", 1)[0][:40]
 
 
 class Checks:
@@ -255,6 +281,8 @@ class Checks:
         self.hotpot_roots = None                                          # title -> union-find root (set by run_dataset for hotpot)
         self.en_row_max = int(en_row_max)
         self.backends = {"oov": "builtin", "sandbox": "disabled", "sandbox_run_as": None, "static_check": "unavailable"}
+        self.code_runs = 0                                                # rows that were handed to the sandbox (this converter run)
+        self.code_crashes = 0                                             # ... of which the CODE killed the child (canary passed): rejected per row
         self._ext = _load_external_checks() if use_external else None
         ext = self._ext
         if ext is not None and callable(getattr(ext, "static_check", None)):
@@ -301,18 +329,56 @@ class Checks:
         why = self._ext.static_check(code, profile="executor")
         return (not why), why
 
-    def run_python(self, code: str) -> dict:
-        if not self.run_code:
-            return {"ok": False, "stdout": "", "reason": "sandbox_disabled"}
+    def _sandbox(self, code: str):
+        """(ok, stdout, err) of checks.code_sandbox_check; anything it RAISES is the sandbox failing (the code under test cannot raise out of it)."""
         try:
-            ok, out, err = self._ext.code_sandbox_check(code, self.sandbox_timeout, profile="executor")
+            return self._ext.code_sandbox_check(code, self.sandbox_timeout, profile="executor")
         except Exception as e:                                   # noqa: BLE001  SandboxError (the unprivileged user vanished), OSError (no space in /tmp), ...
-            # The code under test cannot raise out of code_sandbox_check (its own exceptions are caught in the child), so this is the SANDBOX
-            # failing.  Turning it into one more per-row reject would let a long run finish 'balanced' with every verified python row gone.
+            # Turning it into one more per-row reject would let a long run finish 'balanced' with every verified python row gone.
             raise SandboxUnavailable(f"the sandbox failed in the middle of the run ({type(e).__name__}: {str(e)[:300]}); "
                                      f"no more code is run and the converter stops") from e
+
+    def _canary_failure(self):
+        """None when a trivial known-good snippet runs in a fresh child with the same profile, account, limits and timeout as the rows (the machine
+        is fine, so a child that died on a row was killed by that row's code); else a short description of how the canary failed.  Run every time
+        (crashes are rare and a remembered answer could be stale)."""
+        try:
+            ok, out, err = self._ext.code_sandbox_check(CANARY_CODE, self.sandbox_timeout, profile="executor")
+        except Exception as e:                                   # noqa: BLE001
+            return f"it raised {type(e).__name__}: {str(e)[:200]}"
+        if ok and str(out).strip() == "1":
+            return None
+        return f"it returned ok={bool(ok)}, stdout={str(out)[:40]!r}, error={str(err)[:200]!r}"
+
+    def run_python(self, code: str) -> dict:
+        """Run one python row.  ok / timeout / exception / output limit / static refusal are the code's own outcome (the caller rejects the row).
+        The sandbox itself failing STOPS the run (SandboxUnavailable): an exception out of checks.code_sandbox_check, 'crash:spawn:...', and a child
+        that ended without a result ('crash:returncode=N') when a canary run right afterwards fails too.  If the canary passes, that one row's
+        CODE killed the child (a statically accepted deeply nested iterator chain overflows the C stack: returncode 3221225725 on Windows, -11 on
+        Linux): the row is rejected as 'code_crash:returncode=N' (the caller turns it into 'sandbox_failed:code_crash:returncode=N', counted in the
+        manifest and the report).  More than CODE_CRASH_MAX_ROWS such rows in one converter run, or more than CODE_CRASH_MAX_SHARE of the rows that
+        executed code (once CODE_CRASH_SHARE_MIN_ROWS have), is a machine that kills children, not a code problem: stop."""
+        if not self.run_code:
+            return {"ok": False, "stdout": "", "reason": "sandbox_disabled"}
+        ok, out, err = self._sandbox(code)
+        self.code_runs += 1
         if not ok and sandbox_reason_is_infrastructure(err):
-            raise SandboxUnavailable(f"the sandbox failed in the middle of the run ({str(err)[:300]}); no more code is run and the converter stops")
+            if not sandbox_reason_is_child_death(err):           # 'crash:spawn:...' (could not start a child) or an unknown 'crash' form: never the code's verdict
+                raise SandboxUnavailable(f"the sandbox failed in the middle of the run ({str(err)[:300]}); no more code is run and the converter stops")
+            why = self._canary_failure()
+            if why is not None:
+                raise SandboxUnavailable(f"the sandbox failed in the middle of the run (a child ended without a result: {str(err)[:200]}; the canary "
+                                         f"{CANARY_CODE.strip()!r}, run in a fresh child right afterwards, failed too: {why}); the machine, not the code, "
+                                         f"is broken.  No more code is run and the converter stops")
+            self.code_crashes += 1
+            share = self.code_crashes / self.code_runs
+            if self.code_crashes > CODE_CRASH_MAX_ROWS or (self.code_runs >= CODE_CRASH_SHARE_MIN_ROWS and share > CODE_CRASH_MAX_SHARE):
+                raise SandboxUnavailable(f"{self.code_crashes} of the {self.code_runs} rows that executed code in this converter run ended with the sandbox "
+                                         f"child killed ({share:.2%}; the limits are more than {CODE_CRASH_MAX_ROWS} rows, or more than "
+                                         f"{CODE_CRASH_MAX_SHARE:.0%} once {CODE_CRASH_SHARE_MIN_ROWS} rows have run; last: {str(err)[:120]}).  Each time the canary "
+                                         f"passed, but a machine that kills every other child would look exactly like this, so the converter stops instead of "
+                                         f"rejecting more rows")
+            return {"ok": False, "stdout": "", "reason": code_crash_reason(err)}
         return {"ok": bool(ok), "stdout": str(out), "reason": str(err)}
 
 
@@ -1485,8 +1551,11 @@ def summarize(stats: Stats, ck: Checks | None = None) -> dict:
         d["code_text_languages"] = {k[len("code_text_lang_"):]: v for k, v in e.items() if k.startswith("code_text_lang_")}
         d["python"] = {"rows_kept_stored_output_equals_sandbox": e["verification_stored_output_equals_sandbox"],
                        "ran_in_sandbox_but_had_no_stored_output": e["python_sandbox_ok_no_stored_output"],
+                       "rows_rejected_code_crash": sum(v for k, v in stats.rejects.items() if k.startswith("sandbox_failed:" + CODE_CRASH_REASON + ":")),
                        "note": "rows that ran but had no stored output block are NOT kept as verified python rows (owner's rule: keep only rows whose "
-                               "output equals the reference); the second number is how many there were"}
+                               "output equals the reference); the second number is how many there were.  rows_rejected_code_crash: rows whose CODE killed the "
+                               "sandbox child (a trivial canary run right afterwards passed), rejected one by one as sandbox_failed:code_crash:returncode=N; "
+                               "a sandbox that is itself broken stops the converter instead"}
     if stats.key == "jaquad":
         d["question_types"] = {k[len("question_type_seen_"):]: v for k, v in e.items() if k.startswith("question_type_seen_")}
     d["split_unit"] = SPLIT_UNIT.get(stats.key, "")
@@ -1516,6 +1585,21 @@ class SplitWriter:
         self.tmp = {sp: self.dir / f"{sp}.jsonl.part-{os.getpid()}" for sp in self.SPLITS}
         self.fh = {sp: open(p, "w", encoding="utf-8", newline="\n") for sp, p in self.tmp.items()}
         self.counts: Counter = Counter()
+
+    def abort(self) -> None:
+        """The run failed before close(): close the handles and delete THIS writer's own .part-<pid> files (self.tmp: nothing else - no finished
+        file, no other process's leftovers).  Without it every failed run (a stopped sandbox, a read error) leaves three files behind and each
+        retry adds another set."""
+        for fh in self.fh.values():
+            try:
+                fh.close()
+            except OSError:
+                pass
+        for p in self.tmp.values():
+            try:
+                p.unlink()
+            except OSError:                                        # already renamed into place by close(), or gone
+                pass
 
     def write(self, row: dict):
         line = json.dumps(row, ensure_ascii=False)
@@ -1583,10 +1667,17 @@ def _atomic_write(path: Path, data: bytes) -> None:
     """Write to <path>.part-<pid> and rename: the file never exists under its final name half written (a runtime killed in the middle leaves a
     .part-<pid>, which nothing reads; the pipeline treats manifest.json as the 'finished' marker, so it is written last, see run_dataset)."""
     part = path.with_name(path.name + f".part-{os.getpid()}")
-    with open(part, "wb") as f:
-        f.write(data)
-        f.flush()
-    os.replace(part, path)
+    try:
+        with open(part, "wb") as f:
+            f.write(data)
+            f.flush()
+        os.replace(part, path)
+    except BaseException:
+        try:
+            part.unlink()                                          # this run's own file only (a failed write / rename must not leave it behind)
+        except OSError:
+            pass
+        raise
 
 
 def format_dump(rows) -> str:
@@ -1665,14 +1756,18 @@ def run_dataset(key: str, raw_dir, out_dir, ck: Checks, limit=None, sample_dump:
     rows = spec.convert(spec.reader(files, limit, start), stats, ck, spec)
     writer = SplitWriter(Path(out_dir) / key)
     heap, tie = [], 0
-    for row in rows:
-        writer.write(row)
-        if sample_dump:
-            tie += 1
-            heapq.heappush(heap, (-h("dump", seed, row["id"]), tie, row))
-            if len(heap) > sample_dump:
-                heapq.heappop(heap)
-    info = writer.close()
+    try:
+        for row in rows:
+            writer.write(row)
+            if sample_dump:
+                tie += 1
+                heapq.heappush(heap, (-h("dump", seed, row["id"]), tie, row))
+                if len(heap) > sample_dump:
+                    heapq.heappop(heap)
+        info = writer.close()
+    except BaseException:                                         # SandboxUnavailable, a read error, SIGTERM (SystemExit), ...: no half-written .part-<pid> stays
+        writer.abort()
+        raise
     summary = summarize(stats, ck)
     summary["raw_files"] = [{"name": Path(p).relative_to(Path(raw_dir)).as_posix(), "bytes": p.stat().st_size} for p in files]
     summary["provenance"] = {"used": bool(prov), "commit_sha": (prov or {}).get("commit_sha"),
@@ -1738,20 +1833,24 @@ def merge_shards(key: str, shard_roots, out_dir, sample_dump: int = 100, seed: i
             have.extend(exs[:max(0, Stats.MAX_EXAMPLES - len(have))])
     writer = SplitWriter(Path(out_dir) / key)
     heap, tie = [], 0
-    for _, _, d, _ in mans:
-        for sp in SplitWriter.SPLITS:
-            with open(d / f"{sp}.jsonl", encoding="utf-8", newline="\n") as f:
-                for line in f:
-                    if not line.strip():
-                        continue
-                    writer.write_line(sp, line)
-                    if sample_dump:
-                        row = json.loads(line)
-                        tie += 1
-                        heapq.heappush(heap, (-h("dump", seed, row["id"]), tie, row))
-                        if len(heap) > sample_dump:
-                            heapq.heappop(heap)
-    info = writer.close()
+    try:
+        for _, _, d, _ in mans:
+            for sp in SplitWriter.SPLITS:
+                with open(d / f"{sp}.jsonl", encoding="utf-8", newline="\n") as f:
+                    for line in f:
+                        if not line.strip():
+                            continue
+                        writer.write_line(sp, line)
+                        if sample_dump:
+                            row = json.loads(line)
+                            tie += 1
+                            heapq.heappush(heap, (-h("dump", seed, row["id"]), tie, row))
+                            if len(heap) > sample_dump:
+                                heapq.heappop(heap)
+        info = writer.close()
+    except BaseException:                                         # a missing / unreadable shard file: no half-written .part-<pid> stays
+        writer.abort()
+        raise
     summary = summarize(stats, None)
     for k in ("backends", "max_chars", "vocab_size", "vocab_path", "raw_files", "provenance", "row_source", "row_license"):
         if k in first:

@@ -98,8 +98,11 @@ BASE_NOT_COVERED = [
     "one v42 question).  The thresholds (13 / 40 / 20) were left as they are because false positives cannot be measured without the real rows.  "
     "The converse also holds: a template phrase that is itself an eval text of 40+ characters flags EVERY row that contains it, so read "
     "rows_flagged_whole_item per dataset in the Colab report (section 2, and registry.json decontam.rows_flagged_whole_item_by_dataset) before trusting the drop counts.",
-    "Rows that import numpy / pandas / sympy are dropped by the sandbox (its allowed imports are the nine modules of the model's executor): a yield "
-    "loss, not a safety issue.",
+    "Rows that import numpy / pandas / sympy are dropped by the sandbox (its allowed imports are the nine modules of the model's executor), and so are "
+    "rows that use a name that is not on the frozen list of its module (deny by default: functools.wraps / update_wrapper / singledispatch, "
+    "collections.namedtuple, the imports that statistics or fractions merely re-export, ...; 44 names of the nine modules on Python 3.12, the table is in "
+    "README_JA.md), rows that rebind or pass around the name of an imported module, and rows with a string inside a type annotation: a yield loss, not a "
+    "safety issue; how many rows this costs was not measured on real data.",
 ]
 
 
@@ -1159,13 +1162,31 @@ def _convert_ck(cfg: Cfg):
     return convert.Checks(vocab_path=str(cfg.vocab_file), max_chars=cfg.max_chars, run_code=False, use_external=False)
 
 
-SANDBOX_INFRA_REJECT_PREFIXES = ("sandbox_failed:crash", "sandbox_failed:spawn", "sandbox_failed:checks_error")
+SANDBOX_INFRA_REJECT_CATEGORIES = ("crash", "spawn", "checks_error")
 
 
 def sandbox_infrastructure_rejects(man: dict) -> Dict[str, int]:
-    """Reject reasons of a manifest that say the SANDBOX failed (it could not start a child, the child ended without a result, the checks module
-    raised) as opposed to the code under test being wrong / slow / refused.  A balanced manifest hides them: every such row is counted as a reject."""
-    return {k: v for k, v in (man.get("rejects") or {}).items() if str(k).startswith(SANDBOX_INFRA_REJECT_PREFIXES)}
+    """Reject reasons of a manifest that say the SANDBOX failed (it could not start a child, the checks module raised, and - in OLD round-3 manifests
+    only - 'the child ended without a result' as category 'crash') as opposed to the code under test being wrong / slow / refused.  A balanced manifest
+    hides them: every such row is counted as a reject.
+    The key is 'sandbox_failed:<category>[:detail]' and the category is matched EXACTLY (field 2 of the key, like convert.sandbox_reason_is_infrastructure),
+    not as a text prefix: 'sandbox_failed:crashy_x' is not a sandbox failure.  'sandbox_failed:code_crash:returncode=N' is NOT one either: since round 4
+    a child that ended without a result line is 'code_crash' in a NEW manifest when a canary run in a fresh child passed right afterwards (a per-row
+    reject made by convert.Checks.run_python; it is counted, visible in the report, and the run stops on its own when there are too many of them),
+    and when the canary fails too the converter stops (SandboxUnavailable) instead of writing any reject.  So 'crash' and 'spawn' can only still appear in
+    a manifest written by the round-3 converter, which is exactly what this check refuses to accept."""
+    return {k: v for k, v in (man.get("rejects") or {}).items() if _sandbox_reject_category(k) in SANDBOX_INFRA_REJECT_CATEGORIES}
+
+
+def _sandbox_reject_category(key) -> Optional[str]:
+    """'sandbox_failed:<category>[:detail]' -> <category> (field 2 of the key); None for any other reject key."""
+    parts = str(key).split(":", 2)
+    return parts[1] if len(parts) >= 2 and parts[0] == "sandbox_failed" else None
+
+
+def sandbox_code_crash_rejects(man: dict) -> Dict[str, int]:
+    """Rows whose own code killed the sandbox child ('sandbox_failed:code_crash:returncode=N'): rejected one by one, counted, not a sandbox failure."""
+    return {k: v for k, v in (man.get("rejects") or {}).items() if _sandbox_reject_category(k) == "code_crash"}
 
 
 def check_sandbox_backend(key: str, man: dict, cfg: Cfg) -> None:
@@ -1176,6 +1197,11 @@ def check_sandbox_backend(key: str, man: dict, cfg: Cfg) -> None:
             "; ".join(f"{k} x {v:,}" for k, v in sorted(infra.items(), key=lambda kv: -kv[1])[:5]) + f"): the python rows that should have been verified are missing "
             f"from the counts although the bookkeeping is balanced.  Fix the machine (free space in /tmp, the 'nobody' user, memory) and convert this dataset again "
             f"(move {cfg.conv_dir(key)} and its Drive copy aside first, nothing is overwritten)")
+    crashed = sandbox_code_crash_rejects(man)
+    if crashed:                                                    # visible, not hidden in the reject table: the converter itself stops when there are too many
+        named = "; ".join("%s x %s" % (k, format(v, ",")) for k, v in sorted(crashed.items(), key=lambda kv: -kv[1])[:3])
+        cfg.log(f"  {key}: {sum(crashed.values()):,} row(s) were rejected because their OWN code killed the sandbox child ({named}); a trivial canary run "
+                f"passed each time, so this is not a sandbox failure.  Counted in the manifest and the report.")
     if key != "coding" or not cfg.run_sandbox:
         return
     b = man.get("backends") or {}
@@ -2136,7 +2162,10 @@ def render_report(reg: dict, cfg: Cfg) -> str:
         py = cv.get("python")
         if py:
             L.append(f"- python行: 実行して保存出力と一致した（検証済みの）行は {_n(py['rows_kept_stored_output_equals_sandbox'])} 行だけです。実行はできたが比べる保存出力が無かった行 "
-                     f"{_n(py['ran_in_sandbox_but_had_no_stored_output'])} 行は「検証済み」として残さず、数だけ記録しました。")
+                     f"{_n(py['ran_in_sandbox_but_had_no_stored_output'])} 行は「検証済み」として残さず、数だけ記録しました。"
+                     f"コードそのものが実行用の子プロセスを落とした行（`sandbox_failed:code_crash:returncode=N`。たとえば入れ子の深すぎる map の連鎖でスタックが溢れるもの）は "
+                     f"{_n(py.get('rows_rejected_code_crash') or 0)} 行で、1行ずつ除外して数えています（直後に簡単なコードを動かして子プロセスが無事に動くことを確かめているので、"
+                     "サンドボックスの故障ではありません。故障のときは変換が止まります。なお、1回の変換で50行を超える、または実行した行の2%を超えるときも止まります）。")
         if cv.get("question_types"):
             L.append(f"- JaQuAD の質問タイプ（変換に届いた行）: {cv['question_types']}。「Multiple sentence reasoning」と「Ambiguous」は証拠が1文に収まらない・答えが定まらないので除外しています。")
         if cv.get("arith_error_rate"):

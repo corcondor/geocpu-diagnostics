@@ -413,6 +413,8 @@ class TestEndToEnd(unittest.TestCase):
         self.assertIn("T8 code/explanation form probe", text)
         self.assertIn("行単位。dev / heldout をグループ独立の評価として使わないでください", text)      # the four synthetic datasets
         self.assertIn("検証済み", text)
+        self.assertIn("sandbox_failed:code_crash:returncode=N", text)                  # round 4: rows whose code killed the child are counted and explained in the report
+        self.assertIn("サンドボックスの故障ではありません", text)
         self.assertIn("見つかる確率は計算上", text)
         self.assertIn("真のJaccard 0.8 の組で約93%", text)
         self.assertIn(P.HOLD_DIRNAME, text)
@@ -1379,6 +1381,45 @@ class TestUnits(unittest.TestCase):
         self.assertIn("sandbox_failed:checks_error:SandboxError x 2", str(cm.exception))
         with self.assertRaises(P.StepFailed):                                                 # also for a run without the sandbox switch / another dataset's manifest
             P.check_sandbox_backend("jaquad", two, P.Cfg(root="/r", work="/w", run_sandbox=False))
+
+    def test_the_second_net_matches_the_category_exactly_and_lets_code_crash_rows_through(self):
+        # round 4 (F3): the net was a bare str.startswith, so 'sandbox_failed:crashy_x' was flagged; (F1) 'sandbox_failed:code_crash:returncode=N' is a row whose
+        # OWN code killed the child (a canary passed): counted and shown, never a stop
+        def flagged(*keys):
+            return P.sandbox_infrastructure_rejects({"rejects": {k: 3 for k in keys}})
+        for key in ("sandbox_failed:crash", "sandbox_failed:crash:spawn:OSError: [Errno 28] No space left on device", "sandbox_failed:crash:returncode=-9:",
+                    "sandbox_failed:spawn", "sandbox_failed:spawn:x", "sandbox_failed:checks_error", "sandbox_failed:checks_error:SandboxError"):
+            self.assertEqual(flagged(key), {key: 3}, key)
+        for key in ("sandbox_failed:crashy_x", "sandbox_failed:crashy_x:detail", "sandbox_failed:crash_report", "sandbox_failed:spawning", "sandbox_failed:spawn_x:y",
+                    "sandbox_failed:checks_errors", "sandbox_failed:checks_error_x:y", "sandbox_failed:code_crash", "sandbox_failed:code_crash:returncode=-11",
+                    "sandbox_failed:code_crash:returncode=3221225725", "sandbox_failed:exception:crash: spawn", "sandbox_failed:timeout:5.0s",
+                    "sandbox_failed:static:import:os", "crash:spawn", "static:crash", "sandbox_failed:", "sandbox_failed", "", "no_stored_output_to_corroborate"):
+            self.assertEqual(flagged(key), {}, key)
+        self.assertEqual(flagged("sandbox_failed:code_crash:returncode=-11", "sandbox_failed:crashy_x", "sandbox_failed:spawn:x", "sandbox_failed:crash:returncode=-9:"),
+                         {"sandbox_failed:spawn:x": 3, "sandbox_failed:crash:returncode=-9:": 3})
+        self.assertEqual(P.sandbox_infrastructure_rejects({}), {})
+        self.assertEqual(P.sandbox_infrastructure_rejects({"rejects": None}), {})
+
+    def test_code_crash_rows_pass_the_check_and_are_logged_but_a_real_failure_next_to_them_still_stops(self):
+        logs = []
+        cfg = P.Cfg(root="/r", work="/w", only=("coding",), require_os_containment=False, log=logs.append)
+        base = {"backends": {"sandbox": C.SANDBOX_BACKEND, "sandbox_run_as": "nobody"}}
+        crash = {"sandbox_failed:code_crash:returncode=-11": 4, "sandbox_failed:code_crash:returncode=3221225725": 2, "sandbox_failed:timeout:5.0s": 1}
+        self.assertEqual(P.sandbox_code_crash_rejects(dict(base, rejects=crash)), {"sandbox_failed:code_crash:returncode=-11": 4,
+                                                                                    "sandbox_failed:code_crash:returncode=3221225725": 2})
+        P.check_sandbox_backend("coding", dict(base, rejects=crash), cfg)                       # no StepFailed: 7a / 7b go on
+        self.assertEqual(len(logs), 1)
+        self.assertIn("6 row(s)", logs[0])                                                         # the count is visible in the 7a / 7b output ...
+        self.assertIn("sandbox_failed:code_crash:returncode=-11 x 4", logs[0])                    # ... with the reason (greppable)
+        self.assertIn("not a sandbox failure", logs[0])
+        del logs[:]
+        P.check_sandbox_backend("coding", dict(base, rejects={"sandbox_failed:timeout:5.0s": 1}), cfg)
+        self.assertEqual(logs, [])                                                                  # nothing to say without them
+        with self.assertRaises(P.StepFailed) as cm:                                                 # a real infrastructure reject next to them still fails, and only it is named
+            P.check_sandbox_backend("coding", dict(base, rejects=dict(crash, **{"sandbox_failed:spawn:OSError": 2})), cfg)
+        self.assertIn("2 row(s)", str(cm.exception))
+        self.assertIn("sandbox_failed:spawn:OSError x 2", str(cm.exception))
+        self.assertNotIn("code_crash", str(cm.exception))
 
     def _balanced_manifest_with(self, rejects):
         return {"balanced": True, "n_in": 10, "n_out": 4, "reject_total": 6, "limit": None, "rejects": rejects, "splits": {}, "files": {},
