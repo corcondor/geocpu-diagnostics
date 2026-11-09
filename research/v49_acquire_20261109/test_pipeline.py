@@ -423,6 +423,10 @@ class TestEndToEnd(unittest.TestCase):
         self.assertIn("丸ごと入っていた行", text)                                        # whole eval items (templated items that differ only in digits) are counted apart
         self.assertIn("データセット別の丸ごと一致", text)                                  # ... per dataset, with the warning to read it before trusting the drop counts
         self.assertIn("この行数を読んでから除外数を信じてください", text)
+        self.assertIn("英語（ASCII文字だけの断片）の扱い", text)                           # round 8: the ASCII rule, what it changed (dropped by a 40+ character run / kept) and its limit
+        self.assertIn("短いASCIIの断片にしか一致せず", text)
+        self.assertIn("英語の評価文が40文字より短いと", text)
+        self.assertIn("ASCII文字だけの13文字は、同じ評価文の40文字以上が続けて一致したときだけ数えます", text)
         self.assertIn("13〜39文字の評価文は13文字の断片でしか照合しない", text)            # the band between 'shorter than 13' and the 40-character whole items
         self.assertIn("13 to 39 normalised characters", text)
         self.assertNotIn("行 - 行", text)                                              # ... with a real number, not a dash
@@ -734,6 +738,20 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(sum(by.values()), reg["decontam"]["rows_flagged_whole_item"])
         self.assertTrue(set(by) <= set(reg["datasets"]))
         self.assertTrue(any("13 to 39 normalised characters" in x and "rows_flagged_whole_item" in x for x in reg["not_covered"]))
+        dc = reg["decontam"]                                                              # round 8: ASCII-only 13-grams count only inside a 40+ character run of ONE eval text
+        self.assertEqual(dc["ascii_run_chars"], 40)
+        self.assertEqual(reg["params"]["ascii_run_chars"], 40)
+        self.assertEqual(reg["eval"]["index"]["ascii_run_chars"], 40)
+        self.assertGreater(reg["eval"]["index"]["ascii_windows"], 0)
+        self.assertEqual(sum(dc["rows_flagged_ascii_run_by_dataset"].values()), dc["rows_flagged_ascii_run"])
+        self.assertEqual(sum(dc["rows_not_flagged_ascii_short_by_dataset"].values()), dc["rows_not_flagged_ascii_short"])
+        self.assertTrue(set(dc["rows_flagged_ascii_run_by_dataset"]) | set(dc["rows_not_flagged_ascii_short_by_dataset"]) <= set(reg["datasets"]))
+        self.assertLessEqual(dc["rows_flagged_ascii_run"], dc["rows_flagged"])
+        self.assertGreaterEqual(dc["rows_flagged_legacy_13gram"], dc["rows_flagged"])               # the old rule never flags fewer rows
+        self.assertEqual(dc["rows_flagged_legacy_13gram"] - dc["rows_flagged"], dc["rows_not_flagged_ascii_short"])      # exactly the rows that only short ASCII grams flagged
+        self.assertIsInstance(dc["ascii_short_top"], list)
+        self.assertIsInstance(dc["ascii_short_examples"], list)
+        self.assertTrue(any("all-ASCII" in x and "40 normalised characters" in x and "KNOWN LIMIT" in x for x in reg["not_covered"]))
         self.assertEqual(reg["params"]["near_estimate_cut"], 0.75)
         self.assertEqual(reg["params"]["minhash_k"], 128)
         self.assertEqual(reg["params"]["minhash_detection_probability"]["0.8"], 0.933)

@@ -1432,6 +1432,14 @@ _STRIP_DIGITS_WS = re.compile(r"[\d\s]+")
 
 
 WHOLE_ITEM_MIN_CHARS = 40          # an eval text of at least this many normalised characters is a whole item: a row that contains it is flagged
+# A 13-gram whose 13 characters are ALL ASCII does not flag a row by itself.  For Japanese 13 characters are about a sentence; for English the
+# normalised text has no spaces, so 13 characters are only 2-3 words ('smagazinepubl' = "woman's magazine published") and ordinary phrases collide
+# by accident (measured on the real Colab run: 76,288 of 78,864 HotpotQA rows were dropped by such collisions with the validation QUESTIONS, and no
+# question was copied).  An ASCII gram counts only inside a run of consecutive matching ASCII grams that covers at least ASCII_RUN_CHARS
+# normalised characters of ONE eval text (= ASCII_RUN_CHARS - 13 + 1 = 28 consecutive grams).  A gram with any non-ASCII character keeps the
+# 13-character rule exactly as it was.  Known limit: an ENGLISH eval text shorter than 40 normalised characters, copied verbatim, is no longer
+# flagged (the whole-item rule needs 40 too).
+ASCII_RUN_CHARS = 40
 
 
 def normalize_for_overlap(text: str) -> str:
@@ -1448,11 +1456,18 @@ class EvalIndex:
     persisted or reported (shingle strings are); the chance that one false match occurs in a whole run is ~1e-4.
     Per source: items, texts, indexable_texts (>= n normalised characters), shingles (distinct shingles the source CONTAINS, summed over its
     texts - not only the ones new to the index: a source that repeats another one still holds its own), new_shingles (the ones it added).
-    `whole`: the eval texts of >= whole_min_chars normalised characters, keyed by the hash of their first n-gram (see whole_matches)."""
+    `whole`: the eval texts of >= whole_min_chars normalised characters, keyed by the hash of their first n-gram (see whole_matches).
+    `ascii_windows`: the hashes of every window of ascii_run_chars (40) consecutive normalised characters that are ALL ASCII, of every eval text
+    (a window never crosses from one eval text into another, so a hit means 'these 40 characters sit verbatim in ONE eval text'); decontaminate
+    uses them to tell a copied English passage from two-word phrases that merely collide.  ascii_run_chars <= ngram switches this off (every
+    ASCII gram then flags a row by itself, the rule before the HotpotQA measurement)."""
 
-    def __init__(self, ngram: int = 13, whole_min_chars: int = WHOLE_ITEM_MIN_CHARS):
+    def __init__(self, ngram: int = 13, whole_min_chars: int = WHOLE_ITEM_MIN_CHARS, ascii_run_chars: int = ASCII_RUN_CHARS):
         self.ngram = ngram
         self.whole_min_chars = max(int(whole_min_chars), ngram)
+        self.ascii_run_chars = max(int(ascii_run_chars), ngram)
+        self.ascii_windows: set = set()
+        self._ascii_stretch = re.compile(r"[\x00-\x7f]{%d,}" % self.ascii_run_chars)       # a maximal all-ASCII stretch long enough for one window
         self.whole: Dict[int, List[Tuple[int, int]]] = {}       # first-shingle hash -> [(last-shingle hash, doc id)]
         self._whole_seen: set = set()
         self.hashes: set = set()
@@ -1477,6 +1492,11 @@ class EvalIndex:
             return 0
         st["indexable_texts"] += 1
         hset = {hash(norm[i:i + n]) for i in range(len(norm) - n + 1)}
+        w = self.ascii_run_chars
+        if w > n and len(norm) >= w:                      # every all-ASCII window of w characters (see decontaminate: ASCII grams count only in runs)
+            for m in self._ascii_stretch.finditer(norm):
+                seg = m.group()
+                self.ascii_windows.update(hash(seg[i:i + w]) for i in range(len(seg) - w + 1))
         if (label, item) != self._cur_key:                # texts of ONE item (question + choices) count once per shingle
             self._cur_key, self._cur_seen = (label, item), set()
         fresh = hset - self._cur_seen
@@ -1527,13 +1547,15 @@ class EvalIndex:
     def stats(self) -> dict:
         return {"ngram": self.ngram, "distinct_shingles": len(self.hashes), "normalised_texts": len(self.docs), "per_source": self.per_source,
                 "shingles_in_several_eval_items": len(self.eval_df), "max_eval_items_per_shingle": max(self.eval_df.values(), default=1),
-                "whole_item_texts": len(self._whole_seen), "whole_item_min_chars": self.whole_min_chars}
+                "whole_item_texts": len(self._whole_seen), "whole_item_min_chars": self.whole_min_chars,
+                "ascii_run_chars": self.ascii_run_chars, "ascii_windows": len(self.ascii_windows)}
 
 
 def build_eval_index(sources: Iterable[Union[EvalSource, str, Tuple[str, Iterable[str]]]], *, ngram: int = 13,
-                     text_keys: Sequence[str] = EVAL_TEXT_KEYS, progress: Optional[ProgressCB] = None) -> EvalIndex:
+                     text_keys: Sequence[str] = EVAL_TEXT_KEYS, progress: Optional[ProgressCB] = None,
+                     ascii_run_chars: int = ASCII_RUN_CHARS) -> EvalIndex:
     """EvalIndex over EvalSource objects (find_eval_files(...).sources), plain file paths, or (label, iterable of texts) pairs."""
-    idx = EvalIndex(ngram)
+    idx = EvalIndex(ngram, ascii_run_chars=ascii_run_chars)
     for src in sources:
         if isinstance(src, tuple) and len(src) == 2 and not isinstance(src[0], EvalSource) and not isinstance(src[1], str):
             label, texts = src
@@ -1565,24 +1587,48 @@ def decontaminate(rows: Iterable[Any], index: EvalIndex, *, text_fn: Optional[Ca
     flags a row.  A row is flagged when it shares >= min_shared non-boilerplate shingles, OR when it contains a WHOLE eval text of
     >= index.whole_min_chars (40) normalised characters verbatim (rows_flagged_whole_item): eval items that differ only in digits
     (T1, T6, the v48 unseen_eval sets) share every shingle, so all their shingles are boilerplate by the df rule and a verbatim copy
-    of a whole item would otherwise pass; copying a template phrase alone (a part of the item) is still only boilerplate.  Two limits of
-    this rule that were measured and are NOT fixed (the thresholds 13 / 40 / 20 stay: false positives cannot be measured without the
-    real rows): an eval text of 13-39 normalised characters whose 13-grams are ALL boilerplate can be copied verbatim without being
-    flagged (the v33 prompt template, 50 items, and one v42 question), and a template phrase that is itself an eval text of 40+
-    characters flags EVERY row that contains it - read rows_flagged_whole_item per dataset before trusting the drop counts.
+    of a whole item would otherwise pass; copying a template phrase alone (a part of the item) is still only boilerplate.
+    ASCII RULE (round 8).  A shingle whose 13 characters are ALL ASCII does not count by itself: for English the normalised text has no
+    spaces, so 13 characters are 2-3 words ('smagazinepubl', 'thmilitarypol') and ordinary phrases collide by accident (the real Colab run
+    dropped 76,288 of 78,864 HotpotQA rows that way, none of them a copy of a validation question).  An ASCII shingle counts only when it
+    lies inside a RUN of consecutive matching ASCII shingles that covers >= index.ascii_run_chars (ASCII_RUN_CHARS = 40) normalised
+    characters of ONE eval text (28 consecutive shingles; checked against EvalIndex.ascii_windows, so a run that mixes eval items does not
+    count).  A shingle with any non-ASCII character is judged exactly as before (13 characters, df rule), per shingle: a row that mixes
+    Japanese scaffolding with English passages is flagged by a copied Japanese 13-gram and not by accidentally shared English phrases.
+    The whole-item rule and the boilerplate exemption are unchanged.  Known limits: an ENGLISH (all-ASCII) eval text of 13-39 normalised
+    characters copied verbatim is no longer flagged (it was flagged before; the whole-item rule needs 40 too); eval texts of 13-39
+    characters whose 13-grams are ALL boilerplate can be copied verbatim without being flagged (the v33 prompt template, 50 items, and one
+    v42 question); a template phrase that is itself an eval text of 40+ characters flags EVERY row that contains it - read
+    rows_flagged_whole_item per dataset before trusting the drop counts (the thresholds 13 / 40 / 20 stay as they are: false positives
+    cannot be measured without the real rows).  The normaliser deletes every digit, so digit-only eval text is not
+    indexed at all (before and after this rule).
     One streaming pass.  Returns n_rows, rows_with_any_shared_shingle, rows_boilerplate_only, rows_flagged, flagged_positions (stream
     positions, to drop with drop_flagged), shared_count_hist, boilerplate {n_shingles, top[20]: shingle, eval_items, rows},
-    real_shingles_top (the non-boilerplate shingles that most rows share: a big number means one eval text is copied widely),
+    real_shingles_top (the counted non-boilerplate shingles that most rows share: a big number means one eval text is copied widely),
     examples (<= max_examples: id, shared shingles, the row's first characters, where the shingle sits in the eval text) and the index
-    stats.  Limits: exact digit-stripped substring overlap only - paraphrases, translations and re-worded numbers are NOT caught (see
-    semantic_neighbors for a small look-alike search)."""
+    stats.  What the ASCII rule changed, measured in the same pass: rows_flagged_ascii_run (+ ascii_run_positions: flagged rows that hold
+    >= 1 counted shingle from a 40+ character ASCII run), rows_not_flagged_ascii_short (+ ascii_short_positions: rows the old
+    13-characters-for-everything rule would flag and this one keeps because they matched only short ASCII shingles),
+    rows_ascii_short_only (kept rows that matched a non-boilerplate short ASCII shingle and nothing counted; equal to the previous number
+    when min_shared is 1), rows_flagged_legacy_13gram (how many rows the old rule would have flagged), ascii_short_top and
+    ascii_short_examples (what those rows matched, with find_sources).  Limits: exact digit-stripped substring overlap only -
+    paraphrases, translations and re-worded numbers are NOT caught (see semantic_neighbors for a small look-alike search)."""
     text_fn, id_fn = text_fn or default_text, id_fn or default_id
     ng, ev, eval_df = index.ngram, index.hashes, index.eval_df
-    df: collections.Counter = collections.Counter()
+    win_chars = index.ascii_run_chars
+    run_grams = win_chars - ng + 1                     # consecutive ASCII shingles that make a run of win_chars characters
+    legacy = win_chars <= ng                           # run length == shingle length: every ASCII shingle flags by itself (the rule before round 8)
+    awin = index.ascii_windows
+    df: collections.Counter = collections.Counter()                  # rows in which a shingle matched at all (boilerplate list)
+    real_df: collections.Counter = collections.Counter()             # rows in which a shingle was counted (real_shingles_top)
+    short_df: collections.Counter = collections.Counter()            # rows in which a NON-boilerplate shingle matched only as a short ASCII shingle
     shingle_text: Dict[int, str] = {}
     hits: Dict[int, Tuple[str, Tuple[int, ...], str]] = {}
     whole_pos: Dict[int, Tuple[str, int, str]] = {}          # position -> (source, item, whole eval text) of rows that contain a whole eval item
-    n_rows = n_short = rows_any = 0
+    run_pos: set = set()                                     # FLAGGED rows with >= 1 counted shingle from an ASCII run
+    short_pos: List[int] = []                                # rows kept only because their matches were short ASCII shingles (old rule: flagged)
+    short_pending: List[Tuple[int, str, Tuple[int, ...], str]] = []   # <= max_examples of them: (position, id, first shingles, row prefix)
+    n_rows = n_short = rows_any = rows_ascii_short_only = rows_legacy = 0
     tick = _Ticker(progress, "decontaminate", progress_every)
     for pos, row in enumerate(rows):
         tick.tick()
@@ -1592,28 +1638,80 @@ def decontaminate(rows: Iterable[Any], index: EvalIndex, *, text_fn: Optional[Ca
         if len(norm) < ng:
             n_short += 1
             continue
-        hset = {hash(norm[i:i + ng]) for i in range(len(norm) - ng + 1)}
+        hl = [hash(norm[i:i + ng]) for i in range(len(norm) - ng + 1)]
+        hset = set(hl)
         inter = hset & ev
         if not inter:
             continue
         rows_any += 1
-        first: Dict[int, int] = {}
-        for i in range(len(norm) - ng + 1):
-            h = hash(norm[i:i + ng])
-            if h in inter and h not in first:
-                first[h] = i
-        real = []
+        first: Dict[int, int] = {}                       # matching shingle -> position of its first occurrence
+        mpos: List[int] = []                             # positions of all matching shingles, ascending
+        for i, h in enumerate(hl):
+            if h in inter:
+                mpos.append(i)
+                if h not in first:
+                    first[h] = i
+        all_ascii = norm.isascii()
+        ascii_h = set()                                  # matching shingles whose 13 characters are all ASCII
+        counted = set()                                  # matching shingles that may flag the row: non-ASCII ones, and ASCII ones inside a verified run
+        for h, i in first.items():
+            if all_ascii or norm[i:i + ng].isascii():
+                ascii_h.add(h)
+            else:
+                counted.add(h)
+        run_h: set = set()
+        if ascii_h and legacy:
+            counted |= ascii_h
+        elif ascii_h:
+            apos = [i for i in mpos if hl[i] in ascii_h]
+            if len(apos) >= run_grams:                   # a run is at least run_grams consecutive matching ASCII shingles
+                runs, a, b = [], apos[0], apos[0]
+                for i in apos[1:]:
+                    if i == b + 1:
+                        b = i
+                    else:
+                        if b - a + 1 >= run_grams:
+                            runs.append((a, b))
+                        a = b = i
+                if b - a + 1 >= run_grams:
+                    runs.append((a, b))
+                for a, b in runs:
+                    covered_to = a - 1
+                    for s in range(a, b - run_grams + 2):        # a window of win_chars characters starting at s: its run_grams shingles are all in the run
+                        if hash(norm[s:s + win_chars]) in awin:       # ... and it sits verbatim in ONE eval text
+                            for j in range(max(s, covered_to + 1), s + run_grams):
+                                run_h.add(hl[j])
+                            covered_to = s + run_grams - 1
+            counted |= run_h
+        short_h = ascii_h - counted                      # matched ASCII shingles that are not part of a 40+ character run
         for h in inter:
             df[h] += 1
             if h not in shingle_text:
                 shingle_text[h] = norm[first[h]:first[h] + ng]
-            if eval_df.get(h, 1) < boilerplate_eval_df:
-                real.append(h)
+        real = [h for h in counted if eval_df.get(h, 1) < boilerplate_eval_df]
+        short_real = [h for h in short_h if eval_df.get(h, 1) < boilerplate_eval_df]      # the old rule counted these too
+        for h in real:
+            real_df[h] += 1
+        for h in short_real:
+            short_df[h] += 1
         whole = index.whole_matches(norm, hset, inter)
         if whole:
             whole_pos[pos] = whole[0]
+        new_flag = len(real) >= min_shared or bool(whole)
+        old_flag = len(real) + len(short_real) >= min_shared or bool(whole)
+        if old_flag:
+            rows_legacy += 1                             # what the rule 'every 13-gram counts' would have done with this row
         if real or whole:
             hits[pos] = (id_fn(row, pos), tuple(sorted(real, key=lambda h: shingle_text[h])), text[:row_prefix_chars])
+            if new_flag and not run_h.isdisjoint(real):
+                run_pos.add(pos)
+        elif short_real:
+            rows_ascii_short_only += 1
+        if old_flag and not new_flag:
+            short_pos.append(pos)
+            if len(short_pending) < max_examples:
+                lead = tuple(h for h in first if h in short_h and eval_df.get(h, 1) < boilerplate_eval_df)[:3]
+                short_pending.append((pos, id_fn(row, pos), lead, text[:row_prefix_chars]))
     tick.done()
     boiler = {h for h in df if eval_df.get(h, 1) >= boilerplate_eval_df}
     flagged: Dict[int, List[int]] = {}
@@ -1633,17 +1731,28 @@ def decontaminate(rows: Iterable[Any], index: EvalIndex, *, text_fn: Optional[Ca
         probe = shingles[0] if shingles else whole_text[:ng]
         examples.append({"position": pos, "id": rid, "n_shared_shingles": len(shingles), "shared_shingles": shingles[:3],
                          "contains_whole_eval_item": pos in whole_pos, "row_prefix": prefix, "eval_matches": index.find_sources(probe)})
+    short_examples = []
+    for pos, rid, lead, prefix in short_pending:
+        sh = [shingle_text[h] for h in lead]
+        short_examples.append({"position": pos, "id": rid, "shared_short_ascii_shingles": sh, "row_prefix": prefix,
+                               "eval_matches": index.find_sources(sh[0]) if sh else []})
     top = sorted(((shingle_text[h], eval_df.get(h, 1), df[h]) for h in boiler), key=lambda t: (-t[2], t[0]))
-    real_top = sorted(((shingle_text[h], eval_df.get(h, 1), d) for h, d in df.items() if h not in boiler), key=lambda t: (-t[2], t[0]))
+    real_top = sorted(((shingle_text[h], eval_df.get(h, 1), d) for h, d in real_df.items()), key=lambda t: (-t[2], t[0]))
+    short_top = sorted(((shingle_text[h], eval_df.get(h, 1), d) for h, d in short_df.items()), key=lambda t: (-t[2], t[0]))
     return {"n_rows": n_rows, "n_rows_shorter_than_ngram": n_short, "ngram": ng, "boilerplate_eval_df": boilerplate_eval_df, "min_shared": min_shared,
-            "rows_with_any_shared_shingle": rows_any, "rows_boilerplate_only": rows_any - any_real,
+            "rows_with_any_shared_shingle": rows_any, "rows_boilerplate_only": rows_any - any_real - rows_ascii_short_only,
             "rows_with_real_overlap": any_real, "rows_flagged": len(flagged), "flagged_positions": sorted(flagged),
             "rows_flagged_whole_item": len(whole_pos), "whole_item_positions": sorted(whole_pos), "whole_item_min_chars": index.whole_min_chars,
+            "ascii_run_chars": win_chars, "rows_flagged_ascii_run": len(run_pos), "ascii_run_positions": sorted(run_pos),
+            "rows_not_flagged_ascii_short": len(short_pos), "ascii_short_positions": short_pos, "rows_ascii_short_only": rows_ascii_short_only,
+            "rows_flagged_legacy_13gram": rows_legacy,
             "shared_count_hist": {k: hist[k] for k in ("1", "2-4", "5-19", "20+", "whole_item_only")},
             "boilerplate": {"n_shingles": len(boiler), "top": [{"shingle": sh, "eval_items": e, "rows": d} for sh, e, d in top[:20]]},
             "real_shingles_top": [{"shingle": sh, "eval_items": e, "rows": d} for sh, e, d in real_top[:10]],
-            "examples": examples, "eval_index": index.stats(),
-            "limits": "exact digit-stripped 13-gram overlap only; paraphrases/translations not detected"}
+            "ascii_short_top": [{"shingle": sh, "eval_items": e, "rows": d} for sh, e, d in short_top[:10]],
+            "examples": examples, "ascii_short_examples": short_examples, "eval_index": index.stats(),
+            "limits": "exact digit-stripped 13-gram overlap only (a shingle of 13 ASCII characters counts only inside a run of "
+                      f"{win_chars}+ matching characters of one eval text); paraphrases/translations not detected"}
 
 
 def drop_flagged(rows: Iterable[Any], flagged_positions: Iterable[int]) -> Iterator[Any]:

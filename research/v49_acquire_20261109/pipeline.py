@@ -98,6 +98,13 @@ BASE_NOT_COVERED = [
     "one v42 question).  The thresholds (13 / 40 / 20) were left as they are because false positives cannot be measured without the real rows.  "
     "The converse also holds: a template phrase that is itself an eval text of 40+ characters flags EVERY row that contains it, so read "
     "rows_flagged_whole_item per dataset in the Colab report (section 2, and registry.json decontam.rows_flagged_whole_item_by_dataset) before trusting the drop counts.",
+    "ENGLISH (all-ASCII) text is matched differently from Japanese: 13 squashed characters of English are only 2-3 words, so ordinary phrases collided by "
+    "accident (the first real run dropped 76,288 of 78,864 HotpotQA rows that way and no validation question was copied).  A 13-gram whose 13 characters are ALL "
+    "ASCII now flags a row only inside a run of consecutive matching ASCII 13-grams that covers at least 40 normalised characters (28 grams) of ONE eval text; "
+    "13-grams with any non-ASCII character (all Japanese) keep the 13-character rule unchanged, judged gram by gram in mixed rows.  KNOWN LIMIT: an English eval "
+    "text shorter than 40 normalised characters, copied verbatim, is NOT flagged any more (the whole-item rule needs 40 characters too), and a copied English "
+    "passage is found only when 40 consecutive normalised characters of it are verbatim.  The normaliser deletes every digit, so a digit-only eval text is "
+    "not indexed at all (before and after this rule).  Read rows_flagged_ascii_run and rows_not_flagged_ascii_short per dataset in the report (section 2).",
     "Rows that import numpy / pandas / sympy are dropped by the sandbox (its allowed imports are the nine modules of the model's executor), and so are "
     "rows that use a name that is not on the frozen list of its module (deny by default: functools.wraps / update_wrapper / singledispatch, "
     "collections.namedtuple, the imports that statistics or fractions merely re-export, ...; 44 names of the nine modules on Python 3.12, the table is in "
@@ -772,7 +779,8 @@ def step_vocab_eval(cfg: Cfg):
                      "index": {"ngram": st["ngram"], "distinct_shingles": st["distinct_shingles"], "per_source": st["per_source"],
                                "shingles_in_several_eval_items": st["shingles_in_several_eval_items"],
                                "max_eval_items_per_shingle": st["max_eval_items_per_shingle"],
-                               "whole_item_texts": st["whole_item_texts"], "whole_item_min_chars": st["whole_item_min_chars"]}},
+                               "whole_item_texts": st["whole_item_texts"], "whole_item_min_chars": st["whole_item_min_chars"],
+                               "ascii_run_chars": st["ascii_run_chars"], "ascii_windows": st["ascii_windows"]}},
             "notes": notes}
     save_state(cfg, "step6b_vocab_eval", info)
     return (f"vocabulary {len(V.chars)} chars from {V.source}; {len(ef.sources)} eval sources + {len(sources) - len(ef.sources)} dev/validation/extra sources, "
@@ -1603,6 +1611,8 @@ def step_filters(cfg: Cfg):
     dc = checks.decontaminate(comb.rows(), index, text_fn=full_text, boilerplate_eval_df=cfg.boilerplate_eval_df, min_shared=cfg.min_shared,
                               max_examples=10, progress=cfg.progress)
     whole_by = dict(collections.Counter(comb.locate(g)[0] for g in dc["whole_item_positions"]))         # before _drop: positions refer to this stream
+    run_by = dict(collections.Counter(comb.locate(g)[0] for g in dc["ascii_run_positions"]))            # flagged by a 40+ character ASCII run
+    short_by = dict(collections.Counter(comb.locate(g)[0] for g in dc["ascii_short_positions"]))        # kept: matched only short ASCII grams (the old rule dropped them)
     per = _drop(alive, reason, comb, dc["flagged_positions"], R_EVAL)
     for k in keys:
         stats[k]["counts"]["after_eval_decontam"] = sum(alive[k])
@@ -1610,6 +1620,11 @@ def step_filters(cfg: Cfg):
     glob: Dict[str, Any] = {"decontam": {"n_rows": dc["n_rows"], "rows_flagged": dc["rows_flagged"], "rows_boilerplate_only": dc["rows_boilerplate_only"],
                                          "rows_flagged_whole_item": dc["rows_flagged_whole_item"], "whole_item_min_chars": dc["whole_item_min_chars"],
                                          "rows_flagged_whole_item_by_dataset": whole_by,
+                                         "ascii_run_chars": dc["ascii_run_chars"], "rows_flagged_ascii_run": dc["rows_flagged_ascii_run"],
+                                         "rows_flagged_ascii_run_by_dataset": run_by, "rows_not_flagged_ascii_short": dc["rows_not_flagged_ascii_short"],
+                                         "rows_not_flagged_ascii_short_by_dataset": short_by, "rows_ascii_short_only": dc["rows_ascii_short_only"],
+                                         "rows_flagged_legacy_13gram": dc["rows_flagged_legacy_13gram"], "ascii_short_top": dc["ascii_short_top"],
+                                         "ascii_short_examples": dc["ascii_short_examples"],
                                          "rows_with_any_shared_shingle": dc["rows_with_any_shared_shingle"], "shared_count_hist": dc["shared_count_hist"],
                                          "boilerplate": dc["boilerplate"], "real_shingles_top": dc["real_shingles_top"], "examples": dc["examples"],
                                          "flagged_by_dataset": per, "ngram": cfg.ngram, "boilerplate_eval_df": cfg.boilerplate_eval_df,
@@ -1617,6 +1632,9 @@ def step_filters(cfg: Cfg):
     cfg.log(f"  decontamination: {dc['rows_flagged']:,} of {dc['n_rows']:,} rows share a {cfg.ngram}-gram with an eval text (or contain a whole eval item of "
             f"{dc['whole_item_min_chars']}+ characters: {dc['rows_flagged_whole_item']:,}, by dataset {whole_by}) and are dropped "
             f"({dc['rows_boilerplate_only']:,} rows shared only phrases that {cfg.boilerplate_eval_df}+ eval items share and are kept); by dataset {per}")
+    cfg.log(f"  ASCII rule: a {cfg.ngram}-gram of pure ASCII counts only inside a run of {dc['ascii_run_chars']}+ matching characters of one eval text: "
+            f"{dc['rows_flagged_ascii_run']:,} dropped rows hold such a run (by dataset {run_by}); {dc['rows_not_flagged_ascii_short']:,} rows that matched only short ASCII "
+            f"{cfg.ngram}-grams are KEPT (by dataset {short_by}); the old rule would have dropped {dc['rows_flagged_legacy_13gram']:,} rows in all")
     # ---- 4. the old corpus (exact, then MinHash): two streaming passes over the old rows, one index of all new rows
     oc = cfg.old_corpus_path
     require(oc.is_file(), f"old corpus not found: {oc}")
@@ -2020,6 +2038,7 @@ def step_finalize(cfg: Cfg):
            "trainable": [k for k in cfg.keys if k not in HOLD_KEYS], "held": [k for k in cfg.keys if k in HOLD_KEYS],
            "params": {"max_chars": cfg.max_chars, "oov_max_frac": convert.OOV_MAX_FRAC, "near_target_jaccard": cfg.near_threshold, "near_estimate_cut": cfg.near_cut,
                       "minhash_k": checks.MinHasher().k, "minhash_bands": checks.MinHashIndex().bands, "ngram": cfg.ngram,
+                      "ascii_run_chars": checks.ASCII_RUN_CHARS, "whole_item_min_chars": checks.WHOLE_ITEM_MIN_CHARS,
                       "minhash_detection_probability": {str(j): round(p, 3) for j, p in detection_probs(checks.MinHasher().k, cfg.near_cut).items()},
                       "boilerplate_eval_df": cfg.boilerplate_eval_df, "min_shared": cfg.min_shared, "split_pct_groups": convert.SPLIT_PCT,
                       "split_hygiene_threshold_estimate": cfg.split_hygiene_threshold, "python_requires_stored_output": not cfg.python_allow_unverified,
@@ -2106,6 +2125,14 @@ def render_report(reg: dict, cfg: Cfg) -> str:
           f"評価問題 {dc['boilerplate_eval_df']} 件以上が共有する定型句だけが一致した {_n(dc['rows_boilerplate_only'])} 行は残しました。"
           f"データセット別: {dc['flagged_by_dataset']}。一致した断片の数の分布: {dc['shared_count_hist']}（1個だけの一致は、よくある言い回しの偶然の一致のことがあります。例は registry.json の decontam.examples）。"
           f"定型句かどうかは「評価問題側で何件が共有しているか」で決めています（学習行側の数ではありません）。1件の評価問題にしかない文は、何行がそれを写していても除外されます。",
+          f"- 英語（ASCII文字だけの断片）の扱い: 英語の13文字は2〜3語にしかならず、ありふれた言い回しが偶然一致するので、ASCIIだけの13文字の断片は単独では行を除外しません。"
+          f"同じ評価文の{dc.get('ascii_run_chars', 40)}文字以上（連続28個の断片）が途切れずに一致したときだけ数えます。日本語など非ASCII文字を含む断片は従来どおり13文字で判定し、"
+          f"混ざった行では断片ごとに判定します。{dc.get('ascii_run_chars', 40)}文字以上の連続一致を含んで除外した行: {_n(dc.get('rows_flagged_ascii_run'))} 行"
+          f"（データセット別 {dc.get('rows_flagged_ascii_run_by_dataset', '記録なし')}）。短いASCIIの断片にしか一致せず、従来の規則なら除外されていたが残した行: "
+          f"{_n(dc.get('rows_not_flagged_ascii_short'))} 行（データセット別 {dc.get('rows_not_flagged_ascii_short_by_dataset', '記録なし')}）。"
+          f"従来の規則での除外数は {_n(dc.get('rows_flagged_legacy_13gram'))} 行でした。残した行がよく一致した短い断片: {dc.get('ascii_short_top', '記録なし')}"
+          f"（例は registry.json の decontam.ascii_short_examples）。限界: 英語の評価文が{dc.get('ascii_run_chars', 40)}文字より短いと、そのまま写した行も除外されません"
+          f"（丸ごとの一致も{dc.get('whole_item_min_chars', 40)}文字以上が条件）。数字は正規化で消えるため、数字だけの評価文は照合の対象外です。",
           f"- 旧コーパスとの重複で除外した行: 完全一致 {oc['exact_dropped_by_dataset']}、近い重複（推定Jaccard {oc['estimate_cut']} 以上）{oc['near_dropped_by_dataset']}。"]
     sh = reg.get("split_hygiene") or {}
     if sh.get("datasets"):
@@ -2179,7 +2206,8 @@ def render_report(reg: dict, cfg: Cfg) -> str:
     L += ["- 重複の判定: 同一データセット内は完全一致→MinHash（{k}置換・5文字断片。推定Jaccard {cut} 以上を重複とみなす。目標の真のJaccard {t} に対し、見つかる確率は計算上 ".format(
         k=pr["minhash_k"], cut=pr["near_estimate_cut"], t=pr["near_target_jaccard"]) + "、".join(f"真のJaccard {j} の組で約{p:.0%}" for j, p in probs.items())
           + "）。JaQuAD と HotpotQA は1つの文章に複数の質問が付くため、質問＋根拠＋答えの部分で比べています。旧コーパスとは行全体で比べています。",
-          "- 評価データとの照合は数字と空白を除いた13文字の完全一致です。言い換えや翻訳は検出できません。13文字に満たない評価文は断片が作れず、その文だけを含む行は見つかりません。"
+          "- 評価データとの照合は数字と空白を除いた13文字の完全一致です（ASCII文字だけの13文字は、同じ評価文の40文字以上が続けて一致したときだけ数えます。英語の13文字は2〜3語で、"
+          "偶然の一致が多すぎるためです。日本語は従来どおりです）。そのため、40文字に満たない英語の評価文をそのまま写した行は見つかりません。言い換えや翻訳は検出できません。13文字に満たない評価文は断片が作れず、その文だけを含む行は見つかりません。"
           "13〜39文字の評価文は13文字の断片でしか照合しないので、その断片がすべて定型句（評価問題20件以上が共有）のときは、そのまま写した行も見つかりません"
           "（別の確認で測った例: v33 のプロンプトの型 50 件と v42 の質問 1 件）。しきい値（13・40・20）は、誤って除外する割合をここでは測れないので変えていません。",
           "- 件数は実行ごとに決まります。同じコードと同じデータなら同じ結果になります（乱数は固定）。", ""]

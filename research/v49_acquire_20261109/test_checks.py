@@ -8,8 +8,10 @@ import io
 import json
 import os
 import random
+import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import zipfile
 
@@ -659,6 +661,438 @@ class TestDecontaminate(unittest.TestCase):
     def test_missing_eval_source_is_an_error(self):
         with self.assertRaises(C.EvalFilesMissing):
             C.build_eval_index(["/nonexistent/path/eval.jsonl"])
+
+
+class Hotpot:
+    """Synthetic HotpotQA-like corpus for TestAsciiRunDecontaminate: validation QUESTIONS (the eval texts) and training rows made of two ~1,500
+    character Wikipedia-style paragraphs.  Questions and paragraphs use DIFFERENT sentence frames and share only word-level vocabulary, so they
+    collide on 2-3 word phrases (13 squashed characters) and, apart from chance, never on a long verbatim stretch.  Deterministic."""
+    ADJ = ("american british french german canadian australian english irish scottish italian spanish japanese russian national royal local old new "
+           "northern southern eastern western central independent annual popular famous early modern classic regional public private professional "
+           "military political cultural historic municipal rural urban coastal mountain").split()
+    NOUN = ("magazine newspaper company university school college station theatre museum library orchestra festival league club band album film "
+            "series novel opera hospital bridge railway airport castle church cathedral village district county council committee "
+            "brigade regiment battalion division squadron corps foundation society institute academy gallery studio network channel").split()
+    VERB = ("published founded established released opened directed produced written built formed organized operated announced elected appointed "
+            "recorded performed broadcast introduced designed funded renamed merged acquired launched presented developed").split()
+    PLACE = ("London Paris Berlin Chicago Boston Toronto Sydney Dublin Edinburgh Madrid Rome Tokyo Moscow Vienna Prague Lisbon Oslo Denver Dallas Seattle "
+             "Phoenix Atlanta Detroit Cleveland Baltimore Manchester Liverpool Leeds Glasgow Cardiff Belfast Montreal Vancouver Melbourne Brisbane Perth "
+             "Auckland Cairo Mumbai Delhi Seoul Beijing Shanghai Hamburg Munich Zurich Geneva Brussels Amsterdam Warsaw Budapest Athens").split()
+    FIRST = ("James Mary John Patricia Robert Jennifer Michael Linda William Elizabeth David Barbara Richard Susan Joseph Jessica Thomas Sarah Charles Karen "
+             "Daniel Nancy Matthew Lisa Anthony Betty Mark Margaret Donald Sandra Steven Ashley Paul Kimberly Andrew Emily Joshua Donna Kenneth Michelle "
+             "Kevin Carol Brian Amanda George Melissa Edward Deborah Ronald Stephanie Timothy Rebecca Jason Laura Jeffrey Helen Ryan Sharon").split()
+    LAST = ("Smith Johnson Williams Brown Jones Garcia Miller Davis Rodriguez Martinez Hernandez Lopez Gonzalez Wilson Anderson Thomas Taylor Moore Jackson "
+            "Martin Lee Perez Thompson White Harris Sanchez Clark Ramirez Lewis Robinson Walker Young Allen King Wright Scott Torres Nguyen Hill Flores "
+            "Green Adams Nelson Baker Hall Rivera Campbell Mitchell Carter Roberts Gomez Phillips Evans Turner Diaz Parker Cruz Edwards Collins Reyes").split()
+    PROF = ("actor director footballer politician novelist composer painter singer architect journalist engineer physician economist playwright "
+            "photographer conductor historian lawyer").split()
+    NATION = "American British French German Canadian Australian English Irish Scottish Italian Spanish Japanese Russian Dutch Swedish".split()
+    TIME = "monthly weekly annually quarterly daily".split()
+
+    @classmethod
+    def name(cls, r):
+        return f"{r.choice(cls.FIRST)} {r.choice(cls.LAST)}"
+
+    @classmethod
+    def org(cls, r):
+        return f"{r.choice(cls.PLACE)} {r.choice(cls.NOUN).capitalize()}"
+
+    @classmethod
+    def np(cls, r):
+        return f"{r.choice(cls.ADJ)} {r.choice(cls.NOUN)}"
+
+    @classmethod
+    def question(cls, r):
+        c, k = r.choice, r.randrange(8)
+        if k == 0:
+            return f"Which {c(cls.ADJ)} {c(cls.NOUN)} {c(cls.VERB)} by {cls.name(r)} came first, {cls.org(r)} or {cls.org(r)}?"
+        if k == 1:
+            return f"Who was born first, {cls.name(r)} or {cls.name(r)}?"
+        if k == 2:
+            return f"What nationality is the {c(cls.PROF)} who {c(cls.VERB)} the {cls.np(r)} in {c(cls.PLACE)}?"
+        if k == 3:
+            return f"The {cls.np(r)} {c(cls.VERB)} by {cls.name(r)} is located in which {c(cls.NATION)} city?"
+        if k == 4:
+            return f"Are {cls.name(r)} and {cls.name(r)} both {c(cls.NATION)} {c(cls.PROF)}s?"
+        if k == 5:
+            return f"What is the name of the {cls.np(r)} {c(cls.VERB)} in {c(cls.PLACE)} by the {c(cls.PROF)} {cls.name(r)}?"
+        if k == 6:
+            return f"Which {c(cls.NATION)} {c(cls.PROF)} was a member of the {cls.np(r)} {c(cls.VERB)} in {c(cls.PLACE)}?"
+        return f"In what year was the {cls.np(r)} {c(cls.VERB)} by the {c(cls.NATION)} {c(cls.PROF)} {cls.name(r)} first {c(cls.VERB)}?"
+
+    @classmethod
+    def sentence(cls, r):
+        c, k = r.choice, r.randrange(10)
+        if k == 0:
+            return f"{cls.name(r)} (born {r.randrange(1900, 1990)}) is an {c(cls.NATION)} {c(cls.PROF)} and a member of the {c(cls.ADJ)} {c(cls.NOUN)}."
+        if k == 1:
+            return f"{cls.org(r)} is a {c(cls.ADJ)} {c(cls.NOUN)} {c(cls.VERB)} {c(cls.TIME)} in {c(cls.PLACE)} since {r.randrange(1850, 2000)}."
+        if k == 2:
+            return f"The {c(cls.ADJ)} {c(cls.NOUN)} was {c(cls.VERB)} in {c(cls.PLACE)} and later {c(cls.VERB)} by {cls.name(r)}."
+        if k == 3:
+            return f"After the war, {cls.name(r)} moved to {c(cls.PLACE)}, where he worked as a {c(cls.PROF)} until {r.randrange(1950, 2015)}."
+        if k == 4:
+            return f"Its headquarters are in {c(cls.PLACE)}, and the {c(cls.ADJ)} {c(cls.NOUN)} {c(cls.VERB)} there has about {r.randrange(100, 9000)} members."
+        if k == 5:
+            return f"{cls.name(r)} starred alongside {cls.name(r)} in the {c(cls.NATION)} {c(cls.NOUN)} {c(cls.VERB)} by {cls.name(r)} in {r.randrange(1960, 2012)}."
+        if k == 6:
+            return f"Critics described the {c(cls.ADJ)} {c(cls.NOUN)} as a {c(cls.ADJ)} success, and it was {c(cls.VERB)} across {c(cls.PLACE)} and {c(cls.PLACE)}."
+        if k == 7:
+            return f"The {c(cls.ADJ)} {c(cls.NOUN)} {c(cls.VERB)} by {cls.org(r)} has been {c(cls.VERB)} several times since {r.randrange(1900, 2010)}."
+        if k == 8:
+            return f"{cls.name(r)}, a former {c(cls.PROF)}, served as chairman of the {c(cls.ADJ)} {c(cls.NOUN)} from {r.randrange(1930, 1990)} to {r.randrange(1990, 2015)}."
+        return f"In {r.randrange(1800, 2010)} the {c(cls.NOUN)} was {c(cls.VERB)} by {cls.name(r)}, a {c(cls.NATION)} {c(cls.PROF)} who {c(cls.VERB)} it in {c(cls.PLACE)}."
+
+    @classmethod
+    def paragraph(cls, r, chars=1500, extra=()):
+        sents, n = [], 0
+        while n < chars - 120:
+            s = cls.sentence(r)
+            sents.append(s)
+            n += len(s) + 1
+        for e in extra:                                     # sentences that carry a known phrase collision, inserted at random places
+            sents.insert(r.randrange(len(sents) + 1), e)
+        return " ".join(sents)
+
+    @classmethod
+    def questions(cls, n, seed=1):
+        r = random.Random(seed)
+        return [cls.question(r) for _ in range(n)]
+
+    @classmethod
+    def rows(cls, n, seed=2, extra=()):
+        r = random.Random(seed)
+        return [cls.paragraph(r, 1500, extra) + "\n" + cls.paragraph(r, 1500) for _ in range(n)]
+
+
+def brute_force_flags(rows, evals, n=13, win=40, min_shared=1, boilerplate_eval_df=10 ** 9):
+    """Reference implementation of the ASCII rule with plain strings and no hashing (every eval text is one eval item): a row is flagged when
+    it has >= min_shared distinct counted 13-grams - a gram with a non-ASCII character that is in an eval text, or an ASCII gram inside a
+    window of `win` all-ASCII characters that sits verbatim in an eval text - whose eval document frequency is below the boilerplate limit,
+    or when it contains a whole eval text of >= win normalised characters."""
+    ev = [C.normalize_for_overlap(t) for t in evals]
+    df, windows, whole = {}, set(), []
+    for e in ev:
+        for g in {e[i:i + n] for i in range(len(e) - n + 1)}:
+            df[g] = df.get(g, 0) + 1
+        windows.update(e[i:i + win] for i in range(len(e) - win + 1) if e[i:i + win].isascii())
+        if len(e) >= win:
+            whole.append(e)
+    out = []
+    for pos, t in enumerate(rows):
+        r = C.normalize_for_overlap(t)
+        counted = {r[i:i + n] for i in range(len(r) - n + 1) if r[i:i + n] in df and not r[i:i + n].isascii()}
+        for s in range(len(r) - win + 1):
+            if r[s:s + win] in windows:
+                counted.update(r[j:j + n] for j in range(s, s + win - n + 1))
+        if len([g for g in counted if df.get(g, 1) < boilerplate_eval_df]) >= min_shared or any(e in r for e in whole):
+            out.append(pos)
+    return out
+
+
+class TestAsciiRunDecontaminate(unittest.TestCase):
+    """Round 8: a 13-gram of pure ASCII flags a row only inside a run of >= 40 matching normalised characters of ONE eval text (28 consecutive
+    grams); grams with a non-ASCII character keep the 13-character rule.  Measured on the real Colab run: 76,288 of 78,864 HotpotQA rows were
+    dropped by 2-3 word English phrases ('smagazinepubl' = woman's magazine published, 'thmilitarypol' = th military police) that also occur in
+    the validation QUESTIONS; no question was copied."""
+    WOMAN_Q = "Which woman's magazine published an interview with the author of the novel Shadow Harbor?"
+    POLICE_Q = "How many soldiers served in the 16th Military Police Brigade under the command of General Harlan Pike?"
+    EXTRA = ["The magazine is a woman's magazine published monthly in London.", "The 8th Military Police Group was activated in Frankfurt after the war."]
+    JA_EVAL = "吾輩は猫である。名前はまだ無い。どこで生れたかとんと見当がつかぬ。何でも薄暗いじめじめした所でニャーニャー泣いていた事だけは記憶している。"
+    JA_MIXED_EVAL = "次の文章を読んで、print(len(items)) の意味を説明しなさい。その後で、変数の意味を答えなさい。"
+    FILLER = "Zebras graze quietly near the river at dawn while the herd moves slowly toward the northern hills."
+
+    @classmethod
+    def setUpClass(cls):
+        cls.qs = Hotpot.questions(7000) + [cls.WOMAN_Q, cls.POLICE_Q]
+        cls.sources = [("hotpot_validation", cls.qs), ("ja_eval", [cls.JA_EVAL, cls.JA_MIXED_EVAL])]
+        cls.idx = C.build_eval_index(cls.sources)                                            # the rule since round 8
+        cls.idx_old = C.build_eval_index(cls.sources, ascii_run_chars=13)                    # every ASCII gram flags by itself: the rule before
+        cls.rows = Hotpot.rows(300, seed=7, extra=cls.EXTRA)
+        dicts = [{"id": f"p{i}", "full_text": t} for i, t in enumerate(cls.rows)]
+        t0 = time.time()
+        cls.r_old = C.decontaminate(dicts, cls.idx_old)
+        cls.t_old = time.time() - t0
+        t0 = time.time()
+        cls.r_new = C.decontaminate(dicts, cls.idx)
+        cls.t_new = time.time() - t0
+
+    def flagged(self, text, idx=None, **kw):
+        r = C.decontaminate([{"id": "x", "full_text": text}], idx or self.idx, **kw)
+        return r["rows_flagged"] == 1, r
+
+    # ---- (1) paragraphs that share only common 2-3 word phrases with 7,000 questions are not flagged
+    def test_english_paragraphs_sharing_only_common_phrases_are_not_flagged(self):
+        qs_norm = {C.normalize_for_overlap(q) for q in self.qs}
+        windows = {q[i:i + 40] for q in qs_norm for i in range(len(q) - 39)}
+        for i, t in enumerate(self.rows):                                                    # the corpus really has no 40 verbatim characters in common with a question
+            norm = C.normalize_for_overlap(t)
+            self.assertFalse(any(norm[s:s + 40] in windows for s in range(len(norm) - 39)), i)
+        row0 = C.normalize_for_overlap(self.rows[0])
+        self.assertGreater(len(self.rows[0]), 2900)                                            # two paragraphs of ~1,500 characters
+        for gram in ("smagazinepubl", "thmilitarypol"):                                      # the two collisions of the real run
+            self.assertIn(gram, row0)
+            self.assertEqual([m["source"] for m in self.idx.find_sources(gram)], ["hotpot_validation"])      # a validation QUESTION owns it
+            self.assertIn(hash(gram), self.idx.hashes)
+        self.assertEqual(self.r_old["rows_flagged"], len(self.rows))                         # before: every row is dropped by such phrases
+        self.assertEqual(self.r_old["rows_flagged_whole_item"], 0)
+        self.assertEqual(self.r_new["rows_flagged"], 0)                                      # after: none
+        self.assertEqual(self.r_new["rows_flagged_ascii_run"], 0)
+        self.assertEqual(self.r_new["rows_with_any_shared_shingle"], len(self.rows))         # they still collide on 13-grams: only the rule changed
+        self.assertEqual(self.r_new["rows_not_flagged_ascii_short"], len(self.rows))
+        self.assertEqual(self.r_new["rows_ascii_short_only"], len(self.rows))
+        self.assertEqual(self.r_new["rows_flagged_legacy_13gram"], len(self.rows))
+        self.assertEqual(self.r_new["rows_boilerplate_only"], 0)
+        self.assertEqual(self.r_new["flagged_positions"], brute_force_flags(self.rows, self.qs + [self.JA_EVAL, self.JA_MIXED_EVAL]))
+        self.assertTrue(self.r_new["ascii_short_top"] and self.r_new["ascii_short_examples"])
+        self.assertEqual(self.r_new["ascii_short_examples"][0]["eval_matches"][0]["source"], "hotpot_validation")
+        n = len(self.rows)
+        print(f"\n[ascii-run] synthetic HotpotQA-like corpus ({n} rows of ~{sum(map(len, self.rows)) // n} characters, {len(self.qs):,} validation questions): "
+              f"flagged before {self.r_old['rows_flagged']}/{n} ({self.r_old['rows_flagged'] / n:.1%}), after {self.r_new['rows_flagged']}/{n} "
+              f"({self.r_new['rows_flagged'] / n:.1%}); decontaminate {self.t_old:.2f} s before, {self.t_new:.2f} s after", flush=True)
+
+    # ---- (2) a verbatim English question of 45+ characters is flagged
+    def test_a_verbatim_english_question_is_flagged_whatever_the_surroundings(self):
+        qn = C.normalize_for_overlap(self.WOMAN_Q)
+        self.assertGreaterEqual(len(qn), 45)
+        para = Hotpot.paragraph(random.Random(5), 1500)
+        mid = len(para) // 2
+        for variant in (self.WOMAN_Q, self.WOMAN_Q.upper(), self.WOMAN_Q.replace(" ", "  ") + " 2024", self.WOMAN_Q.replace("Which", "Which 12")):
+            ok, r = self.flagged(para[:mid] + "\n" + variant + "\n" + para[mid:])
+            self.assertTrue(ok, variant)
+            self.assertEqual(r["rows_flagged_whole_item"], 1)
+            self.assertEqual(r["rows_flagged_ascii_run"], 1)
+            self.assertEqual(r["examples"][0]["eval_matches"][0]["source"], "hotpot_validation")
+        ok, r = self.flagged(para[:mid] + "\n" + self.POLICE_Q + "\n" + para[mid:])
+        self.assertTrue(ok)
+        # the old rule agreed on a verbatim copy: nothing that was a real copy is lost
+        self.assertTrue(self.flagged(para[:mid] + self.WOMAN_Q + para[mid:], self.idx_old)[0])
+
+    def test_the_run_must_reach_40_normalised_characters_and_must_come_from_one_eval_text(self):
+        qn = C.normalize_for_overlap(self.WOMAN_Q)
+        para = Hotpot.paragraph(random.Random(6), 1200)
+        for length, want in ((41, True), (40, True), (39, False), (30, False)):
+            piece = qn[8:8 + length]                                                         # part of the question, not the whole item
+            ok, r = self.flagged(para + " ##### " + piece + " ##### " + para)
+            self.assertEqual(ok, want, length)
+            self.assertEqual(r["rows_flagged_whole_item"], 0)                                 # it is the run, not the whole-item rule
+            self.assertEqual(r["rows_flagged_ascii_run"], int(want))
+            if not want:
+                self.assertTrue(self.flagged(para + " ##### " + piece + " ##### " + para, self.idx_old)[0], length)        # the old rule flagged it
+        # two halves from two DIFFERENT eval items, 22 characters each: no single eval text holds 40 of them
+        qa, qb = C.normalize_for_overlap(self.WOMAN_Q), C.normalize_for_overlap(self.POLICE_Q)
+        ok, r = self.flagged(para + " ##### " + qa[8:30] + qb[4:26] + " ##### " + para)
+        self.assertFalse(ok)
+        ok, r = self.flagged("#####" + qa[8:30] + qb[4:26] + "#####" + qb[4:26] + qa[8:30] + "#####")
+        self.assertFalse(ok)
+        # a CHAIN: every 13-gram of the row is an eval gram and 60 of them follow each other, but they belong to five different eval texts of 24
+        # characters (a, b, c and the two junction texts a|b and b|c): no eval text holds 40 of the row's characters, so there is no run
+        a, b, c = C.normalize_for_overlap(self.WOMAN_Q)[10:34], C.normalize_for_overlap(self.POLICE_Q)[10:34], C.normalize_for_overlap(self.qs[5])[10:34]
+        idx_chain = C.build_eval_index([("chain", [a, b, c, a[12:] + b[:12], b[12:] + c[:12]])])
+        ok, r = self.flagged("##### " + a + b + c + " #####", idx_chain)
+        self.assertFalse(ok)
+        self.assertEqual(r["rows_with_any_shared_shingle"], 1)
+        self.assertEqual(r["rows_not_flagged_ascii_short"], 1)
+        self.assertTrue(self.flagged("##### " + a + b + c + " #####", C.build_eval_index([("chain", [a, b, c, a[12:] + b[:12], b[12:] + c[:12]])], ascii_run_chars=13))[0])
+        # the same two pieces back to back, as they stand in ONE eval text, make a run
+        self.assertTrue(self.flagged(para + " ##### " + qa[8:30] + qa[30:50] + " ##### " + para)[0])
+
+    # ---- (3) a short English eval sentence copied verbatim is NOT flagged by grams (documented limit)
+    def test_a_short_english_eval_sentence_copied_verbatim_is_not_flagged(self):
+        sentence = "The old library closed early today."
+        n = len(C.normalize_for_overlap(sentence))
+        self.assertTrue(30 <= n < 40, n)                                                     # 13+ characters (it has 13-grams) but below the 40-character run
+        idx_short = C.build_eval_index([("short", [sentence])])
+        idx_short_old = C.build_eval_index([("short", [sentence])], ascii_run_chars=13)
+        row = self.FILLER + " " + sentence + " " + self.FILLER
+        ok, r = self.flagged(row, idx_short)
+        self.assertFalse(ok)                                                                  # KNOWN LIMIT (README): below the 40-character run, and the whole-item rule needs 40 too
+        self.assertEqual(r["rows_flagged_whole_item"], 0)
+        self.assertEqual(r["rows_with_any_shared_shingle"], 1)
+        self.assertTrue(self.flagged(row, idx_short_old)[0])                                 # the old rule did flag it
+        # at the boundary: an eval text of 39 normalised characters is not flagged, one of 40 is (whole item and run)
+        qn = C.normalize_for_overlap(self.WOMAN_Q)
+        for length, want in ((39, False), (40, True)):
+            idx_b = C.build_eval_index([("b", [qn[:length]])])
+            ok, r = self.flagged(self.FILLER + " " + qn[:length] + " " + self.FILLER, idx_b)
+            self.assertEqual(ok, want, length)
+            self.assertEqual(r["rows_flagged_whole_item"], int(want))
+        self.assertEqual(idx_b.stats()["ascii_run_chars"], 40)
+
+    # ---- (4) Japanese is unchanged; mixed rows are judged gram by gram
+    def test_a_japanese_13_character_copy_is_flagged_and_a_japanese_word_with_english_inside_too(self):
+        jn = C.normalize_for_overlap(self.JA_EVAL)
+        for length, want in ((13, True), (12, False)):
+            piece = jn[6:6 + length]
+            ok, r = self.flagged("全然関係のない文章です。ここに引用します：「" + piece + "」以上です。ありがとうございました。")
+            self.assertEqual(ok, want, length)
+            self.assertEqual(r["rows_flagged_ascii_run"], 0)
+            self.assertEqual(ok, self.flagged("全然関係のない文章です。ここに引用します：「" + piece + "」以上です。ありがとうございました。", self.idx_old)[0], length)
+        mn = C.normalize_for_overlap(self.JA_MIXED_EVAL)
+        p = mn.index("print")
+        piece = mn[p - 6:p + 7]                                                              # '章を読んで、print(l': Japanese around an English word
+        self.assertEqual(len(piece), 13)
+        self.assertFalse(piece.isascii())
+        ok, r = self.flagged("無関係な文章です。「" + piece + "」と書いてあります。以上です。")
+        self.assertTrue(ok)
+        self.assertEqual(r["rows_flagged_ascii_run"], 0)
+        english_only = mn[p:p + 17]                                                          # 'print(len(items))': 17 ASCII characters of the same eval text are not enough
+        self.assertEqual(english_only, "print(len(items))")
+        ok, r = self.flagged("Notes: " + english_only + " and nothing else follows here.")
+        self.assertFalse(ok)
+        self.assertEqual(r["rows_not_flagged_ascii_short"], 1)
+        self.assertTrue(self.flagged("Notes: " + english_only + " and nothing else follows here.", self.idx_old)[0])
+
+    def test_mixed_rows_japanese_scaffolding_plus_english_passages(self):
+        para1, para2 = Hotpot.paragraph(random.Random(21), 1500, self.EXTRA), Hotpot.paragraph(random.Random(22), 1500)
+        scaffold = "次の英文を読んで、質問に日本語で答えなさい。\n"
+        row = scaffold + para1 + "\n" + para2
+        ok, r = self.flagged(row)
+        self.assertFalse(ok)                                                                  # the English passages collide on phrases and nothing else
+        self.assertEqual(r["rows_flagged_ascii_run"], 0)
+        self.assertEqual(r["rows_not_flagged_ascii_short"], 1)
+        self.assertTrue(self.flagged(row, self.idx_old)[0])
+        jn = C.normalize_for_overlap(self.JA_EVAL)
+        ok, r = self.flagged(scaffold + para1 + "\n「" + jn[10:23] + "」\n" + para2)         # plus ONE copied Japanese 13-gram
+        self.assertTrue(ok)
+        self.assertEqual(r["rows_flagged_ascii_run"], 0)
+        ok, r = self.flagged(scaffold + para1 + "\n" + self.WOMAN_Q + "\n" + para2)         # plus ONE copied English question
+        self.assertTrue(ok)
+        self.assertEqual(r["rows_flagged_ascii_run"], 1)
+
+    def test_japanese_text_is_judged_exactly_as_before(self):
+        items = [f"{head}{'ぁあぃいぅうぇえぉおかがきぎくぐけげこごさざしじすず'[i:i + 14]}という問題文です。条件は特にありません。最後まで読んでください。" for i, head in enumerate(["問題：", "設問：", "質問：", "課題："] * 3)]
+        idx_new, idx_old = C.build_eval_index([("ja", items)]), C.build_eval_index([("ja", items)], ascii_run_chars=13)
+        variants = []
+        for t in items:
+            variants += [t, t.replace("、", "，"), "前置きの文です。\n" + t + "\n後書きです。", t[len(t) // 2:], t[:12], t[:13], " ".join(t), t.replace("。", "。\n")]
+        rows = [{"id": str(i), "full_text": v} for i, v in enumerate(variants)]
+        r_new, r_old = C.decontaminate(rows, idx_new), C.decontaminate(rows, idx_old)
+        self.assertEqual(r_new["flagged_positions"], r_old["flagged_positions"])
+        self.assertGreater(r_new["rows_flagged"], len(items))
+        self.assertEqual(r_new["rows_not_flagged_ascii_short"], 0)
+        self.assertEqual(r_new["rows_flagged_ascii_run"], 0)
+        self.assertEqual({k: r_new[k] for k in ("rows_boilerplate_only", "shared_count_hist", "rows_flagged_whole_item", "real_shingles_top", "boilerplate")},
+                         {k: r_old[k] for k in ("rows_boilerplate_only", "shared_count_hist", "rows_flagged_whole_item", "real_shingles_top", "boilerplate")})
+
+    # ---- (5) digits: the normaliser deletes them, so only letters count
+    def test_digits_are_not_indexed_so_a_13_digit_run_never_flags_and_a_digit_only_text_is_invisible(self):
+        self.assertEqual(C.normalize_for_overlap("4567890123456"), "")
+        self.assertEqual(C.normalize_for_overlap("1234567890" * 6), "")
+        ev_digits = "1234567890" * 6                                                         # 60 digits: NOT flaggable, before or after this rule: the normaliser (unchanged) deletes digits
+        ev_text = "Invoice number 4567890123456 was paid in full when the goods arrived at the warehouse."
+        idx = C.build_eval_index([("digits_only", [ev_digits]), ("invoice", [ev_text])])
+        self.assertEqual(idx.per_source["digits_only"]["indexable_texts"], 0)
+        row = "The customer quoted 4567890123456 twice and also 1234567890" * 3 + " " + ev_digits + " end."
+        ok, r = self.flagged(row, idx)
+        self.assertFalse(ok)
+        self.assertEqual(r["rows_flagged"], 0)
+        # letters between digits still count: 'ab12cd34...' is the letters 'abcd...' once the digits are gone, and 40+ of them are a run
+        serial = " ".join(f"{a}{i % 10}{b}{(i * 3) % 10}" for i, (a, b) in enumerate(zip("abcdefghijklmnopqrstuvwx", "yzabcdefghijklmnopqrstuv")))
+        self.assertGreaterEqual(len(C.normalize_for_overlap(serial)), 45)
+        idx2 = C.build_eval_index([("serial", ["Reference code: " + serial + " (keep it safe)"])])
+        self.assertTrue(self.flagged("Quote: " + serial.replace("0", "7") + " done.", idx2)[0])
+        self.assertFalse(self.flagged("Quote: " + serial[:20] + " done.", idx2)[0])           # about 20 letters: below 40
+
+    # ---- (6) the mechanics: brute-force oracle, determinism, speed
+    def test_against_a_brute_force_reference_on_random_text(self):
+        total = flagged = 0
+        for seed in range(160):
+            rng = random.Random(seed)
+            alphabet = ("abcd", "あいう", "abcdabcdabcdあいう")[seed % 3]
+            texts = lambda lo, hi: "".join(rng.choice(alphabet) for _ in range(rng.randint(lo, hi)))
+            evals = [texts(10, 90) for _ in range(rng.randint(1, 6))]
+            rows = []
+            for _ in range(25):
+                base = texts(5, 120)
+                if rng.random() < 0.6:                                                       # splice a piece of an eval text in
+                    e = rng.choice(evals)
+                    a = rng.randint(0, len(e) - 1)
+                    cut = rng.randint(0, len(base))
+                    base = base[:cut] + e[a:rng.randint(a, len(e))] + base[cut:]
+                rows.append(base)
+            idx = C.build_eval_index([("s", evals)])
+            for min_shared, limit in ((1, 10 ** 9), (2, 10 ** 9), (1, 2), (3, 3)):
+                got = C.decontaminate(rows, idx, min_shared=min_shared, boilerplate_eval_df=limit)["flagged_positions"]
+                want = brute_force_flags(rows, evals, min_shared=min_shared, boilerplate_eval_df=limit)
+                self.assertEqual(got, want, (seed, min_shared, limit))
+                total += len(rows)
+                flagged += len(want)
+        self.assertGreater(flagged, 1500)                                                    # the random cases do contain runs, copies and near misses
+        self.assertLess(flagged, total * 0.5)
+
+    def test_stats_are_consistent_and_the_run_length_is_a_parameter(self):
+        r = self.r_new
+        self.assertEqual(r["ascii_run_chars"], 40)
+        self.assertEqual(self.idx.stats()["ascii_run_chars"], 40)
+        self.assertGreater(self.idx.stats()["ascii_windows"], 100000)
+        self.assertEqual(self.idx_old.stats()["ascii_windows"], 0)
+        self.assertEqual(r["rows_with_any_shared_shingle"], r["rows_with_real_overlap"] + r["rows_ascii_short_only"] + r["rows_boilerplate_only"])
+        self.assertEqual(r["rows_not_flagged_ascii_short"], len(r["ascii_short_positions"]))
+        self.assertEqual(r["rows_flagged_ascii_run"], len(r["ascii_run_positions"]))
+        self.assertLessEqual(r["rows_flagged_ascii_run"], r["rows_flagged"])
+        self.assertTrue(set(r["ascii_run_positions"]) <= set(r["flagged_positions"]))
+        self.assertTrue(set(r["ascii_short_positions"]).isdisjoint(r["flagged_positions"]))
+        self.assertEqual(self.r_old["rows_flagged"], self.r_old["rows_flagged_legacy_13gram"])      # the legacy switch reproduces the old rule
+        self.assertEqual(self.r_old["rows_not_flagged_ascii_short"], 0)
+        # a shorter run flags a shorter copy: ascii_run_chars is a real parameter (26 characters = 14 consecutive grams)
+        qn = C.normalize_for_overlap(self.WOMAN_Q)
+        idx26 = C.build_eval_index([("q", self.qs)], ascii_run_chars=26)
+        para = Hotpot.paragraph(random.Random(8), 600)
+        self.assertTrue(self.flagged(para + " ##### " + qn[8:34] + " ##### " + para, idx26)[0])
+        self.assertFalse(self.flagged(para + " ##### " + qn[8:33] + " ##### " + para, idx26)[0])
+        self.assertEqual(C.EvalIndex(ascii_run_chars=5).ascii_run_chars, 13)                 # never shorter than one gram
+
+    def test_the_result_does_not_depend_on_the_hash_seed(self):
+        code = ("import sys, json, random, hashlib\n"
+                "sys.path.insert(0, %r)\n"
+                "import checks as C\n"
+                "import test_checks as T\n"
+                "qs = T.Hotpot.questions(800)\n"
+                "ql = [q for q in qs if len(C.normalize_for_overlap(q)) >= 45]\n"
+                "rows = T.Hotpot.rows(25, seed=3, extra=T.TestAsciiRunDecontaminate.EXTRA) + [q + ' ' + q for q in ql[:15]] + ['次の文章を読んで、条件を順に考えなさい。' + q for q in ql[15:20]]\n"
+                "idx = C.build_eval_index([('v', qs + ['次の文章を読んで、条件を順に考えなさい。'])])\n"
+                "r = C.decontaminate([{'id': str(i), 'full_text': t} for i, t in enumerate(rows)], idx)\n"
+                "r.pop('eval_index')\n"
+                "print(hashlib.sha256(json.dumps(r, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest(), r['rows_flagged'], r['rows_flagged_ascii_run'])\n") % HERE
+        outs = []
+        for seed in ("1", "2", "12345"):
+            env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
+            env["PYTHONHASHSEED"] = seed
+            p = subprocess.run([sys.executable, "-B", "-X", "utf8", "-c", code], capture_output=True, text=True, timeout=120, env=env, cwd=HERE)
+            self.assertEqual(p.returncode, 0, p.stderr[-500:])
+            outs.append(p.stdout.strip())
+        self.assertEqual(len(set(outs)), 1, outs)
+        self.assertGreaterEqual(int(outs[0].split()[1]), 20)                                  # the 15 doubled questions and the 5 Japanese-scaffold rows are flagged
+        dicts = [{"id": str(i), "full_text": t} for i, t in enumerate(self.rows[:40])]
+        a, b = C.decontaminate(dicts, self.idx), C.decontaminate(dicts, self.idx)
+        self.assertEqual(a, b)
+
+    def test_speed_200k_short_rows_and_no_slowdown_against_the_old_rule(self):
+        rng = random.Random(9)
+        pool = [Hotpot.sentence(rng) for _ in range(4000)]
+
+        def rows(n):                                                                         # ~120 characters each, generated lazily
+            return ({"full_text": pool[i % 4000] + " " + pool[(i * 7 + 1) % 4000][:30]} for i in range(n))
+        t0 = time.time()
+        r = C.decontaminate(rows(200000), self.idx)
+        dt = time.time() - t0
+        self.assertEqual(r["n_rows"], 200000)
+        self.assertLess(r["rows_flagged"], 200)                                              # (chance 40-character overlaps only; the old rule flags ~96%)
+        self.assertGreater(r["rows_with_any_shared_shingle"], 150000)
+        t0 = time.time()
+        r_old = C.decontaminate(rows(50000), self.idx_old)
+        dt_old = time.time() - t0
+        t0 = time.time()
+        r_new = C.decontaminate(rows(50000), self.idx)
+        dt_new = time.time() - t0
+        self.assertGreater(r_old["rows_flagged"], 45000)
+        print(f"\n[ascii-run] speed: 200,000 synthetic rows of ~120 characters in {dt:.1f} s with the new rule (flagged {r['rows_flagged']}); on 50,000 of them "
+              f"{dt_old:.1f} s with the old rule (flagged {r_old['rows_flagged']}), {dt_new:.1f} s with the new one (flagged {r_new['rows_flagged']}); "
+              f"{len(self.rows)} HotpotQA-like rows of ~3,000 characters: {self.t_old:.2f} s old, {self.t_new:.2f} s new", flush=True)
+        self.assertLess(dt, 120.0)
+        self.assertLess(dt_new, 3.0 * dt_old + 1.0)                                          # the task allowed 3x of the old time
+        self.assertLess(self.t_new, 3.0 * self.t_old + 0.5)
 
 
 class TestFindEvalFiles(unittest.TestCase):

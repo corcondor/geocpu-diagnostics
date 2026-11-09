@@ -63,7 +63,7 @@ Hugging Face にある公開データ6種を Google Drive に取ってきて、�
 1. **取得**（約1.9GB）: 6つのデータセットを、ライセンスを先に確認してから、コミットを固定して取得します。大きさと sha256 をハブの値と照合します。データセットごとに、ファイルが Drive に着いてから出所の記録（provenance.json）を書きます。
 2. **検査**: 件数をカードの値と照合し（違えば `MISMATCH` と大きく表示）、モデルの語彙に無い文字、長さ、読んで確かめるための100行を調べます。
 3. **変換**: 1,900文字以内の GeoCPU の行に直します。python のコードはモデル自身の実行器と同じ規則（使えるのは math・cmath・decimal・fractions・statistics・itertools・functools・operator・collections だけ、しかもモジュールごとに固定した許可リストの名前だけ（`functools.wraps` や `collections.namedtuple` は不可）、クラスや属性代入も不可）で実行し、保存されていた出力を実行結果で置き換えます。**答え自身の保存出力と実行結果が一致した行だけ**を残します。コードを実行しているあいだは Drive をアンマウントします。長い2つ（coding・tengentoppa）は小分け（シャード）にして、できた分から Drive に保存します。サンドボックスそのものが途中で壊れたとき（子プロセスを作れない・権限のないユーザが消えた・子プロセスが結果を返さずに死んで、直後の簡単なコード `print(1)` も動かない）は、変換が止まります。1行のコードそのものが子プロセスを落としたとき（`print(1)` は動く）は、止めずにその行だけを `code_crash` として除外し、数をログと `REPORT_JA.md` に出します（1回の変換で50行を超える、または実行した行の2%を超えるときは、機械の故障かもしれないので止まります）。
-4. **絞り込み**: 完全一致と近い重複（MinHash）、評価データ（JMMLU・JamC-QA・T1-T8・v48 の評価セット・python120 など登録簿の他の評価セット・JaQuAD の dev・HotpotQA の validation）との13文字一致、旧コーパス423,348行との重複、学習行に近い兄弟がいる dev / heldout の行を取り除きます。8b の任意の確認は時間の上限つきで、行は除きません。
+4. **絞り込み**: 完全一致と近い重複（MinHash）、評価データ（JMMLU・JamC-QA・T1-T8・v48 の評価セット・python120 など登録簿の他の評価セット・JaQuAD の dev・HotpotQA の validation）との13文字一致（英語など ASCII だけの13文字は2〜3語で偶然一致が多すぎるので、同じ評価文の40文字以上が続けて一致したときだけ数えます。日本語は13文字のままです。40文字に満たない英語の評価文をそのまま写した行は見つかりません）、旧コーパス423,348行との重複、学習行に近い兄弟がいる dev / heldout の行を取り除きます。8b の任意の確認は時間の上限つきで、行は除きません。
 5. **記録**: `registry.json` と、日本語の表 `REPORT_JA.md` を書きます。採用する件数は、検査のあとで決まります（事前には決めていません）。保留のデータセット（toolace・wizard）は `external_data_v49_rows/_HOLD_do_not_mix/` に置きます。
 
 ## 守っていること
@@ -207,7 +207,7 @@ R6a = P.step_mirror(CFG)
 assert R6a["pass"], R6a["detail"]
 '''
 
-CELL_VOCAB = '''# 6b. モデルの語彙（3,898 件）と評価データの場所を確かめ、13文字の断片の索引を作ります
+CELL_VOCAB = '''# 6b. モデルの語彙（3,898 件）と評価データの場所を確かめ、13文字の断片の索引を作ります（ASCII だけの断片は、40文字続けて一致したときだけ数えます）
 R6b = P.step_vocab_eval(CFG)
 assert R6b["pass"], R6b["detail"]
 '''
@@ -235,7 +235,7 @@ R7b = P.step_convert_full(CFG)
 assert R7b["pass"], R7b["detail"]
 '''
 
-CELL_FILTERS = '''# 8. 絞り込み: 完全一致 → 近い重複（MinHash）→ 評価データとの13文字一致 → 旧コーパス423,348行との重複 → dev / heldout の近い兄弟
+CELL_FILTERS = '''# 8. 絞り込み: 完全一致 → 近い重複（MinHash）→ 評価データとの13文字一致（ASCII だけの断片は40文字の連続一致のみ）→ 旧コーパス423,348行との重複 → dev / heldout の近い兄弟
 R8 = P.step_filters(CFG)
 assert R8["pass"], R8["detail"]
 '''
