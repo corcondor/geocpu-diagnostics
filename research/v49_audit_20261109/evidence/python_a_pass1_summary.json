@@ -1,0 +1,7573 @@
+{
+ "heldout": {
+  "lines": 1500,
+  "blank": 0,
+  "bytes": 4053807,
+  "bad_json": 0,
+  "sha256": "9fb2ee20e0b72a631ab017999910ad276caadb513eeb2d1be81b86e739a8a8d1",
+  "rows": 1500,
+  "missing_fields": {},
+  "violations": {},
+  "violation_examples": {},
+  "len_max": 1040,
+  "len_mean": 482.28133333333335,
+  "len_p99": 928,
+  "len_p50": 412,
+  "over_length_rows(len+1>2048)": 0,
+  "supervised_chars_len_target_plus1": 547591,
+  "masked_observation_chars": 34053,
+  "supervised_chars_excl_observation": 513538,
+  "oov_rows": 0,
+  "oov_top": [],
+  "n_families": 15,
+  "families": {
+   "pya_grid_walk_final": 100,
+   "pya_grid_shortest_path": 100,
+   "pya_grid_islands": 100,
+   "pya_grid_lattice_paths": 100,
+   "pya_walk_distinct_cells": 100,
+   "pya_rle_encode": 100,
+   "pya_rle_decode": 100,
+   "pya_longest_run": 100,
+   "pya_runs_count": 100,
+   "pya_merge_intervals": 100,
+   "pya_brackets_balanced": 100,
+   "pya_max_subarray": 100,
+   "pya_spiral_order": 100,
+   "pya_rpn_eval": 100,
+   "pya_lis_length": 100
+  },
+  "templates": {
+   "pya/grid": 500,
+   "pya/runlength": 400,
+   "pya/interval": 100,
+   "pya/bracket": 100,
+   "pya/kadane": 100,
+   "pya/spiral": 100,
+   "pya/rpn": 100,
+   "pya/lis": 100
+  },
+  "sources": {
+   "selfauthored:geocpu/v49-python-a": 1500
+  },
+  "licenses": {
+   "CC0-1.0": 1500
+  },
+  "difficulty": {
+   "1": 195,
+   "2": 195,
+   "3": 555,
+   "4": 555
+  },
+  "n_tool_steps_dist": {
+   "1": 1500
+  },
+  "dup_full_text_within_split": 0,
+  "prompt_conflicting_target": 0,
+  "prompt_dup_same_target": 0,
+  "answer_equals_reference_final_answer": 1500,
+  "answer_equals_stdout_strip": 1455,
+  "target_strict_template_ok": 1500,
+  "target_strict_template_bad": 0,
+  "mean_len_by_family": {
+   "pya_grid_walk_final": 673.9,
+   "pya_grid_shortest_path": 808.5,
+   "pya_grid_islands": 861.8,
+   "pya_grid_lattice_paths": 511.3,
+   "pya_walk_distinct_cells": 402.4,
+   "pya_rle_encode": 363.7,
+   "pya_rle_decode": 262.4,
+   "pya_longest_run": 298.3,
+   "pya_runs_count": 265.0,
+   "pya_merge_intervals": 448.2,
+   "pya_brackets_balanced": 385.6,
+   "pya_max_subarray": 326.9,
+   "pya_spiral_order": 784.2,
+   "pya_rpn_eval": 421.2,
+   "pya_lis_length": 420.9
+  }
+ },
+ "dev": {
+  "lines": 1030,
+  "blank": 0,
+  "bytes": 1987655,
+  "bad_json": 0,
+  "sha256": "731845a7b7bebce819dbdf6b0b0d947038918c98f83180ccd018ac27d7b007b6",
+  "rows": 1030,
+  "missing_fields": {},
+  "violations": {},
+  "violation_examples": {},
+  "len_max": 706,
+  "len_mean": 304.47281553398057,
+  "len_p99": 578,
+  "len_p50": 285,
+  "over_length_rows(len+1>2048)": 0,
+  "supervised_chars_len_target_plus1": 208946,
+  "masked_observation_chars": 21135,
+  "supervised_chars_excl_observation": 187811,
+  "oov_rows": 0,
+  "oov_top": [],
+  "n_families": 103,
+  "families": {
+   "pya_list_cond_agg": 10,
+   "pya_list_count_between": 10,
+   "pya_list_second_largest": 10,
+   "pya_list_kth_smallest": 10,
+   "pya_list_median": 10,
+   "pya_list_mode": 10,
+   "pya_list_distinct_count": 10,
+   "pya_list_record_highs": 10,
+   "pya_list_longest_rise": 10,
+   "pya_list_pair_sum_count": 10,
+   "pya_list_sorted_gap": 10,
+   "pya_list_dedupe_order": 10,
+   "pya_list_rotate": 10,
+   "pya_list_prefix_sums": 10,
+   "pya_list_top_k_sum": 10,
+   "pya_list_alt_sum": 10,
+   "pya_list_dot_product": 10,
+   "pya_list_window_threshold": 10,
+   "pya_list_first_exceed": 10,
+   "pya_list_merge_sorted": 10,
+   "pya_list_max_gain": 10,
+   "pya_group_sum_top": 10,
+   "pya_group_count_key": 10,
+   "pya_latest_value": 10,
+   "pya_dict_keys_above": 10,
+   "pya_word_freq": 10,
+   "pya_group_avg": 10,
+   "pya_merge_total": 10,
+   "pya_nested_total": 10,
+   "pya_rank_name": 10,
+   "pya_join_price": 10,
+   "pya_value_ties": 10,
+   "pya_set_intersection_list": 10,
+   "pya_set_a_only_count": 10,
+   "pya_set_subset_check": 10,
+   "pya_set_first_repeat": 10,
+   "pya_set_missing_numbers": 10,
+   "pya_text_char_count": 10,
+   "pya_text_vowel_count": 10,
+   "pya_text_kana_class": 10,
+   "pya_text_palindrome": 10,
+   "pya_text_reverse_words": 10,
+   "pya_text_caesar": 10,
+   "pya_text_acronym": 10,
+   "pya_text_longest_word": 10,
+   "pya_text_digit_sum": 10,
+   "pya_text_anagram": 10,
+   "pya_text_replace": 10,
+   "pya_text_count_pair": 10,
+   "pya_text_first_unique": 10,
+   "pya_text_sort_chars": 10,
+   "pya_text_split_numbers": 10,
+   "pya_text_zero_pad": 10,
+   "pya_text_swapcase": 10,
+   "pya_text_remove_vowels": 10,
+   "pya_text_positions": 10,
+   "pya_nt_gcd": 10,
+   "pya_nt_lcm": 10,
+   "pya_nt_count_primes": 10,
+   "pya_nt_digit_sum": 10,
+   "pya_nt_to_base": 10,
+   "pya_nt_from_base": 10,
+   "pya_nt_divisor_count": 10,
+   "pya_nt_digital_root_steps": 10,
+   "pya_nt_collatz_steps": 10,
+   "pya_nt_nth_prime": 10,
+   "pya_nt_fib_mod": 10,
+   "pya_nt_proper_divisor_sum": 10,
+   "pya_nt_is_prime": 10,
+   "pya_nt_prime_factors": 10,
+   "pya_nt_count_multiples": 10,
+   "pya_nt_trailing_zeros": 10,
+   "pya_nt_palindrome_numbers": 10,
+   "pya_nt_pow_mod": 10,
+   "pya_cal_days_between": 10,
+   "pya_cal_add_days": 10,
+   "pya_cal_weekday": 10,
+   "pya_cal_leap_count": 10,
+   "pya_cal_day_of_year": 10,
+   "pya_cal_time_add": 10,
+   "pya_cal_month_range_days": 10,
+   "pya_cal_duration_format": 10,
+   "pya_cal_weekday_count": 10,
+   "pya_sim_bank": 10,
+   "pya_sim_stack": 10,
+   "pya_sim_queue": 10,
+   "pya_sim_inventory": 10,
+   "pya_sim_walk_1d": 10,
+   "pya_sim_change_greedy": 10,
+   "pya_sim_round_robin": 10,
+   "pya_sim_josephus": 10,
+   "pya_sim_parking": 10,
+   "pya_sim_game_score": 10,
+   "pya_sim_elevator": 10,
+   "pya_sim_bounce": 10,
+   "pya_sim_savings_years": 10,
+   "pya_mat_row_col": 10,
+   "pya_mat_diag_both": 10,
+   "pya_mat_rotate_row": 10,
+   "pya_mat_border_sum": 10,
+   "pya_mat_rows_increasing": 10,
+   "pya_mat_matmul_entry": 10,
+   "pya_mat_maximin": 10
+  },
+  "templates": {
+   "pya/list": 210,
+   "pya/dict": 110,
+   "pya/set": 50,
+   "pya/text": 190,
+   "pya/numtheory": 180,
+   "pya/calendar": 90,
+   "pya/sim": 130,
+   "pya/matrix": 70
+  },
+  "sources": {
+   "selfauthored:geocpu/v49-python-a": 1030
+  },
+  "licenses": {
+   "CC0-1.0": 1030
+  },
+  "difficulty": {
+   "1": 206,
+   "2": 206,
+   "3": 309,
+   "4": 309
+  },
+  "n_tool_steps_dist": {
+   "1": 1030
+  },
+  "dup_full_text_within_split": 0,
+  "prompt_conflicting_target": 0,
+  "prompt_dup_same_target": 0,
+  "answer_equals_reference_final_answer": 1030,
+  "answer_equals_stdout_strip": 1001,
+  "target_strict_template_ok": 1030,
+  "target_strict_template_bad": 0,
+  "mean_len_by_family": {
+   "pya_list_cond_agg": 287.0,
+   "pya_list_count_between": 288.2,
+   "pya_list_second_largest": 275.5,
+   "pya_list_kth_smallest": 260.5,
+   "pya_list_median": 281.1,
+   "pya_list_mode": 264.1,
+   "pya_list_distinct_count": 266.3,
+   "pya_list_record_highs": 332.4,
+   "pya_list_longest_rise": 350.0,
+   "pya_list_pair_sum_count": 361.6,
+   "pya_list_sorted_gap": 297.9,
+   "pya_list_dedupe_order": 324.3,
+   "pya_list_rotate": 310.3,
+   "pya_list_prefix_sums": 325.1,
+   "pya_list_top_k_sum": 287.2,
+   "pya_list_alt_sum": 304.9,
+   "pya_list_dot_product": 273.5,
+   "pya_list_window_threshold": 328.0,
+   "pya_list_first_exceed": 340.3,
+   "pya_list_merge_sorted": 419.0,
+   "pya_list_max_gain": 357.6,
+   "pya_group_sum_top": 510.5,
+   "pya_group_count_key": 498.8,
+   "pya_latest_value": 520.1,
+   "pya_dict_keys_above": 378.2,
+   "pya_word_freq": 279.8,
+   "pya_group_avg": 395.9,
+   "pya_merge_total": 332.5,
+   "pya_nested_total": 382.8,
+   "pya_rank_name": 366.3,
+   "pya_join_price": 412.9,
+   "pya_value_ties": 367.9,
+   "pya_set_intersection_list": 322.3,
+   "pya_set_a_only_count": 275.9,
+   "pya_set_subset_check": 277.2,
+   "pya_set_first_repeat": 363.2,
+   "pya_set_missing_numbers": 291.6,
+   "pya_text_char_count": 203.1,
+   "pya_text_vowel_count": 244.0,
+   "pya_text_kana_class": 225.1,
+   "pya_text_palindrome": 207.2,
+   "pya_text_reverse_words": 321.9,
+   "pya_text_caesar": 254.8,
+   "pya_text_acronym": 262.9,
+   "pya_text_longest_word": 273.6,
+   "pya_text_digit_sum": 232.2,
+   "pya_text_anagram": 245.1,
+   "pya_text_replace": 211.8,
+   "pya_text_count_pair": 212.8,
+   "pya_text_first_unique": 282.6,
+   "pya_text_sort_chars": 207.1,
+   "pya_text_split_numbers": 243.5,
+   "pya_text_zero_pad": 212.7,
+   "pya_text_swapcase": 204.5,
+   "pya_text_remove_vowels": 279.3,
+   "pya_text_positions": 258.6,
+   "pya_nt_gcd": 173.8,
+   "pya_nt_lcm": 189.9,
+   "pya_nt_count_primes": 255.0,
+   "pya_nt_digit_sum": 181.3,
+   "pya_nt_to_base": 198.7,
+   "pya_nt_from_base": 175.2,
+   "pya_nt_divisor_count": 200.8,
+   "pya_nt_digital_root_steps": 233.5,
+   "pya_nt_collatz_steps": 239.1,
+   "pya_nt_nth_prime": 255.1,
+   "pya_nt_fib_mod": 210.7,
+   "pya_nt_proper_divisor_sum": 185.7,
+   "pya_nt_is_prime": 199.5,
+   "pya_nt_prime_factors": 337.9,
+   "pya_nt_count_multiples": 219.6,
+   "pya_nt_trailing_zeros": 227.2,
+   "pya_nt_palindrome_numbers": 227.6,
+   "pya_nt_pow_mod": 162.4,
+   "pya_cal_days_between": 476.5,
+   "pya_cal_add_days": 487.1,
+   "pya_cal_weekday": 522.5,
+   "pya_cal_leap_count": 291.6,
+   "pya_cal_day_of_year": 355.5,
+   "pya_cal_time_add": 268.1,
+   "pya_cal_month_range_days": 349.2,
+   "pya_cal_duration_format": 270.1,
+   "pya_cal_weekday_count": 389.3,
+   "pya_sim_bank": 352.2,
+   "pya_sim_stack": 389.3,
+   "pya_sim_queue": 259.3,
+   "pya_sim_inventory": 612.6,
+   "pya_sim_walk_1d": 301.5,
+   "pya_sim_change_greedy": 257.2,
+   "pya_sim_round_robin": 435.7,
+   "pya_sim_josephus": 280.3,
+   "pya_sim_parking": 309.7,
+   "pya_sim_game_score": 392.2,
+   "pya_sim_elevator": 244.6,
+   "pya_sim_bounce": 258.0,
+   "pya_sim_savings_years": 266.3,
+   "pya_mat_row_col": 331.6,
+   "pya_mat_diag_both": 404.2,
+   "pya_mat_rotate_row": 330.2,
+   "pya_mat_border_sum": 459.4,
+   "pya_mat_rows_increasing": 439.2,
+   "pya_mat_matmul_entry": 327.9,
+   "pya_mat_maximin": 332.9
+  }
+ },
+ "train": {
+  "lines": 65920,
+  "blank": 0,
+  "bytes": 128333196,
+  "bad_json": 0,
+  "sha256": "91048a13f9e8c61aaea57cd1fe7c68e1bcc9b661a955e5fa1e359686ed0e2f6f",
+  "rows": 65920,
+  "missing_fields": {},
+  "violations": {},
+  "violation_examples": {},
+  "len_max": 724,
+  "len_mean": 308.3485133495146,
+  "len_p99": 587,
+  "len_p50": 287,
+  "over_length_rows(len+1>2048)": 0,
+  "supervised_chars_len_target_plus1": 13528184,
+  "masked_observation_chars": 1353090,
+  "supervised_chars_excl_observation": 12175094,
+  "oov_rows": 0,
+  "oov_top": [],
+  "n_families": 103,
+  "families": {
+   "pya_list_cond_agg": 640,
+   "pya_list_count_between": 640,
+   "pya_list_second_largest": 640,
+   "pya_list_kth_smallest": 640,
+   "pya_list_median": 640,
+   "pya_list_mode": 640,
+   "pya_list_distinct_count": 640,
+   "pya_list_record_highs": 640,
+   "pya_list_longest_rise": 640,
+   "pya_list_pair_sum_count": 640,
+   "pya_list_sorted_gap": 640,
+   "pya_list_dedupe_order": 640,
+   "pya_list_rotate": 640,
+   "pya_list_prefix_sums": 640,
+   "pya_list_top_k_sum": 640,
+   "pya_list_alt_sum": 640,
+   "pya_list_dot_product": 640,
+   "pya_list_window_threshold": 640,
+   "pya_list_first_exceed": 640,
+   "pya_list_merge_sorted": 640,
+   "pya_list_max_gain": 640,
+   "pya_group_sum_top": 640,
+   "pya_group_count_key": 640,
+   "pya_latest_value": 640,
+   "pya_dict_keys_above": 640,
+   "pya_word_freq": 640,
+   "pya_group_avg": 640,
+   "pya_merge_total": 640,
+   "pya_nested_total": 640,
+   "pya_rank_name": 640,
+   "pya_join_price": 640,
+   "pya_value_ties": 640,
+   "pya_set_intersection_list": 640,
+   "pya_set_a_only_count": 640,
+   "pya_set_subset_check": 640,
+   "pya_set_first_repeat": 640,
+   "pya_set_missing_numbers": 640,
+   "pya_text_char_count": 640,
+   "pya_text_vowel_count": 640,
+   "pya_text_kana_class": 640,
+   "pya_text_palindrome": 640,
+   "pya_text_reverse_words": 640,
+   "pya_text_caesar": 640,
+   "pya_text_acronym": 640,
+   "pya_text_longest_word": 640,
+   "pya_text_digit_sum": 640,
+   "pya_text_anagram": 640,
+   "pya_text_replace": 640,
+   "pya_text_count_pair": 640,
+   "pya_text_first_unique": 640,
+   "pya_text_sort_chars": 640,
+   "pya_text_split_numbers": 640,
+   "pya_text_zero_pad": 640,
+   "pya_text_swapcase": 640,
+   "pya_text_remove_vowels": 640,
+   "pya_text_positions": 640,
+   "pya_nt_gcd": 640,
+   "pya_nt_lcm": 640,
+   "pya_nt_count_primes": 640,
+   "pya_nt_digit_sum": 640,
+   "pya_nt_to_base": 640,
+   "pya_nt_from_base": 640,
+   "pya_nt_divisor_count": 640,
+   "pya_nt_digital_root_steps": 640,
+   "pya_nt_collatz_steps": 640,
+   "pya_nt_nth_prime": 640,
+   "pya_nt_fib_mod": 640,
+   "pya_nt_proper_divisor_sum": 640,
+   "pya_nt_is_prime": 640,
+   "pya_nt_prime_factors": 640,
+   "pya_nt_count_multiples": 640,
+   "pya_nt_trailing_zeros": 640,
+   "pya_nt_palindrome_numbers": 640,
+   "pya_nt_pow_mod": 640,
+   "pya_cal_days_between": 640,
+   "pya_cal_add_days": 640,
+   "pya_cal_weekday": 640,
+   "pya_cal_leap_count": 640,
+   "pya_cal_day_of_year": 640,
+   "pya_cal_time_add": 640,
+   "pya_cal_month_range_days": 640,
+   "pya_cal_duration_format": 640,
+   "pya_cal_weekday_count": 640,
+   "pya_sim_bank": 640,
+   "pya_sim_stack": 640,
+   "pya_sim_queue": 640,
+   "pya_sim_inventory": 640,
+   "pya_sim_walk_1d": 640,
+   "pya_sim_change_greedy": 640,
+   "pya_sim_round_robin": 640,
+   "pya_sim_josephus": 640,
+   "pya_sim_parking": 640,
+   "pya_sim_game_score": 640,
+   "pya_sim_elevator": 640,
+   "pya_sim_bounce": 640,
+   "pya_sim_savings_years": 640,
+   "pya_mat_row_col": 640,
+   "pya_mat_diag_both": 640,
+   "pya_mat_rotate_row": 640,
+   "pya_mat_border_sum": 640,
+   "pya_mat_rows_increasing": 640,
+   "pya_mat_matmul_entry": 640,
+   "pya_mat_maximin": 640
+  },
+  "templates": {
+   "pya/list": 13440,
+   "pya/dict": 7040,
+   "pya/set": 3200,
+   "pya/text": 12160,
+   "pya/numtheory": 11520,
+   "pya/calendar": 5760,
+   "pya/sim": 8320,
+   "pya/matrix": 4480
+  },
+  "sources": {
+   "selfauthored:geocpu/v49-python-a": 65920
+  },
+  "licenses": {
+   "CC0-1.0": 65920
+  },
+  "difficulty": {
+   "1": 8240,
+   "2": 8240,
+   "3": 24720,
+   "4": 24720
+  },
+  "n_tool_steps_dist": {
+   "1": 65920
+  },
+  "dup_full_text_within_split": 0,
+  "prompt_conflicting_target": 0,
+  "prompt_dup_same_target": 0,
+  "answer_equals_reference_final_answer": 65920,
+  "answer_equals_stdout_strip": 64617,
+  "target_strict_template_ok": 65920,
+  "target_strict_template_bad": 0,
+  "mean_len_by_family": {
+   "pya_list_cond_agg": 288.4,
+   "pya_list_count_between": 287.8,
+   "pya_list_second_largest": 279.6,
+   "pya_list_kth_smallest": 265.1,
+   "pya_list_median": 284.3,
+   "pya_list_mode": 269.5,
+   "pya_list_distinct_count": 261.2,
+   "pya_list_record_highs": 330.3,
+   "pya_list_longest_rise": 353.3,
+   "pya_list_pair_sum_count": 363.7,
+   "pya_list_sorted_gap": 305.1,
+   "pya_list_dedupe_order": 335.9,
+   "pya_list_rotate": 312.5,
+   "pya_list_prefix_sums": 319.6,
+   "pya_list_top_k_sum": 290.8,
+   "pya_list_alt_sum": 308.6,
+   "pya_list_dot_product": 280.2,
+   "pya_list_window_threshold": 336.6,
+   "pya_list_first_exceed": 341.7,
+   "pya_list_merge_sorted": 425.2,
+   "pya_list_max_gain": 361.9,
+   "pya_group_sum_top": 524.8,
+   "pya_group_count_key": 519.1,
+   "pya_latest_value": 533.4,
+   "pya_dict_keys_above": 376.2,
+   "pya_word_freq": 279.8,
+   "pya_group_avg": 409.4,
+   "pya_merge_total": 339.3,
+   "pya_nested_total": 397.7,
+   "pya_rank_name": 373.9,
+   "pya_join_price": 427.2,
+   "pya_value_ties": 374.6,
+   "pya_set_intersection_list": 329.2,
+   "pya_set_a_only_count": 282.7,
+   "pya_set_subset_check": 285.6,
+   "pya_set_first_repeat": 364.2,
+   "pya_set_missing_numbers": 294.9,
+   "pya_text_char_count": 200.8,
+   "pya_text_vowel_count": 245.9,
+   "pya_text_kana_class": 227.2,
+   "pya_text_palindrome": 216.5,
+   "pya_text_reverse_words": 327.6,
+   "pya_text_caesar": 255.6,
+   "pya_text_acronym": 266.2,
+   "pya_text_longest_word": 277.9,
+   "pya_text_digit_sum": 234.9,
+   "pya_text_anagram": 249.8,
+   "pya_text_replace": 218.3,
+   "pya_text_count_pair": 213.8,
+   "pya_text_first_unique": 282.8,
+   "pya_text_sort_chars": 208.1,
+   "pya_text_split_numbers": 243.0,
+   "pya_text_zero_pad": 214.3,
+   "pya_text_swapcase": 207.2,
+   "pya_text_remove_vowels": 281.8,
+   "pya_text_positions": 256.5,
+   "pya_nt_gcd": 200.7,
+   "pya_nt_lcm": 195.3,
+   "pya_nt_count_primes": 251.2,
+   "pya_nt_digit_sum": 181.7,
+   "pya_nt_to_base": 201.9,
+   "pya_nt_from_base": 171.3,
+   "pya_nt_divisor_count": 201.9,
+   "pya_nt_digital_root_steps": 233.7,
+   "pya_nt_collatz_steps": 240.5,
+   "pya_nt_nth_prime": 255.7,
+   "pya_nt_fib_mod": 210.8,
+   "pya_nt_proper_divisor_sum": 192.3,
+   "pya_nt_is_prime": 202.7,
+   "pya_nt_prime_factors": 338.6,
+   "pya_nt_count_multiples": 222.9,
+   "pya_nt_trailing_zeros": 229.7,
+   "pya_nt_palindrome_numbers": 227.1,
+   "pya_nt_pow_mod": 162.2,
+   "pya_cal_days_between": 476.8,
+   "pya_cal_add_days": 486.2,
+   "pya_cal_weekday": 524.0,
+   "pya_cal_leap_count": 288.5,
+   "pya_cal_day_of_year": 356.7,
+   "pya_cal_time_add": 268.7,
+   "pya_cal_month_range_days": 347.8,
+   "pya_cal_duration_format": 268.6,
+   "pya_cal_weekday_count": 389.5,
+   "pya_sim_bank": 362.6,
+   "pya_sim_stack": 390.1,
+   "pya_sim_queue": 276.8,
+   "pya_sim_inventory": 622.0,
+   "pya_sim_walk_1d": 305.6,
+   "pya_sim_change_greedy": 255.2,
+   "pya_sim_round_robin": 436.0,
+   "pya_sim_josephus": 281.6,
+   "pya_sim_parking": 300.6,
+   "pya_sim_game_score": 398.0,
+   "pya_sim_elevator": 248.8,
+   "pya_sim_bounce": 257.3,
+   "pya_sim_savings_years": 264.5,
+   "pya_mat_row_col": 343.7,
+   "pya_mat_diag_both": 422.7,
+   "pya_mat_rotate_row": 329.9,
+   "pya_mat_border_sum": 470.5,
+   "pya_mat_rows_increasing": 442.9,
+   "pya_mat_matmul_entry": 339.5,
+   "pya_mat_maximin": 343.7
+  }
+ },
+ "cross": {
+  "prompt_overlap_train_heldout": 0,
+  "full_text_overlap_train_heldout": 0,
+  "python_code_overlap_train_heldout": 0,
+  "prompt_overlap_train_dev": 0,
+  "full_text_overlap_train_dev": 0,
+  "python_code_overlap_train_dev": 0,
+  "prompt_overlap_dev_heldout": 0,
+  "full_text_overlap_dev_heldout": 0,
+  "python_code_overlap_dev_heldout": 0,
+  "families_train": 103,
+  "families_dev": 103,
+  "families_heldout": 15,
+  "heldout_families_in_train": [],
+  "heldout_families_not_in_train": [
+   "pya_brackets_balanced",
+   "pya_grid_islands",
+   "pya_grid_lattice_paths",
+   "pya_grid_shortest_path",
+   "pya_grid_walk_final",
+   "pya_lis_length",
+   "pya_longest_run",
+   "pya_max_subarray",
+   "pya_merge_intervals",
+   "pya_rle_decode",
+   "pya_rle_encode",
+   "pya_rpn_eval",
+   "pya_runs_count",
+   "pya_spiral_order",
+   "pya_walk_distinct_cells"
+  ],
+  "dev_families_in_train": 103,
+  "dev_families_not_in_train": [],
+  "train_families_not_in_dev": 0
+ },
+ "answers": {
+  "heldout": {
+   "n": 1500,
+   "n_distinct": 387,
+   "global_top": [
+    [
+     "5",
+     62
+    ],
+    [
+     "6",
+     62
+    ],
+    [
+     "8",
+     59
+    ],
+    [
+     "7",
+     59
+    ],
+    [
+     "9",
+     58
+    ],
+    [
+     "はい",
+     54
+    ],
+    [
+     "4",
+     54
+    ],
+    [
+     "14",
+     54
+    ],
+    [
+     "10",
+     54
+    ],
+    [
+     "13",
+     53
+    ],
+    [
+     "3",
+     52
+    ],
+    [
+     "12",
+     51
+    ]
+   ],
+   "global_majority_share": 0.04133333333333333,
+   "within_split_family_majority_acc": 0.13266666666666665,
+   "by_family": {
+    "pya_grid_walk_final": {
+     "n": 100,
+     "n_distinct": 39,
+     "top": [
+      [
+       "(3, 1)",
+       8
+      ],
+      [
+       "(2, 1)",
+       7
+      ],
+      [
+       "(2, 2)",
+       6
+      ],
+      [
+       "(3, 5)",
+       5
+      ],
+      [
+       "(1, 5)",
+       4
+      ]
+     ],
+     "maj_share": 0.08
+    },
+    "pya_grid_shortest_path": {
+     "n": 100,
+     "n_distinct": 15,
+     "top": [
+      [
+       "14",
+       19
+      ],
+      [
+       "13",
+       15
+      ],
+      [
+       "11",
+       12
+      ],
+      [
+       "12",
+       12
+      ],
+      [
+       "15",
+       10
+      ]
+     ],
+     "maj_share": 0.19
+    },
+    "pya_grid_islands": {
+     "n": 100,
+     "n_distinct": 15,
+     "top": [
+      [
+       "6",
+       18
+      ],
+      [
+       "5",
+       17
+      ],
+      [
+       "7",
+       15
+      ],
+      [
+       "3",
+       9
+      ],
+      [
+       "8",
+       8
+      ]
+     ],
+     "maj_share": 0.18
+    },
+    "pya_grid_lattice_paths": {
+     "n": 100,
+     "n_distinct": 33,
+     "top": [
+      [
+       "3",
+       13
+      ],
+      [
+       "4",
+       10
+      ],
+      [
+       "1",
+       9
+      ],
+      [
+       "6",
+       8
+      ],
+      [
+       "10",
+       7
+      ]
+     ],
+     "maj_share": 0.13
+    },
+    "pya_walk_distinct_cells": {
+     "n": 100,
+     "n_distinct": 13,
+     "top": [
+      [
+       "12",
+       17
+      ],
+      [
+       "13",
+       16
+      ],
+      [
+       "10",
+       12
+      ],
+      [
+       "11",
+       10
+      ],
+      [
+       "8",
+       9
+      ]
+     ],
+     "maj_share": 0.17
+    },
+    "pya_rle_encode": {
+     "n": 100,
+     "n_distinct": 100,
+     "top": [
+      [
+       "e1c5e4b4",
+       1
+      ],
+      [
+       "b3d2e4a2e1",
+       1
+      ],
+      [
+       "d2b3d4c2b4c5",
+       1
+      ],
+      [
+       "d2e2b2e1b2e4d5",
+       1
+      ],
+      [
+       "c3d5b2d1e4c4",
+       1
+      ]
+     ],
+     "maj_share": 0.01
+    },
+    "pya_rle_decode": {
+     "n": 100,
+     "n_distinct": 71,
+     "top": [
+      [
+       "22",
+       6
+      ],
+      [
+       "19",
+       5
+      ],
+      [
+       "15",
+       4
+      ],
+      [
+       "24",
+       4
+      ],
+      [
+       "14",
+       3
+      ]
+     ],
+     "maj_share": 0.06
+    },
+    "pya_longest_run": {
+     "n": 100,
+     "n_distinct": 13,
+     "top": [
+      [
+       "2",
+       13
+      ],
+      [
+       "5",
+       13
+      ],
+      [
+       "4",
+       12
+      ],
+      [
+       "10",
+       11
+      ],
+      [
+       "3",
+       11
+      ]
+     ],
+     "maj_share": 0.13
+    },
+    "pya_runs_count": {
+     "n": 100,
+     "n_distinct": 15,
+     "top": [
+      [
+       "6",
+       10
+      ],
+      [
+       "5",
+       9
+      ],
+      [
+       "9",
+       9
+      ],
+      [
+       "15",
+       9
+      ],
+      [
+       "3",
+       8
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_merge_intervals": {
+     "n": 100,
+     "n_distinct": 19,
+     "top": [
+      [
+       "19",
+       10
+      ],
+      [
+       "21",
+       10
+      ],
+      [
+       "25",
+       9
+      ],
+      [
+       "22",
+       9
+      ],
+      [
+       "16",
+       8
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_brackets_balanced": {
+     "n": 100,
+     "n_distinct": 2,
+     "top": [
+      [
+       "はい",
+       54
+      ],
+      [
+       "いいえ",
+       46
+      ]
+     ],
+     "maj_share": 0.54
+    },
+    "pya_max_subarray": {
+     "n": 100,
+     "n_distinct": 32,
+     "top": [
+      [
+       "9",
+       7
+      ],
+      [
+       "8",
+       6
+      ],
+      [
+       "21",
+       6
+      ],
+      [
+       "24",
+       5
+      ],
+      [
+       "14",
+       5
+      ]
+     ],
+     "maj_share": 0.07
+    },
+    "pya_spiral_order": {
+     "n": 100,
+     "n_distinct": 100,
+     "top": [
+      [
+       "[1, 51, 42, 62, 99, 13, 54, 45, 34, 44, 77, 49, 79, 55, 87]",
+       1
+      ],
+      [
+       "[29, 58, 59, 96, 84, 34, 23, 6, 40, 47, 98, 49, 35, 11, 75, 76, 4, 90, 51, 9]",
+       1
+      ],
+      [
+       "[66, 84, 48, 30, 94, 40, 31, 91, 15, 12, 26, 57]",
+       1
+      ],
+      [
+       "[28, 1, 18, 85, 38, 93, 19, 57, 71, 87, 47, 98, 74, 69, 31]",
+       1
+      ],
+      [
+       "[90, 86, 5, 36, 27, 25, 31, 61, 82, 14, 91, 33, 98, 93, 19]",
+       1
+      ]
+     ],
+     "maj_share": 0.01
+    },
+    "pya_rpn_eval": {
+     "n": 100,
+     "n_distinct": 74,
+     "top": [
+      [
+       "7",
+       5
+      ],
+      [
+       "22",
+       4
+      ],
+      [
+       "-3",
+       3
+      ],
+      [
+       "9",
+       3
+      ],
+      [
+       "14",
+       3
+      ]
+     ],
+     "maj_share": 0.05
+    },
+    "pya_lis_length": {
+     "n": 100,
+     "n_distinct": 7,
+     "top": [
+      [
+       "4",
+       17
+      ],
+      [
+       "6",
+       17
+      ],
+      [
+       "5",
+       16
+      ],
+      [
+       "9",
+       14
+      ],
+      [
+       "8",
+       14
+      ]
+     ],
+     "maj_share": 0.17
+    }
+   },
+   "train_global_majority_answer": "2",
+   "acc_train_global_majority": 0.012666666666666666,
+   "acc_train_family_majority_where_family_in_train": null,
+   "rows_with_family_in_train": 0,
+   "acc_train_family_lenbucket_majority_covered": null,
+   "rows_covered_family_lenbucket": 0
+  },
+  "dev": {
+   "n": 1030,
+   "n_distinct": 462,
+   "global_top": [
+    [
+     "2",
+     59
+    ],
+    [
+     "3",
+     53
+    ],
+    [
+     "4",
+     34
+    ],
+    [
+     "6",
+     27
+    ],
+    [
+     "1",
+     26
+    ],
+    [
+     "5",
+     24
+    ],
+    [
+     "はい",
+     24
+    ],
+    [
+     "11",
+     20
+    ],
+    [
+     "8",
+     19
+    ],
+    [
+     "20",
+     18
+    ],
+    [
+     "0",
+     16
+    ],
+    [
+     "いいえ",
+     16
+    ]
+   ],
+   "global_majority_share": 0.05728155339805825,
+   "within_split_family_majority_acc": 0.22330097087378642,
+   "by_family": {
+    "pya_list_cond_agg": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "228",
+       1
+      ],
+      [
+       "4",
+       1
+      ],
+      [
+       "330",
+       1
+      ],
+      [
+       "152",
+       1
+      ],
+      [
+       "128",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_list_count_between": {
+     "n": 10,
+     "n_distinct": 7,
+     "top": [
+      [
+       "2",
+       3
+      ],
+      [
+       "7",
+       2
+      ],
+      [
+       "5",
+       1
+      ],
+      [
+       "6",
+       1
+      ],
+      [
+       "3",
+       1
+      ]
+     ],
+     "maj_share": 0.3
+    },
+    "pya_list_second_largest": {
+     "n": 10,
+     "n_distinct": 9,
+     "top": [
+      [
+       "95",
+       2
+      ],
+      [
+       "11",
+       1
+      ],
+      [
+       "46",
+       1
+      ],
+      [
+       "92",
+       1
+      ],
+      [
+       "47",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_list_kth_smallest": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "13",
+       1
+      ],
+      [
+       "44",
+       1
+      ],
+      [
+       "16",
+       1
+      ],
+      [
+       "11",
+       1
+      ],
+      [
+       "3",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_list_median": {
+     "n": 10,
+     "n_distinct": 9,
+     "top": [
+      [
+       "26",
+       2
+      ],
+      [
+       "11",
+       1
+      ],
+      [
+       "66",
+       1
+      ],
+      [
+       "9",
+       1
+      ],
+      [
+       "23",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_list_mode": {
+     "n": 10,
+     "n_distinct": 7,
+     "top": [
+      [
+       "5",
+       3
+      ],
+      [
+       "3",
+       2
+      ],
+      [
+       "2",
+       1
+      ],
+      [
+       "1",
+       1
+      ],
+      [
+       "8",
+       1
+      ]
+     ],
+     "maj_share": 0.3
+    },
+    "pya_list_distinct_count": {
+     "n": 10,
+     "n_distinct": 7,
+     "top": [
+      [
+       "8",
+       2
+      ],
+      [
+       "5",
+       2
+      ],
+      [
+       "6",
+       2
+      ],
+      [
+       "3",
+       1
+      ],
+      [
+       "7",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_list_record_highs": {
+     "n": 10,
+     "n_distinct": 4,
+     "top": [
+      [
+       "3",
+       4
+      ],
+      [
+       "2",
+       4
+      ],
+      [
+       "1",
+       1
+      ],
+      [
+       "5",
+       1
+      ]
+     ],
+     "maj_share": 0.4
+    },
+    "pya_list_longest_rise": {
+     "n": 10,
+     "n_distinct": 4,
+     "top": [
+      [
+       "3",
+       4
+      ],
+      [
+       "4",
+       3
+      ],
+      [
+       "2",
+       2
+      ],
+      [
+       "6",
+       1
+      ]
+     ],
+     "maj_share": 0.4
+    },
+    "pya_list_pair_sum_count": {
+     "n": 10,
+     "n_distinct": 5,
+     "top": [
+      [
+       "3",
+       3
+      ],
+      [
+       "1",
+       2
+      ],
+      [
+       "2",
+       2
+      ],
+      [
+       "6",
+       2
+      ],
+      [
+       "4",
+       1
+      ]
+     ],
+     "maj_share": 0.3
+    },
+    "pya_list_sorted_gap": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "24",
+       1
+      ],
+      [
+       "10",
+       1
+      ],
+      [
+       "20",
+       1
+      ],
+      [
+       "32",
+       1
+      ],
+      [
+       "28",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_list_dedupe_order": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "[5, 4, 3, 2]",
+       1
+      ],
+      [
+       "[9, 7, 3, 4, 8, 12, 11]",
+       1
+      ],
+      [
+       "[5, 1, 9, 6, 8, 3, 2]",
+       1
+      ],
+      [
+       "[2, 6, 4, 1, 3, 5]",
+       1
+      ],
+      [
+       "[4, 3, 5, 6, 1, 2]",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_list_rotate": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "[66, 63, 91, 75, 26]",
+       1
+      ],
+      [
+       "[12, 32, 99, 72, 43, 56]",
+       1
+      ],
+      [
+       "[1, 3, 37, 96, 48, 82, 1, 55, 73]",
+       1
+      ],
+      [
+       "[3, 24, 31, 72, 67, 70, 91, 85, 41]",
+       1
+      ],
+      [
+       "[31, 93, 86, 47, 1, 71, 6, 34]",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_list_prefix_sums": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "[19, 36, 40, 44, 58, 78, 85]",
+       1
+      ],
+      [
+       "89",
+       1
+      ],
+      [
+       "[3, 12, 13, 18, 19, 21, 29, 33, 34, 41, 49]",
+       1
+      ],
+      [
+       "121",
+       1
+      ],
+      [
+       "48",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_list_top_k_sum": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "182",
+       1
+      ],
+      [
+       "139",
+       1
+      ],
+      [
+       "49",
+       1
+      ],
+      [
+       "71",
+       1
+      ],
+      [
+       "335",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_list_alt_sum": {
+     "n": 10,
+     "n_distinct": 9,
+     "top": [
+      [
+       "27",
+       2
+      ],
+      [
+       "80",
+       1
+      ],
+      [
+       "20",
+       1
+      ],
+      [
+       "131",
+       1
+      ],
+      [
+       "0",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_list_dot_product": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "86",
+       1
+      ],
+      [
+       "72",
+       1
+      ],
+      [
+       "151",
+       1
+      ],
+      [
+       "177",
+       1
+      ],
+      [
+       "238",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_list_window_threshold": {
+     "n": 10,
+     "n_distinct": 6,
+     "top": [
+      [
+       "3",
+       4
+      ],
+      [
+       "8",
+       2
+      ],
+      [
+       "4",
+       1
+      ],
+      [
+       "6",
+       1
+      ],
+      [
+       "1",
+       1
+      ]
+     ],
+     "maj_share": 0.4
+    },
+    "pya_list_first_exceed": {
+     "n": 10,
+     "n_distinct": 5,
+     "top": [
+      [
+       "6",
+       3
+      ],
+      [
+       "11",
+       3
+      ],
+      [
+       "3",
+       2
+      ],
+      [
+       "4",
+       1
+      ],
+      [
+       "5",
+       1
+      ]
+     ],
+     "maj_share": 0.3
+    },
+    "pya_list_merge_sorted": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "[3, 4, 11, 24, 26, 40, 42, 52]",
+       1
+      ],
+      [
+       "[7, 14, 18, 21, 23, 33, 46, 48, 53]",
+       1
+      ],
+      [
+       "[18, 22, 28, 31, 32, 41, 41, 42, 44, 47, 48, 56]",
+       1
+      ],
+      [
+       "[4, 6, 10, 12, 19, 36, 38, 45, 45, 48, 48, 53, 53]",
+       1
+      ],
+      [
+       "[2, 10, 11, 23, 27, 32, 34, 38, 46, 48, 49, 50]",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_list_max_gain": {
+     "n": 10,
+     "n_distinct": 9,
+     "top": [
+      [
+       "29",
+       2
+      ],
+      [
+       "26",
+       1
+      ],
+      [
+       "90",
+       1
+      ],
+      [
+       "20",
+       1
+      ],
+      [
+       "28",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_group_sum_top": {
+     "n": 10,
+     "n_distinct": 8,
+     "top": [
+      [
+       "みかん",
+       2
+      ],
+      [
+       "なし",
+       2
+      ],
+      [
+       "ぶどう",
+       1
+      ],
+      [
+       "りんご",
+       1
+      ],
+      [
+       "バナナ",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_group_count_key": {
+     "n": 10,
+     "n_distinct": 5,
+     "top": [
+      [
+       "2",
+       4
+      ],
+      [
+       "1",
+       2
+      ],
+      [
+       "3",
+       2
+      ],
+      [
+       "0",
+       1
+      ],
+      [
+       "4",
+       1
+      ]
+     ],
+     "maj_share": 0.4
+    },
+    "pya_latest_value": {
+     "n": 10,
+     "n_distinct": 6,
+     "top": [
+      [
+       "なし",
+       5
+      ],
+      [
+       "62",
+       1
+      ],
+      [
+       "94",
+       1
+      ],
+      [
+       "11",
+       1
+      ],
+      [
+       "24",
+       1
+      ]
+     ],
+     "maj_share": 0.5
+    },
+    "pya_dict_keys_above": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "['拓也', 'ひなた', '悠斗', '愛']",
+       1
+      ],
+      [
+       "['悠斗', '花子', '由美', 'みく', 'ひなた']",
+       1
+      ],
+      [
+       "['結衣', 'さくら', '大輔', '健', '愛', '蓮', '由美']",
+       1
+      ],
+      [
+       "['ひなた', '大輔']",
+       1
+      ],
+      [
+       "['蓮', '結衣', 'ひなた', '陽子', '拓也', '翔']",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_word_freq": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "0",
+       1
+      ],
+      [
+       "なし",
+       1
+      ],
+      [
+       "2",
+       1
+      ],
+      [
+       "3",
+       1
+      ],
+      [
+       "すいか",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_group_avg": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "71",
+       1
+      ],
+      [
+       "40",
+       1
+      ],
+      [
+       "51",
+       1
+      ],
+      [
+       "53",
+       1
+      ],
+      [
+       "59",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_merge_total": {
+     "n": 10,
+     "n_distinct": 9,
+     "top": [
+      [
+       "0",
+       2
+      ],
+      [
+       "8",
+       1
+      ],
+      [
+       "9",
+       1
+      ],
+      [
+       "23",
+       1
+      ],
+      [
+       "36",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_nested_total": {
+     "n": 10,
+     "n_distinct": 9,
+     "top": [
+      [
+       "42",
+       2
+      ],
+      [
+       "13",
+       1
+      ],
+      [
+       "59",
+       1
+      ],
+      [
+       "31",
+       1
+      ],
+      [
+       "22",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_rank_name": {
+     "n": 10,
+     "n_distinct": 7,
+     "top": [
+      [
+       "健",
+       2
+      ],
+      [
+       "美咲",
+       2
+      ],
+      [
+       "みく",
+       2
+      ],
+      [
+       "花子",
+       1
+      ],
+      [
+       "陽子",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_join_price": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "950",
+       1
+      ],
+      [
+       "1060",
+       1
+      ],
+      [
+       "2610",
+       1
+      ],
+      [
+       "4950",
+       1
+      ],
+      [
+       "3120",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_value_ties": {
+     "n": 10,
+     "n_distinct": 2,
+     "top": [
+      [
+       "2",
+       7
+      ],
+      [
+       "3",
+       3
+      ]
+     ],
+     "maj_share": 0.7
+    },
+    "pya_set_intersection_list": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "[5, 8, 15]",
+       1
+      ],
+      [
+       "[]",
+       1
+      ],
+      [
+       "[3, 8, 13]",
+       1
+      ],
+      [
+       "[1, 8, 13]",
+       1
+      ],
+      [
+       "[10, 14, 15]",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_set_a_only_count": {
+     "n": 10,
+     "n_distinct": 3,
+     "top": [
+      [
+       "4",
+       5
+      ],
+      [
+       "3",
+       4
+      ],
+      [
+       "2",
+       1
+      ]
+     ],
+     "maj_share": 0.5
+    },
+    "pya_set_subset_check": {
+     "n": 10,
+     "n_distinct": 2,
+     "top": [
+      [
+       "はい",
+       7
+      ],
+      [
+       "いいえ",
+       3
+      ]
+     ],
+     "maj_share": 0.7
+    },
+    "pya_set_first_repeat": {
+     "n": 10,
+     "n_distinct": 7,
+     "top": [
+      [
+       "なし",
+       2
+      ],
+      [
+       "13",
+       2
+      ],
+      [
+       "15",
+       2
+      ],
+      [
+       "25",
+       1
+      ],
+      [
+       "19",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_set_missing_numbers": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "[1]",
+       1
+      ],
+      [
+       "[1, 3]",
+       1
+      ],
+      [
+       "[7, 11]",
+       1
+      ],
+      [
+       "[2, 6, 10]",
+       1
+      ],
+      [
+       "[5, 11, 12]",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_text_char_count": {
+     "n": 10,
+     "n_distinct": 3,
+     "top": [
+      [
+       "1",
+       5
+      ],
+      [
+       "2",
+       3
+      ],
+      [
+       "0",
+       2
+      ]
+     ],
+     "maj_share": 0.5
+    },
+    "pya_text_vowel_count": {
+     "n": 10,
+     "n_distinct": 5,
+     "top": [
+      [
+       "9",
+       3
+      ],
+      [
+       "10",
+       3
+      ],
+      [
+       "6",
+       2
+      ],
+      [
+       "12",
+       1
+      ],
+      [
+       "8",
+       1
+      ]
+     ],
+     "maj_share": 0.3
+    },
+    "pya_text_kana_class": {
+     "n": 10,
+     "n_distinct": 6,
+     "top": [
+      [
+       "2",
+       3
+      ],
+      [
+       "6",
+       2
+      ],
+      [
+       "3",
+       2
+      ],
+      [
+       "5",
+       1
+      ],
+      [
+       "4",
+       1
+      ]
+     ],
+     "maj_share": 0.3
+    },
+    "pya_text_palindrome": {
+     "n": 10,
+     "n_distinct": 2,
+     "top": [
+      [
+       "はい",
+       6
+      ],
+      [
+       "いいえ",
+       4
+      ]
+     ],
+     "maj_share": 0.6
+    },
+    "pya_text_reverse_words": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "mepe zopekuk penguin",
+       1
+      ],
+      [
+       "tekub rideki zepuwam gureto",
+       1
+      ],
+      [
+       "depeg puhopez dize history supuz",
+       1
+      ],
+      [
+       "kitten todineg elephant runek silk niwapama",
+       1
+      ],
+      [
+       "wallet kekeperi mudusu gibaze gipebop",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_text_caesar": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "ljszy",
+       1
+      ],
+      [
+       "qbnf",
+       1
+      ],
+      [
+       "ucjqu",
+       1
+      ],
+      [
+       "zxgdzdud",
+       1
+      ],
+      [
+       "sufkhaca",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_text_acronym": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "BWP",
+       1
+      ],
+      [
+       "CWBG",
+       1
+      ],
+      [
+       "DZKD",
+       1
+      ],
+      [
+       "SSDRR",
+       1
+      ],
+      [
+       "FDHB",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_text_longest_word": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "kesomod",
+       1
+      ],
+      [
+       "hupatu",
+       1
+      ],
+      [
+       "sidikeb",
+       1
+      ],
+      [
+       "punibopo",
+       1
+      ],
+      [
+       "domodizu",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_text_digit_sum": {
+     "n": 10,
+     "n_distinct": 9,
+     "top": [
+      [
+       "20",
+       2
+      ],
+      [
+       "16",
+       1
+      ],
+      [
+       "8",
+       1
+      ],
+      [
+       "40",
+       1
+      ],
+      [
+       "36",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_text_anagram": {
+     "n": 10,
+     "n_distinct": 2,
+     "top": [
+      [
+       "はい",
+       8
+      ],
+      [
+       "いいえ",
+       2
+      ]
+     ],
+     "maj_share": 0.8
+    },
+    "pya_text_replace": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "dibi0",
+       1
+      ],
+      [
+       "tyyhedet",
+       1
+      ],
+      [
+       "queensebyysut",
+       1
+      ],
+      [
+       "nxrabtinxru",
+       1
+      ],
+      [
+       "wumubi01uk",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_text_count_pair": {
+     "n": 10,
+     "n_distinct": 4,
+     "top": [
+      [
+       "2",
+       4
+      ],
+      [
+       "1",
+       2
+      ],
+      [
+       "3",
+       2
+      ],
+      [
+       "0",
+       2
+      ]
+     ],
+     "maj_share": 0.4
+    },
+    "pya_text_first_unique": {
+     "n": 10,
+     "n_distinct": 6,
+     "top": [
+      [
+       "e",
+       3
+      ],
+      [
+       "なし",
+       2
+      ],
+      [
+       "g",
+       2
+      ],
+      [
+       "f",
+       1
+      ],
+      [
+       "b",
+       1
+      ]
+     ],
+     "maj_share": 0.3
+    },
+    "pya_text_sort_chars": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "dhikooz",
+       1
+      ],
+      [
+       "eennr",
+       1
+      ],
+      [
+       "adek",
+       1
+      ],
+      [
+       "aegimnnnnooorzz",
+       1
+      ],
+      [
+       "aeiwww",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_text_split_numbers": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "127",
+       1
+      ],
+      [
+       "12",
+       1
+      ],
+      [
+       "307",
+       1
+      ],
+      [
+       "10",
+       1
+      ],
+      [
+       "401",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_text_zero_pad": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "T00287",
+       1
+      ],
+      [
+       "A003857",
+       1
+      ],
+      [
+       "A01920",
+       1
+      ],
+      [
+       "B008775",
+       1
+      ],
+      [
+       "T04839",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_text_swapcase": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "BUNabOb",
+       1
+      ],
+      [
+       "mitErO",
+       1
+      ],
+      [
+       "NoTEBookniKOWU",
+       1
+      ],
+      [
+       "TABlESEraZiRA",
+       1
+      ],
+      [
+       "meDodigiKiTTeN",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_text_remove_vowels": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "thr kst",
+       1
+      ],
+      [
+       "wrh hsm kbt",
+       1
+      ],
+      [
+       "rvr zhng gb",
+       1
+      ],
+      [
+       "flm gks ngtg wpsk",
+       1
+      ],
+      [
+       "jngl gdg hstry",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_text_positions": {
+     "n": 10,
+     "n_distinct": 9,
+     "top": [
+      [
+       "[6]",
+       2
+      ],
+      [
+       "[0, 7, 8, 9, 10]",
+       1
+      ],
+      [
+       "[0, 1, 3, 6]",
+       1
+      ],
+      [
+       "[3, 5, 6, 12, 13]",
+       1
+      ],
+      [
+       "[1, 3, 7, 8, 9, 10]",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_nt_gcd": {
+     "n": 10,
+     "n_distinct": 6,
+     "top": [
+      [
+       "6",
+       2
+      ],
+      [
+       "5",
+       2
+      ],
+      [
+       "30",
+       2
+      ],
+      [
+       "16",
+       2
+      ],
+      [
+       "105",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_nt_lcm": {
+     "n": 10,
+     "n_distinct": 9,
+     "top": [
+      [
+       "780",
+       2
+      ],
+      [
+       "66",
+       1
+      ],
+      [
+       "140",
+       1
+      ],
+      [
+       "376",
+       1
+      ],
+      [
+       "1120",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_nt_count_primes": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "10",
+       1
+      ],
+      [
+       "96",
+       1
+      ],
+      [
+       "118",
+       1
+      ],
+      [
+       "156",
+       1
+      ],
+      [
+       "170",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_nt_digit_sum": {
+     "n": 10,
+     "n_distinct": 8,
+     "top": [
+      [
+       "16",
+       2
+      ],
+      [
+       "20",
+       2
+      ],
+      [
+       "23",
+       1
+      ],
+      [
+       "31",
+       1
+      ],
+      [
+       "19",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_nt_to_base": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "43",
+       1
+      ],
+      [
+       "11100101",
+       1
+      ],
+      [
+       "1101001",
+       1
+      ],
+      [
+       "2122",
+       1
+      ],
+      [
+       "543",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_nt_from_base": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "33",
+       1
+      ],
+      [
+       "34273",
+       1
+      ],
+      [
+       "191713",
+       1
+      ],
+      [
+       "10818",
+       1
+      ],
+      [
+       "3159605",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_nt_divisor_count": {
+     "n": 10,
+     "n_distinct": 6,
+     "top": [
+      [
+       "2",
+       4
+      ],
+      [
+       "4",
+       2
+      ],
+      [
+       "18",
+       1
+      ],
+      [
+       "20",
+       1
+      ],
+      [
+       "16",
+       1
+      ]
+     ],
+     "maj_share": 0.4
+    },
+    "pya_nt_digital_root_steps": {
+     "n": 10,
+     "n_distinct": 1,
+     "top": [
+      [
+       "2",
+       10
+      ]
+     ],
+     "maj_share": 1.0
+    },
+    "pya_nt_collatz_steps": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "119",
+       1
+      ],
+      [
+       "132",
+       1
+      ],
+      [
+       "45",
+       1
+      ],
+      [
+       "92",
+       1
+      ],
+      [
+       "35",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_nt_nth_prime": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "577",
+       1
+      ],
+      [
+       "3671",
+       1
+      ],
+      [
+       "6971",
+       1
+      ],
+      [
+       "13399",
+       1
+      ],
+      [
+       "7963",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_nt_fib_mod": {
+     "n": 10,
+     "n_distinct": 8,
+     "top": [
+      [
+       "2",
+       2
+      ],
+      [
+       "1",
+       2
+      ],
+      [
+       "4",
+       1
+      ],
+      [
+       "7",
+       1
+      ],
+      [
+       "8",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_nt_proper_divisor_sum": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "286",
+       1
+      ],
+      [
+       "1004",
+       1
+      ],
+      [
+       "107",
+       1
+      ],
+      [
+       "127",
+       1
+      ],
+      [
+       "106",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_nt_is_prime": {
+     "n": 10,
+     "n_distinct": 2,
+     "top": [
+      [
+       "いいえ",
+       7
+      ],
+      [
+       "はい",
+       3
+      ]
+     ],
+     "maj_share": 0.7
+    },
+    "pya_nt_prime_factors": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "3^2*101",
+       1
+      ],
+      [
+       "2^2*5^2*13",
+       1
+      ],
+      [
+       "2^2*3*47",
+       1
+      ],
+      [
+       "2^3*3*7*11",
+       1
+      ],
+      [
+       "7*97",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_nt_count_multiples": {
+     "n": 10,
+     "n_distinct": 9,
+     "top": [
+      [
+       "14",
+       2
+      ],
+      [
+       "30",
+       1
+      ],
+      [
+       "9",
+       1
+      ],
+      [
+       "55",
+       1
+      ],
+      [
+       "11",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_nt_trailing_zeros": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "6",
+       1
+      ],
+      [
+       "72",
+       1
+      ],
+      [
+       "111",
+       1
+      ],
+      [
+       "86",
+       1
+      ],
+      [
+       "45",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_nt_palindrome_numbers": {
+     "n": 10,
+     "n_distinct": 8,
+     "top": [
+      [
+       "6",
+       3
+      ],
+      [
+       "29",
+       1
+      ],
+      [
+       "43",
+       1
+      ],
+      [
+       "24",
+       1
+      ],
+      [
+       "18",
+       1
+      ]
+     ],
+     "maj_share": 0.3
+    },
+    "pya_nt_pow_mod": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "1",
+       1
+      ],
+      [
+       "24",
+       1
+      ],
+      [
+       "28",
+       1
+      ],
+      [
+       "9",
+       1
+      ],
+      [
+       "45",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_cal_days_between": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "24",
+       1
+      ],
+      [
+       "30",
+       1
+      ],
+      [
+       "411",
+       1
+      ],
+      [
+       "583",
+       1
+      ],
+      [
+       "85",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_cal_add_days": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "2052年2月23日",
+       1
+      ],
+      [
+       "2096年5月27日",
+       1
+      ],
+      [
+       "2071年9月17日",
+       1
+      ],
+      [
+       "2039年6月20日",
+       1
+      ],
+      [
+       "2073年7月12日",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_cal_weekday": {
+     "n": 10,
+     "n_distinct": 6,
+     "top": [
+      [
+       "木曜日",
+       2
+      ],
+      [
+       "金曜日",
+       2
+      ],
+      [
+       "月曜日",
+       2
+      ],
+      [
+       "土曜日",
+       2
+      ],
+      [
+       "日曜日",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_cal_leap_count": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "12",
+       1
+      ],
+      [
+       "20",
+       1
+      ],
+      [
+       "42",
+       1
+      ],
+      [
+       "36",
+       1
+      ],
+      [
+       "34",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_cal_day_of_year": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "7",
+       1
+      ],
+      [
+       "90",
+       1
+      ],
+      [
+       "278",
+       1
+      ],
+      [
+       "44",
+       1
+      ],
+      [
+       "200",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_cal_time_add": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "19:47",
+       1
+      ],
+      [
+       "01:03",
+       1
+      ],
+      [
+       "03:39",
+       1
+      ],
+      [
+       "16:36",
+       1
+      ],
+      [
+       "04:10",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_cal_month_range_days": {
+     "n": 10,
+     "n_distinct": 8,
+     "top": [
+      [
+       "120",
+       2
+      ],
+      [
+       "306",
+       2
+      ],
+      [
+       "244",
+       1
+      ],
+      [
+       "334",
+       1
+      ],
+      [
+       "89",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_cal_duration_format": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "2時間36分9秒",
+       1
+      ],
+      [
+       "5時間53分49秒",
+       1
+      ],
+      [
+       "16時間18分18秒",
+       1
+      ],
+      [
+       "21時間54分5秒",
+       1
+      ],
+      [
+       "16時間10分14秒",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_cal_weekday_count": {
+     "n": 10,
+     "n_distinct": 2,
+     "top": [
+      [
+       "5",
+       5
+      ],
+      [
+       "4",
+       5
+      ]
+     ],
+     "maj_share": 0.5
+    },
+    "pya_sim_bank": {
+     "n": 10,
+     "n_distinct": 8,
+     "top": [
+      [
+       "900",
+       2
+      ],
+      [
+       "400",
+       2
+      ],
+      [
+       "6700",
+       1
+      ],
+      [
+       "3200",
+       1
+      ],
+      [
+       "2500",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_sim_stack": {
+     "n": 10,
+     "n_distinct": 9,
+     "top": [
+      [
+       "69",
+       2
+      ],
+      [
+       "62",
+       1
+      ],
+      [
+       "20",
+       1
+      ],
+      [
+       "16",
+       1
+      ],
+      [
+       "76",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_sim_queue": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "20",
+       1
+      ],
+      [
+       "3",
+       1
+      ],
+      [
+       "23",
+       1
+      ],
+      [
+       "26",
+       1
+      ],
+      [
+       "25",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_sim_inventory": {
+     "n": 10,
+     "n_distinct": 9,
+     "top": [
+      [
+       "3",
+       2
+      ],
+      [
+       "24",
+       1
+      ],
+      [
+       "6",
+       1
+      ],
+      [
+       "22",
+       1
+      ],
+      [
+       "18",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_sim_walk_1d": {
+     "n": 10,
+     "n_distinct": 8,
+     "top": [
+      [
+       "4",
+       2
+      ],
+      [
+       "8",
+       2
+      ],
+      [
+       "20",
+       1
+      ],
+      [
+       "17",
+       1
+      ],
+      [
+       "9",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_sim_change_greedy": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "30",
+       1
+      ],
+      [
+       "14",
+       1
+      ],
+      [
+       "69",
+       1
+      ],
+      [
+       "101",
+       1
+      ],
+      [
+       "3",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_sim_round_robin": {
+     "n": 10,
+     "n_distinct": 7,
+     "top": [
+      [
+       "20",
+       2
+      ],
+      [
+       "36",
+       2
+      ],
+      [
+       "28",
+       2
+      ],
+      [
+       "4",
+       1
+      ],
+      [
+       "27",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_sim_josephus": {
+     "n": 10,
+     "n_distinct": 9,
+     "top": [
+      [
+       "5",
+       2
+      ],
+      [
+       "39",
+       1
+      ],
+      [
+       "3",
+       1
+      ],
+      [
+       "64",
+       1
+      ],
+      [
+       "73",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_sim_parking": {
+     "n": 10,
+     "n_distinct": 8,
+     "top": [
+      [
+       "1",
+       2
+      ],
+      [
+       "12",
+       2
+      ],
+      [
+       "2",
+       1
+      ],
+      [
+       "0",
+       1
+      ],
+      [
+       "3",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_sim_game_score": {
+     "n": 10,
+     "n_distinct": 7,
+     "top": [
+      [
+       "0",
+       3
+      ],
+      [
+       "9",
+       2
+      ],
+      [
+       "3",
+       1
+      ],
+      [
+       "20",
+       1
+      ],
+      [
+       "54",
+       1
+      ]
+     ],
+     "maj_share": 0.3
+    },
+    "pya_sim_elevator": {
+     "n": 10,
+     "n_distinct": 9,
+     "top": [
+      [
+       "34",
+       2
+      ],
+      [
+       "25",
+       1
+      ],
+      [
+       "20",
+       1
+      ],
+      [
+       "30",
+       1
+      ],
+      [
+       "39",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_sim_bounce": {
+     "n": 10,
+     "n_distinct": 6,
+     "top": [
+      [
+       "11",
+       2
+      ],
+      [
+       "8",
+       2
+      ],
+      [
+       "12",
+       2
+      ],
+      [
+       "6",
+       2
+      ],
+      [
+       "4",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_sim_savings_years": {
+     "n": 10,
+     "n_distinct": 6,
+     "top": [
+      [
+       "1",
+       2
+      ],
+      [
+       "3",
+       2
+      ],
+      [
+       "11",
+       2
+      ],
+      [
+       "5",
+       2
+      ],
+      [
+       "4",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_mat_row_col": {
+     "n": 10,
+     "n_distinct": 9,
+     "top": [
+      [
+       "2",
+       2
+      ],
+      [
+       "71",
+       1
+      ],
+      [
+       "3",
+       1
+      ],
+      [
+       "100",
+       1
+      ],
+      [
+       "4",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_mat_diag_both": {
+     "n": 10,
+     "n_distinct": 9,
+     "top": [
+      [
+       "117",
+       2
+      ],
+      [
+       "67",
+       1
+      ],
+      [
+       "116",
+       1
+      ],
+      [
+       "119",
+       1
+      ],
+      [
+       "132",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_mat_rotate_row": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "[9, 5, 4]",
+       1
+      ],
+      [
+       "[8, 4, 2]",
+       1
+      ],
+      [
+       "[3, 1, 5]",
+       1
+      ],
+      [
+       "[2, 1, 5]",
+       1
+      ],
+      [
+       "[8, 8, 1]",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_mat_border_sum": {
+     "n": 10,
+     "n_distinct": 10,
+     "top": [
+      [
+       "187",
+       1
+      ],
+      [
+       "201",
+       1
+      ],
+      [
+       "214",
+       1
+      ],
+      [
+       "281",
+       1
+      ],
+      [
+       "232",
+       1
+      ]
+     ],
+     "maj_share": 0.1
+    },
+    "pya_mat_rows_increasing": {
+     "n": 10,
+     "n_distinct": 5,
+     "top": [
+      [
+       "3",
+       4
+      ],
+      [
+       "1",
+       2
+      ],
+      [
+       "4",
+       2
+      ],
+      [
+       "5",
+       1
+      ],
+      [
+       "2",
+       1
+      ]
+     ],
+     "maj_share": 0.4
+    },
+    "pya_mat_matmul_entry": {
+     "n": 10,
+     "n_distinct": 9,
+     "top": [
+      [
+       "20",
+       2
+      ],
+      [
+       "16",
+       1
+      ],
+      [
+       "23",
+       1
+      ],
+      [
+       "34",
+       1
+      ],
+      [
+       "19",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    },
+    "pya_mat_maximin": {
+     "n": 10,
+     "n_distinct": 8,
+     "top": [
+      [
+       "11",
+       2
+      ],
+      [
+       "13",
+       2
+      ],
+      [
+       "19",
+       1
+      ],
+      [
+       "26",
+       1
+      ],
+      [
+       "23",
+       1
+      ]
+     ],
+     "maj_share": 0.2
+    }
+   },
+   "train_global_majority_answer": "2",
+   "acc_train_global_majority": 0.05728155339805825,
+   "acc_train_family_majority_where_family_in_train": 0.11262135922330097,
+   "rows_with_family_in_train": 1030,
+   "acc_train_family_lenbucket_majority_covered": 0.1145631067961165,
+   "rows_covered_family_lenbucket": 1030
+  },
+  "train": {
+   "n": 65920,
+   "n_distinct": 14781,
+   "global_top": [
+    [
+     "2",
+     3158
+    ],
+    [
+     "3",
+     2772
+    ],
+    [
+     "4",
+     2447
+    ],
+    [
+     "1",
+     1956
+    ],
+    [
+     "5",
+     1725
+    ],
+    [
+     "6",
+     1463
+    ],
+    [
+     "いいえ",
+     1311
+    ],
+    [
+     "はい",
+     1249
+    ],
+    [
+     "7",
+     1233
+    ],
+    [
+     "8",
+     1211
+    ],
+    [
+     "9",
+     982
+    ],
+    [
+     "0",
+     948
+    ]
+   ],
+   "global_majority_share": 0.04790655339805825,
+   "within_split_family_majority_acc": 0.1262742718446602,
+   "by_family": {
+    "pya_list_cond_agg": {
+     "n": 640,
+     "n_distinct": 158,
+     "top": [
+      [
+       "4",
+       43
+      ],
+      [
+       "3",
+       37
+      ],
+      [
+       "7",
+       32
+      ],
+      [
+       "5",
+       31
+      ],
+      [
+       "2",
+       29
+      ]
+     ],
+     "maj_share": 0.0672
+    },
+    "pya_list_count_between": {
+     "n": 640,
+     "n_distinct": 14,
+     "top": [
+      [
+       "3",
+       88
+      ],
+      [
+       "2",
+       78
+      ],
+      [
+       "5",
+       76
+      ],
+      [
+       "4",
+       75
+      ],
+      [
+       "6",
+       63
+      ]
+     ],
+     "maj_share": 0.1375
+    },
+    "pya_list_second_largest": {
+     "n": 640,
+     "n_distinct": 80,
+     "top": [
+      [
+       "18",
+       51
+      ],
+      [
+       "17",
+       37
+      ],
+      [
+       "16",
+       33
+      ],
+      [
+       "19",
+       26
+      ],
+      [
+       "15",
+       25
+      ]
+     ],
+     "maj_share": 0.0797
+    },
+    "pya_list_kth_smallest": {
+     "n": 640,
+     "n_distinct": 92,
+     "top": [
+      [
+       "14",
+       29
+      ],
+      [
+       "13",
+       28
+      ],
+      [
+       "10",
+       22
+      ],
+      [
+       "12",
+       22
+      ],
+      [
+       "15",
+       20
+      ]
+     ],
+     "maj_share": 0.0453
+    },
+    "pya_list_median": {
+     "n": 640,
+     "n_distinct": 77,
+     "top": [
+      [
+       "10",
+       37
+      ],
+      [
+       "11",
+       28
+      ],
+      [
+       "9",
+       24
+      ],
+      [
+       "12",
+       20
+      ],
+      [
+       "13",
+       19
+      ]
+     ],
+     "maj_share": 0.0578
+    },
+    "pya_list_mode": {
+     "n": 640,
+     "n_distinct": 15,
+     "top": [
+      [
+       "3",
+       97
+      ],
+      [
+       "5",
+       85
+      ],
+      [
+       "1",
+       77
+      ],
+      [
+       "2",
+       74
+      ],
+      [
+       "4",
+       67
+      ]
+     ],
+     "maj_share": 0.1516
+    },
+    "pya_list_distinct_count": {
+     "n": 640,
+     "n_distinct": 10,
+     "top": [
+      [
+       "6",
+       161
+      ],
+      [
+       "5",
+       122
+      ],
+      [
+       "7",
+       99
+      ],
+      [
+       "8",
+       85
+      ],
+      [
+       "9",
+       58
+      ]
+     ],
+     "maj_share": 0.2516
+    },
+    "pya_list_record_highs": {
+     "n": 640,
+     "n_distinct": 8,
+     "top": [
+      [
+       "3",
+       195
+      ],
+      [
+       "2",
+       180
+      ],
+      [
+       "4",
+       127
+      ],
+      [
+       "1",
+       83
+      ],
+      [
+       "5",
+       40
+      ]
+     ],
+     "maj_share": 0.3047
+    },
+    "pya_list_longest_rise": {
+     "n": 640,
+     "n_distinct": 5,
+     "top": [
+      [
+       "3",
+       335
+      ],
+      [
+       "2",
+       164
+      ],
+      [
+       "4",
+       120
+      ],
+      [
+       "5",
+       17
+      ],
+      [
+       "6",
+       4
+      ]
+     ],
+     "maj_share": 0.5234
+    },
+    "pya_list_pair_sum_count": {
+     "n": 640,
+     "n_distinct": 14,
+     "top": [
+      [
+       "2",
+       135
+      ],
+      [
+       "4",
+       115
+      ],
+      [
+       "3",
+       108
+      ],
+      [
+       "1",
+       93
+      ],
+      [
+       "5",
+       58
+      ]
+     ],
+     "maj_share": 0.2109
+    },
+    "pya_list_sorted_gap": {
+     "n": 640,
+     "n_distinct": 45,
+     "top": [
+      [
+       "11",
+       42
+      ],
+      [
+       "14",
+       39
+      ],
+      [
+       "10",
+       36
+      ],
+      [
+       "12",
+       34
+      ],
+      [
+       "13",
+       33
+      ]
+     ],
+     "maj_share": 0.0656
+    },
+    "pya_list_dedupe_order": {
+     "n": 640,
+     "n_distinct": 633,
+     "top": [
+      [
+       "[4, 6, 1, 3, 5, 2]",
+       2
+      ],
+      [
+       "[3, 6, 2, 5, 4]",
+       2
+      ],
+      [
+       "[1, 4, 2, 5, 3, 6]",
+       2
+      ],
+      [
+       "[6, 4, 5, 1, 3, 2]",
+       2
+      ],
+      [
+       "[3, 5, 6, 4]",
+       2
+      ]
+     ],
+     "maj_share": 0.0031
+    },
+    "pya_list_rotate": {
+     "n": 640,
+     "n_distinct": 640,
+     "top": [
+      [
+       "[70, 70, 14, 68, 43, 34, 5]",
+       1
+      ],
+      [
+       "[39, 43, 78, 88, 72, 69, 39, 96]",
+       1
+      ],
+      [
+       "[52, 55, 64, 84, 44, 13, 93, 38, 4]",
+       1
+      ],
+      [
+       "[30, 11, 54, 66, 86, 84, 87, 99, 92]",
+       1
+      ],
+      [
+       "[14, 93, 71, 91, 91, 16, 84, 65, 53]",
+       1
+      ]
+     ],
+     "maj_share": 0.0016
+    },
+    "pya_list_prefix_sums": {
+     "n": 640,
+     "n_distinct": 429,
+     "top": [
+      [
+       "28",
+       10
+      ],
+      [
+       "56",
+       9
+      ],
+      [
+       "26",
+       8
+      ],
+      [
+       "55",
+       8
+      ],
+      [
+       "16",
+       7
+      ]
+     ],
+     "maj_share": 0.0156
+    },
+    "pya_list_top_k_sum": {
+     "n": 640,
+     "n_distinct": 256,
+     "top": [
+      [
+       "69",
+       10
+      ],
+      [
+       "51",
+       9
+      ],
+      [
+       "50",
+       8
+      ],
+      [
+       "84",
+       7
+      ],
+      [
+       "40",
+       7
+      ]
+     ],
+     "maj_share": 0.0156
+    },
+    "pya_list_alt_sum": {
+     "n": 640,
+     "n_distinct": 216,
+     "top": [
+      [
+       "17",
+       13
+      ],
+      [
+       "21",
+       13
+      ],
+      [
+       "-3",
+       11
+      ],
+      [
+       "3",
+       10
+      ],
+      [
+       "4",
+       9
+      ]
+     ],
+     "maj_share": 0.0203
+    },
+    "pya_list_dot_product": {
+     "n": 640,
+     "n_distinct": 220,
+     "top": [
+      [
+       "160",
+       10
+      ],
+      [
+       "123",
+       9
+      ],
+      [
+       "170",
+       8
+      ],
+      [
+       "144",
+       8
+      ],
+      [
+       "158",
+       8
+      ]
+     ],
+     "maj_share": 0.0156
+    },
+    "pya_list_window_threshold": {
+     "n": 640,
+     "n_distinct": 12,
+     "top": [
+      [
+       "2",
+       86
+      ],
+      [
+       "5",
+       74
+      ],
+      [
+       "4",
+       72
+      ],
+      [
+       "3",
+       71
+      ],
+      [
+       "1",
+       66
+      ]
+     ],
+     "maj_share": 0.1344
+    },
+    "pya_list_first_exceed": {
+     "n": 640,
+     "n_distinct": 12,
+     "top": [
+      [
+       "7",
+       106
+      ],
+      [
+       "6",
+       92
+      ],
+      [
+       "5",
+       79
+      ],
+      [
+       "9",
+       74
+      ],
+      [
+       "8",
+       68
+      ]
+     ],
+     "maj_share": 0.1656
+    },
+    "pya_list_merge_sorted": {
+     "n": 640,
+     "n_distinct": 640,
+     "top": [
+      [
+       "[12, 22, 41, 45, 53, 54, 57, 57]",
+       1
+      ],
+      [
+       "[4, 20, 22, 26, 27, 27, 36, 42, 47]",
+       1
+      ],
+      [
+       "[1, 8, 10, 13, 25, 28, 29, 30, 36, 41, 43, 54]",
+       1
+      ],
+      [
+       "[14, 18, 30, 31, 32, 33, 33, 33, 34, 34, 44, 48, 51]",
+       1
+      ],
+      [
+       "[3, 5, 9, 10, 16, 16, 20, 23, 42, 60]",
+       1
+      ]
+     ],
+     "maj_share": 0.0016
+    },
+    "pya_list_max_gain": {
+     "n": 640,
+     "n_distinct": 81,
+     "top": [
+      [
+       "33",
+       26
+      ],
+      [
+       "28",
+       25
+      ],
+      [
+       "30",
+       25
+      ],
+      [
+       "29",
+       25
+      ],
+      [
+       "25",
+       21
+      ]
+     ],
+     "maj_share": 0.0406
+    },
+    "pya_group_sum_top": {
+     "n": 640,
+     "n_distinct": 12,
+     "top": [
+      [
+       "もも",
+       65
+      ],
+      [
+       "すいか",
+       62
+      ],
+      [
+       "かき",
+       62
+      ],
+      [
+       "バナナ",
+       59
+      ],
+      [
+       "なし",
+       58
+      ]
+     ],
+     "maj_share": 0.1016
+    },
+    "pya_group_count_key": {
+     "n": 640,
+     "n_distinct": 8,
+     "top": [
+      [
+       "2",
+       158
+      ],
+      [
+       "3",
+       142
+      ],
+      [
+       "0",
+       116
+      ],
+      [
+       "1",
+       90
+      ],
+      [
+       "4",
+       83
+      ]
+     ],
+     "maj_share": 0.2469
+    },
+    "pya_latest_value": {
+     "n": 640,
+     "n_distinct": 100,
+     "top": [
+      [
+       "なし",
+       164
+      ],
+      [
+       "54",
+       11
+      ],
+      [
+       "3",
+       10
+      ],
+      [
+       "7",
+       10
+      ],
+      [
+       "40",
+       9
+      ]
+     ],
+     "maj_share": 0.2562
+    },
+    "pya_dict_keys_above": {
+     "n": 640,
+     "n_distinct": 573,
+     "top": [
+      [
+       "['あおい']",
+       8
+      ],
+      [
+       "['翔']",
+       6
+      ],
+      [
+       "['ひなた']",
+       6
+      ],
+      [
+       "[]",
+       4
+      ],
+      [
+       "['さくら']",
+       4
+      ]
+     ],
+     "maj_share": 0.0125
+    },
+    "pya_word_freq": {
+     "n": 640,
+     "n_distinct": 20,
+     "top": [
+      [
+       "2",
+       76
+      ],
+      [
+       "3",
+       64
+      ],
+      [
+       "1",
+       44
+      ],
+      [
+       "レモン",
+       36
+      ],
+      [
+       "5",
+       36
+      ]
+     ],
+     "maj_share": 0.1187
+    },
+    "pya_group_avg": {
+     "n": 640,
+     "n_distinct": 51,
+     "top": [
+      [
+       "59",
+       20
+      ],
+      [
+       "46",
+       20
+      ],
+      [
+       "50",
+       19
+      ],
+      [
+       "89",
+       19
+      ],
+      [
+       "75",
+       18
+      ]
+     ],
+     "maj_share": 0.0312
+    },
+    "pya_merge_total": {
+     "n": 640,
+     "n_distinct": 40,
+     "top": [
+      [
+       "0",
+       34
+      ],
+      [
+       "20",
+       33
+      ],
+      [
+       "19",
+       28
+      ],
+      [
+       "18",
+       27
+      ],
+      [
+       "14",
+       26
+      ]
+     ],
+     "maj_share": 0.0531
+    },
+    "pya_nested_total": {
+     "n": 640,
+     "n_distinct": 87,
+     "top": [
+      [
+       "38",
+       22
+      ],
+      [
+       "36",
+       19
+      ],
+      [
+       "29",
+       18
+      ],
+      [
+       "47",
+       18
+      ],
+      [
+       "51",
+       16
+      ]
+     ],
+     "maj_share": 0.0344
+    },
+    "pya_rank_name": {
+     "n": 640,
+     "n_distinct": 18,
+     "top": [
+      [
+       "愛",
+       52
+      ],
+      [
+       "結衣",
+       49
+      ],
+      [
+       "みく",
+       46
+      ],
+      [
+       "陽子",
+       40
+      ],
+      [
+       "太郎",
+       38
+      ]
+     ],
+     "maj_share": 0.0813
+    },
+    "pya_join_price": {
+     "n": 640,
+     "n_distinct": 340,
+     "top": [
+      [
+       "2730",
+       6
+      ],
+      [
+       "3120",
+       6
+      ],
+      [
+       "2000",
+       6
+      ],
+      [
+       "1920",
+       6
+      ],
+      [
+       "1620",
+       6
+      ]
+     ],
+     "maj_share": 0.0094
+    },
+    "pya_value_ties": {
+     "n": 640,
+     "n_distinct": 4,
+     "top": [
+      [
+       "2",
+       286
+      ],
+      [
+       "3",
+       260
+      ],
+      [
+       "4",
+       48
+      ],
+      [
+       "1",
+       46
+      ]
+     ],
+     "maj_share": 0.4469
+    },
+    "pya_set_intersection_list": {
+     "n": 640,
+     "n_distinct": 441,
+     "top": [
+      [
+       "[]",
+       12
+      ],
+      [
+       "[7, 10]",
+       7
+      ],
+      [
+       "[6]",
+       6
+      ],
+      [
+       "[12]",
+       6
+      ],
+      [
+       "[1]",
+       6
+      ]
+     ],
+     "maj_share": 0.0187
+    },
+    "pya_set_a_only_count": {
+     "n": 640,
+     "n_distinct": 8,
+     "top": [
+      [
+       "3",
+       205
+      ],
+      [
+       "4",
+       180
+      ],
+      [
+       "2",
+       114
+      ],
+      [
+       "5",
+       85
+      ],
+      [
+       "6",
+       26
+      ]
+     ],
+     "maj_share": 0.3203
+    },
+    "pya_set_subset_check": {
+     "n": 640,
+     "n_distinct": 2,
+     "top": [
+      [
+       "いいえ",
+       323
+      ],
+      [
+       "はい",
+       317
+      ]
+     ],
+     "maj_share": 0.5047
+    },
+    "pya_set_first_repeat": {
+     "n": 640,
+     "n_distinct": 26,
+     "top": [
+      [
+       "なし",
+       249
+      ],
+      [
+       "25",
+       24
+      ],
+      [
+       "13",
+       20
+      ],
+      [
+       "7",
+       20
+      ],
+      [
+       "24",
+       18
+      ]
+     ],
+     "maj_share": 0.3891
+    },
+    "pya_set_missing_numbers": {
+     "n": 640,
+     "n_distinct": 256,
+     "top": [
+      [
+       "[5]",
+       22
+      ],
+      [
+       "[8]",
+       21
+      ],
+      [
+       "[7]",
+       20
+      ],
+      [
+       "[9]",
+       18
+      ],
+      [
+       "[1]",
+       18
+      ]
+     ],
+     "maj_share": 0.0344
+    },
+    "pya_text_char_count": {
+     "n": 640,
+     "n_distinct": 5,
+     "top": [
+      [
+       "1",
+       349
+      ],
+      [
+       "2",
+       161
+      ],
+      [
+       "0",
+       96
+      ],
+      [
+       "3",
+       30
+      ],
+      [
+       "4",
+       4
+      ]
+     ],
+     "maj_share": 0.5453
+    },
+    "pya_text_vowel_count": {
+     "n": 640,
+     "n_distinct": 13,
+     "top": [
+      [
+       "8",
+       108
+      ],
+      [
+       "7",
+       97
+      ],
+      [
+       "10",
+       92
+      ],
+      [
+       "9",
+       92
+      ],
+      [
+       "6",
+       75
+      ]
+     ],
+     "maj_share": 0.1688
+    },
+    "pya_text_kana_class": {
+     "n": 640,
+     "n_distinct": 18,
+     "top": [
+      [
+       "3",
+       124
+      ],
+      [
+       "6",
+       98
+      ],
+      [
+       "0",
+       61
+      ],
+      [
+       "7",
+       58
+      ],
+      [
+       "5",
+       54
+      ]
+     ],
+     "maj_share": 0.1938
+    },
+    "pya_text_palindrome": {
+     "n": 640,
+     "n_distinct": 2,
+     "top": [
+      [
+       "はい",
+       340
+      ],
+      [
+       "いいえ",
+       300
+      ]
+     ],
+     "maj_share": 0.5312
+    },
+    "pya_text_reverse_words": {
+     "n": 640,
+     "n_distinct": 640,
+     "top": [
+      [
+       "wolf bird doteg",
+       1
+      ],
+      [
+       "hobed milk seseg hiwa",
+       1
+      ],
+      [
+       "kitten dibakipu tones violin penguin",
+       1
+      ],
+      [
+       "tokimu debatoko rerog snow tiwu nodak",
+       1
+      ],
+      [
+       "pohezaza budipak wind dusur wisapag",
+       1
+      ]
+     ],
+     "maj_share": 0.0016
+    },
+    "pya_text_caesar": {
+     "n": 640,
+     "n_distinct": 640,
+     "top": [
+      [
+       "vcvkbw",
+       1
+      ],
+      [
+       "wyxehml",
+       1
+      ],
+      [
+       "nzmmlwu",
+       1
+      ],
+      [
+       "keteh",
+       1
+      ],
+      [
+       "xptfn",
+       1
+      ]
+     ],
+     "maj_share": 0.0016
+    },
+    "pya_text_acronym": {
+     "n": 640,
+     "n_distinct": 639,
+     "top": [
+      [
+       "RHT",
+       2
+      ],
+      [
+       "RPH",
+       1
+      ],
+      [
+       "FPRH",
+       1
+      ],
+      [
+       "PKMG",
+       1
+      ],
+      [
+       "MBWBF",
+       1
+      ]
+     ],
+     "maj_share": 0.0031
+    },
+    "pya_text_longest_word": {
+     "n": 640,
+     "n_distinct": 561,
+     "top": [
+      [
+       "butterfly",
+       17
+      ],
+      [
+       "mountain",
+       15
+      ],
+      [
+       "computer",
+       8
+      ],
+      [
+       "notebook",
+       7
+      ],
+      [
+       "dolphin",
+       6
+      ]
+     ],
+     "maj_share": 0.0266
+    },
+    "pya_text_digit_sum": {
+     "n": 640,
+     "n_distinct": 59,
+     "top": [
+      [
+       "34",
+       31
+      ],
+      [
+       "31",
+       28
+      ],
+      [
+       "32",
+       28
+      ],
+      [
+       "20",
+       25
+      ],
+      [
+       "26",
+       23
+      ]
+     ],
+     "maj_share": 0.0484
+    },
+    "pya_text_anagram": {
+     "n": 640,
+     "n_distinct": 2,
+     "top": [
+      [
+       "いいえ",
+       331
+      ],
+      [
+       "はい",
+       309
+      ]
+     ],
+     "maj_share": 0.5172
+    },
+    "pya_text_replace": {
+     "n": 640,
+     "n_distinct": 640,
+     "top": [
+      [
+       "t01p01",
+       1
+      ],
+      [
+       "dom#g",
+       1
+      ],
+      [
+       "xogbuzumi",
+       1
+      ],
+      [
+       "Zudemsasa",
+       1
+      ],
+      [
+       "hapetubatipZb",
+       1
+      ]
+     ],
+     "maj_share": 0.0016
+    },
+    "pya_text_count_pair": {
+     "n": 640,
+     "n_distinct": 5,
+     "top": [
+      [
+       "1",
+       246
+      ],
+      [
+       "2",
+       194
+      ],
+      [
+       "0",
+       125
+      ],
+      [
+       "3",
+       62
+      ],
+      [
+       "4",
+       13
+      ]
+     ],
+     "maj_share": 0.3844
+    },
+    "pya_text_first_unique": {
+     "n": 640,
+     "n_distinct": 8,
+     "top": [
+      [
+       "なし",
+       161
+      ],
+      [
+       "c",
+       79
+      ],
+      [
+       "f",
+       72
+      ],
+      [
+       "g",
+       71
+      ],
+      [
+       "b",
+       70
+      ]
+     ],
+     "maj_share": 0.2516
+    },
+    "pya_text_sort_chars": {
+     "n": 640,
+     "n_distinct": 638,
+     "top": [
+      [
+       "adesz",
+       2
+      ],
+      [
+       "douz",
+       2
+      ],
+      [
+       "abgtu",
+       1
+      ],
+      [
+       "depu",
+       1
+      ],
+      [
+       "ginr",
+       1
+      ]
+     ],
+     "maj_share": 0.0031
+    },
+    "pya_text_split_numbers": {
+     "n": 640,
+     "n_distinct": 241,
+     "top": [
+      [
+       "4",
+       17
+      ],
+      [
+       "1",
+       16
+      ],
+      [
+       "95",
+       16
+      ],
+      [
+       "2",
+       15
+      ],
+      [
+       "7",
+       14
+      ]
+     ],
+     "maj_share": 0.0266
+    },
+    "pya_text_zero_pad": {
+     "n": 640,
+     "n_distinct": 640,
+     "top": [
+      [
+       "B0002649",
+       1
+      ],
+      [
+       "X07931",
+       1
+      ],
+      [
+       "T0004860",
+       1
+      ],
+      [
+       "B0006934",
+       1
+      ],
+      [
+       "B04553",
+       1
+      ]
+     ],
+     "maj_share": 0.0016
+    },
+    "pya_text_swapcase": {
+     "n": 640,
+     "n_distinct": 640,
+     "top": [
+      [
+       "CLOUD",
+       1
+      ],
+      [
+       "duZaHasI",
+       1
+      ],
+      [
+       "teTIsGodIGAnu",
+       1
+      ],
+      [
+       "peNGuiNMILK",
+       1
+      ],
+      [
+       "kEroMezozEBRa",
+       1
+      ]
+     ],
+     "maj_share": 0.0016
+    },
+    "pya_text_remove_vowels": {
+     "n": 640,
+     "n_distinct": 640,
+     "top": [
+      [
+       "nwn bgmz",
+       1
+      ],
+      [
+       "rvr dzp stn",
+       1
+      ],
+      [
+       "phkk wndw gnpw",
+       1
+      ],
+      [
+       "chr sgg kkmh bk",
+       1
+      ],
+      [
+       "rbm nrt trrp",
+       1
+      ]
+     ],
+     "maj_share": 0.0016
+    },
+    "pya_text_positions": {
+     "n": 640,
+     "n_distinct": 444,
+     "top": [
+      [
+       "[8]",
+       16
+      ],
+      [
+       "[12]",
+       12
+      ],
+      [
+       "[10]",
+       11
+      ],
+      [
+       "[3]",
+       8
+      ],
+      [
+       "[4]",
+       8
+      ]
+     ],
+     "maj_share": 0.025
+    },
+    "pya_nt_gcd": {
+     "n": 640,
+     "n_distinct": 54,
+     "top": [
+      [
+       "4",
+       52
+      ],
+      [
+       "8",
+       44
+      ],
+      [
+       "12",
+       43
+      ],
+      [
+       "5",
+       39
+      ],
+      [
+       "9",
+       38
+      ]
+     ],
+     "maj_share": 0.0813
+    },
+    "pya_nt_lcm": {
+     "n": 640,
+     "n_distinct": 366,
+     "top": [
+      [
+       "90",
+       9
+      ],
+      [
+       "60",
+       9
+      ],
+      [
+       "36",
+       8
+      ],
+      [
+       "120",
+       8
+      ],
+      [
+       "150",
+       8
+      ]
+     ],
+     "maj_share": 0.0141
+    },
+    "pya_nt_count_primes": {
+     "n": 640,
+     "n_distinct": 204,
+     "top": [
+      [
+       "99",
+       14
+      ],
+      [
+       "30",
+       10
+      ],
+      [
+       "62",
+       10
+      ],
+      [
+       "137",
+       10
+      ],
+      [
+       "146",
+       9
+      ]
+     ],
+     "maj_share": 0.0219
+    },
+    "pya_nt_digit_sum": {
+     "n": 640,
+     "n_distinct": 46,
+     "top": [
+      [
+       "25",
+       36
+      ],
+      [
+       "23",
+       34
+      ],
+      [
+       "33",
+       33
+      ],
+      [
+       "28",
+       33
+      ],
+      [
+       "31",
+       30
+      ]
+     ],
+     "maj_share": 0.0563
+    },
+    "pya_nt_to_base": {
+     "n": 640,
+     "n_distinct": 611,
+     "top": [
+      [
+       "1100",
+       3
+      ],
+      [
+       "13231",
+       2
+      ],
+      [
+       "2022",
+       2
+      ],
+      [
+       "531",
+       2
+      ],
+      [
+       "102",
+       2
+      ]
+     ],
+     "maj_share": 0.0047
+    },
+    "pya_nt_from_base": {
+     "n": 640,
+     "n_distinct": 568,
+     "top": [
+      [
+       "53",
+       4
+      ],
+      [
+       "26",
+       4
+      ],
+      [
+       "9",
+       3
+      ],
+      [
+       "91",
+       3
+      ],
+      [
+       "19",
+       3
+      ]
+     ],
+     "maj_share": 0.0063
+    },
+    "pya_nt_divisor_count": {
+     "n": 640,
+     "n_distinct": 18,
+     "top": [
+      [
+       "4",
+       170
+      ],
+      [
+       "8",
+       123
+      ],
+      [
+       "2",
+       81
+      ],
+      [
+       "6",
+       77
+      ],
+      [
+       "12",
+       75
+      ]
+     ],
+     "maj_share": 0.2656
+    },
+    "pya_nt_digital_root_steps": {
+     "n": 640,
+     "n_distinct": 3,
+     "top": [
+      [
+       "2",
+       536
+      ],
+      [
+       "3",
+       95
+      ],
+      [
+       "1",
+       9
+      ]
+     ],
+     "maj_share": 0.8375
+    },
+    "pya_nt_collatz_steps": {
+     "n": 640,
+     "n_distinct": 167,
+     "top": [
+      [
+       "51",
+       15
+      ],
+      [
+       "33",
+       13
+      ],
+      [
+       "48",
+       11
+      ],
+      [
+       "46",
+       11
+      ],
+      [
+       "38",
+       11
+      ]
+     ],
+     "maj_share": 0.0234
+    },
+    "pya_nt_nth_prime": {
+     "n": 640,
+     "n_distinct": 637,
+     "top": [
+      [
+       "197",
+       2
+      ],
+      [
+       "41",
+       2
+      ],
+      [
+       "17",
+       2
+      ],
+      [
+       "2459",
+       1
+      ],
+      [
+       "3407",
+       1
+      ]
+     ],
+     "maj_share": 0.0031
+    },
+    "pya_nt_fib_mod": {
+     "n": 640,
+     "n_distinct": 30,
+     "top": [
+      [
+       "1",
+       97
+      ],
+      [
+       "2",
+       64
+      ],
+      [
+       "5",
+       63
+      ],
+      [
+       "0",
+       51
+      ],
+      [
+       "13",
+       42
+      ]
+     ],
+     "maj_share": 0.1516
+    },
+    "pya_nt_proper_divisor_sum": {
+     "n": 640,
+     "n_distinct": 423,
+     "top": [
+      [
+       "1",
+       116
+      ],
+      [
+       "55",
+       4
+      ],
+      [
+       "97",
+       4
+      ],
+      [
+       "274",
+       4
+      ],
+      [
+       "73",
+       3
+      ]
+     ],
+     "maj_share": 0.1812
+    },
+    "pya_nt_is_prime": {
+     "n": 640,
+     "n_distinct": 2,
+     "top": [
+      [
+       "いいえ",
+       357
+      ],
+      [
+       "はい",
+       283
+      ]
+     ],
+     "maj_share": 0.5578
+    },
+    "pya_nt_prime_factors": {
+     "n": 640,
+     "n_distinct": 640,
+     "top": [
+      [
+       "3*499",
+       1
+      ],
+      [
+       "2*5*7*23",
+       1
+      ],
+      [
+       "2^3*11*67",
+       1
+      ],
+      [
+       "2*3389",
+       1
+      ],
+      [
+       "2^2*5*113",
+       1
+      ]
+     ],
+     "maj_share": 0.0016
+    },
+    "pya_nt_count_multiples": {
+     "n": 640,
+     "n_distinct": 116,
+     "top": [
+      [
+       "20",
+       18
+      ],
+      [
+       "29",
+       15
+      ],
+      [
+       "11",
+       15
+      ],
+      [
+       "16",
+       14
+      ],
+      [
+       "37",
+       14
+      ]
+     ],
+     "maj_share": 0.0281
+    },
+    "pya_nt_trailing_zeros": {
+     "n": 640,
+     "n_distinct": 287,
+     "top": [
+      [
+       "4",
+       5
+      ],
+      [
+       "31",
+       5
+      ],
+      [
+       "50",
+       5
+      ],
+      [
+       "24",
+       5
+      ],
+      [
+       "58",
+       4
+      ]
+     ],
+     "maj_share": 0.0078
+    },
+    "pya_nt_palindrome_numbers": {
+     "n": 640,
+     "n_distinct": 54,
+     "top": [
+      [
+       "10",
+       33
+      ],
+      [
+       "12",
+       27
+      ],
+      [
+       "14",
+       26
+      ],
+      [
+       "11",
+       26
+      ],
+      [
+       "15",
+       25
+      ]
+     ],
+     "maj_share": 0.0516
+    },
+    "pya_nt_pow_mod": {
+     "n": 640,
+     "n_distinct": 82,
+     "top": [
+      [
+       "1",
+       46
+      ],
+      [
+       "4",
+       42
+      ],
+      [
+       "16",
+       31
+      ],
+      [
+       "8",
+       27
+      ],
+      [
+       "25",
+       24
+      ]
+     ],
+     "maj_share": 0.0719
+    },
+    "pya_cal_days_between": {
+     "n": 640,
+     "n_distinct": 361,
+     "top": [
+      [
+       "132",
+       5
+      ],
+      [
+       "296",
+       5
+      ],
+      [
+       "267",
+       5
+      ],
+      [
+       "210",
+       5
+      ],
+      [
+       "67",
+       5
+      ]
+     ],
+     "maj_share": 0.0078
+    },
+    "pya_cal_add_days": {
+     "n": 640,
+     "n_distinct": 636,
+     "top": [
+      [
+       "2062年9月21日",
+       2
+      ],
+      [
+       "2056年6月19日",
+       2
+      ],
+      [
+       "2054年8月22日",
+       2
+      ],
+      [
+       "2014年12月15日",
+       2
+      ],
+      [
+       "2077年8月13日",
+       1
+      ]
+     ],
+     "maj_share": 0.0031
+    },
+    "pya_cal_weekday": {
+     "n": 640,
+     "n_distinct": 7,
+     "top": [
+      [
+       "水曜日",
+       98
+      ],
+      [
+       "火曜日",
+       95
+      ],
+      [
+       "土曜日",
+       95
+      ],
+      [
+       "月曜日",
+       90
+      ],
+      [
+       "日曜日",
+       88
+      ]
+     ],
+     "maj_share": 0.1531
+    },
+    "pya_cal_leap_count": {
+     "n": 640,
+     "n_distinct": 58,
+     "top": [
+      [
+       "24",
+       26
+      ],
+      [
+       "4",
+       25
+      ],
+      [
+       "13",
+       22
+      ],
+      [
+       "14",
+       22
+      ],
+      [
+       "15",
+       22
+      ]
+     ],
+     "maj_share": 0.0406
+    },
+    "pya_cal_day_of_year": {
+     "n": 640,
+     "n_distinct": 296,
+     "top": [
+      [
+       "201",
+       6
+      ],
+      [
+       "136",
+       6
+      ],
+      [
+       "6",
+       6
+      ],
+      [
+       "31",
+       6
+      ],
+      [
+       "200",
+       6
+      ]
+     ],
+     "maj_share": 0.0094
+    },
+    "pya_cal_time_add": {
+     "n": 640,
+     "n_distinct": 515,
+     "top": [
+      [
+       "23:41",
+       4
+      ],
+      [
+       "07:33",
+       3
+      ],
+      [
+       "20:52",
+       3
+      ],
+      [
+       "05:21",
+       3
+      ],
+      [
+       "15:27",
+       3
+      ]
+     ],
+     "maj_share": 0.0063
+    },
+    "pya_cal_month_range_days": {
+     "n": 640,
+     "n_distinct": 38,
+     "top": [
+      [
+       "153",
+       71
+      ],
+      [
+       "92",
+       59
+      ],
+      [
+       "122",
+       58
+      ],
+      [
+       "61",
+       56
+      ],
+      [
+       "214",
+       51
+      ]
+     ],
+     "maj_share": 0.1109
+    },
+    "pya_cal_duration_format": {
+     "n": 640,
+     "n_distinct": 640,
+     "top": [
+      [
+       "4時間13分34秒",
+       1
+      ],
+      [
+       "5時間39分27秒",
+       1
+      ],
+      [
+       "15時間23分15秒",
+       1
+      ],
+      [
+       "9時間40分22秒",
+       1
+      ],
+      [
+       "15時間10分19秒",
+       1
+      ]
+     ],
+     "maj_share": 0.0016
+    },
+    "pya_cal_weekday_count": {
+     "n": 640,
+     "n_distinct": 2,
+     "top": [
+      [
+       "4",
+       425
+      ],
+      [
+       "5",
+       215
+      ]
+     ],
+     "maj_share": 0.6641
+    },
+    "pya_sim_bank": {
+     "n": 640,
+     "n_distinct": 67,
+     "top": [
+      [
+       "1300",
+       26
+      ],
+      [
+       "0",
+       25
+      ],
+      [
+       "1400",
+       21
+      ],
+      [
+       "700",
+       21
+      ],
+      [
+       "500",
+       21
+      ]
+     ],
+     "maj_share": 0.0406
+    },
+    "pya_sim_stack": {
+     "n": 640,
+     "n_distinct": 97,
+     "top": [
+      [
+       "3",
+       74
+      ],
+      [
+       "5",
+       66
+      ],
+      [
+       "1",
+       58
+      ],
+      [
+       "7",
+       39
+      ],
+      [
+       "9",
+       15
+      ]
+     ],
+     "maj_share": 0.1156
+    },
+    "pya_sim_queue": {
+     "n": 640,
+     "n_distinct": 61,
+     "top": [
+      [
+       "6",
+       58
+      ],
+      [
+       "4",
+       51
+      ],
+      [
+       "5",
+       50
+      ],
+      [
+       "7",
+       38
+      ],
+      [
+       "3",
+       28
+      ]
+     ],
+     "maj_share": 0.0906
+    },
+    "pya_sim_inventory": {
+     "n": 640,
+     "n_distinct": 45,
+     "top": [
+      [
+       "7",
+       42
+      ],
+      [
+       "3",
+       37
+      ],
+      [
+       "13",
+       36
+      ],
+      [
+       "5",
+       31
+      ],
+      [
+       "9",
+       29
+      ]
+     ],
+     "maj_share": 0.0656
+    },
+    "pya_sim_walk_1d": {
+     "n": 640,
+     "n_distinct": 31,
+     "top": [
+      [
+       "0",
+       98
+      ],
+      [
+       "8",
+       47
+      ],
+      [
+       "9",
+       36
+      ],
+      [
+       "5",
+       35
+      ],
+      [
+       "7",
+       34
+      ]
+     ],
+     "maj_share": 0.1531
+    },
+    "pya_sim_change_greedy": {
+     "n": 640,
+     "n_distinct": 104,
+     "top": [
+      [
+       "8",
+       34
+      ],
+      [
+       "7",
+       28
+      ],
+      [
+       "10",
+       28
+      ],
+      [
+       "9",
+       26
+      ],
+      [
+       "11",
+       24
+      ]
+     ],
+     "maj_share": 0.0531
+    },
+    "pya_sim_round_robin": {
+     "n": 640,
+     "n_distinct": 41,
+     "top": [
+      [
+       "24",
+       31
+      ],
+      [
+       "19",
+       28
+      ],
+      [
+       "28",
+       28
+      ],
+      [
+       "23",
+       28
+      ],
+      [
+       "21",
+       27
+      ]
+     ],
+     "maj_share": 0.0484
+    },
+    "pya_sim_josephus": {
+     "n": 640,
+     "n_distinct": 121,
+     "top": [
+      [
+       "1",
+       24
+      ],
+      [
+       "3",
+       22
+      ],
+      [
+       "9",
+       21
+      ],
+      [
+       "7",
+       19
+      ],
+      [
+       "5",
+       18
+      ]
+     ],
+     "maj_share": 0.0375
+    },
+    "pya_sim_parking": {
+     "n": 640,
+     "n_distinct": 24,
+     "top": [
+      [
+       "2",
+       87
+      ],
+      [
+       "1",
+       74
+      ],
+      [
+       "3",
+       67
+      ],
+      [
+       "0",
+       65
+      ],
+      [
+       "4",
+       47
+      ]
+     ],
+     "maj_share": 0.1359
+    },
+    "pya_sim_game_score": {
+     "n": 640,
+     "n_distinct": 53,
+     "top": [
+      [
+       "0",
+       99
+      ],
+      [
+       "2",
+       38
+      ],
+      [
+       "1",
+       29
+      ],
+      [
+       "3",
+       27
+      ],
+      [
+       "8",
+       26
+      ]
+     ],
+     "maj_share": 0.1547
+    },
+    "pya_sim_elevator": {
+     "n": 640,
+     "n_distinct": 59,
+     "top": [
+      [
+       "35",
+       29
+      ],
+      [
+       "36",
+       26
+      ],
+      [
+       "33",
+       24
+      ],
+      [
+       "34",
+       24
+      ],
+      [
+       "31",
+       22
+      ]
+     ],
+     "maj_share": 0.0453
+    },
+    "pya_sim_bounce": {
+     "n": 640,
+     "n_distinct": 11,
+     "top": [
+      [
+       "6",
+       164
+      ],
+      [
+       "7",
+       92
+      ],
+      [
+       "5",
+       83
+      ],
+      [
+       "12",
+       67
+      ],
+      [
+       "8",
+       66
+      ]
+     ],
+     "maj_share": 0.2562
+    },
+    "pya_sim_savings_years": {
+     "n": 640,
+     "n_distinct": 39,
+     "top": [
+      [
+       "2",
+       96
+      ],
+      [
+       "3",
+       83
+      ],
+      [
+       "4",
+       63
+      ],
+      [
+       "5",
+       47
+      ],
+      [
+       "1",
+       46
+      ]
+     ],
+     "maj_share": 0.15
+    },
+    "pya_mat_row_col": {
+     "n": 640,
+     "n_distinct": 86,
+     "top": [
+      [
+       "3",
+       90
+      ],
+      [
+       "2",
+       80
+      ],
+      [
+       "1",
+       79
+      ],
+      [
+       "4",
+       57
+      ],
+      [
+       "64",
+       14
+      ]
+     ],
+     "maj_share": 0.1406
+    },
+    "pya_mat_diag_both": {
+     "n": 640,
+     "n_distinct": 154,
+     "top": [
+      [
+       "126",
+       12
+      ],
+      [
+       "143",
+       12
+      ],
+      [
+       "115",
+       11
+      ],
+      [
+       "131",
+       10
+      ],
+      [
+       "128",
+       9
+      ]
+     ],
+     "maj_share": 0.0187
+    },
+    "pya_mat_rotate_row": {
+     "n": 640,
+     "n_distinct": 428,
+     "top": [
+      [
+       "[6, 3, 2]",
+       7
+      ],
+      [
+       "[1, 3, 2]",
+       5
+      ],
+      [
+       "[8, 2, 5]",
+       4
+      ],
+      [
+       "[2, 6, 4]",
+       4
+      ],
+      [
+       "[8, 9, 7]",
+       4
+      ]
+     ],
+     "maj_share": 0.0109
+    },
+    "pya_mat_border_sum": {
+     "n": 640,
+     "n_distinct": 182,
+     "top": [
+      [
+       "231",
+       10
+      ],
+      [
+       "187",
+       10
+      ],
+      [
+       "256",
+       10
+      ],
+      [
+       "230",
+       9
+      ],
+      [
+       "235",
+       9
+      ]
+     ],
+     "maj_share": 0.0156
+    },
+    "pya_mat_rows_increasing": {
+     "n": 640,
+     "n_distinct": 7,
+     "top": [
+      [
+       "3",
+       191
+      ],
+      [
+       "2",
+       155
+      ],
+      [
+       "4",
+       145
+      ],
+      [
+       "1",
+       78
+      ],
+      [
+       "5",
+       42
+      ]
+     ],
+     "maj_share": 0.2984
+    },
+    "pya_mat_matmul_entry": {
+     "n": 640,
+     "n_distinct": 55,
+     "top": [
+      [
+       "20",
+       35
+      ],
+      [
+       "12",
+       34
+      ],
+      [
+       "8",
+       32
+      ],
+      [
+       "6",
+       26
+      ],
+      [
+       "5",
+       23
+      ]
+     ],
+     "maj_share": 0.0547
+    },
+    "pya_mat_maximin": {
+     "n": 640,
+     "n_distinct": 42,
+     "top": [
+      [
+       "17",
+       35
+      ],
+      [
+       "23",
+       34
+      ],
+      [
+       "18",
+       31
+      ],
+      [
+       "13",
+       31
+      ],
+      [
+       "14",
+       31
+      ]
+     ],
+     "maj_share": 0.0547
+    }
+   }
+  }
+ },
+ "rules": {
+  "heldout": {
+   "pooled": {
+    "count_nums": 0.0093,
+    "sum_nums": 0.034,
+    "ans_is_prompt_num": 0.066,
+    "ans_substr_prompt": 0.1787,
+    "copy_first": 0.0053,
+    "copy_max": 0.0173,
+    "copy_last": 0.008,
+    "copy_min": 0.0053
+   },
+   "per_family": {
+    "pya_grid_walk_final": {},
+    "pya_grid_shortest_path": {},
+    "pya_grid_islands": {},
+    "pya_grid_lattice_paths": {
+     "count_nums": 0.04
+    },
+    "pya_walk_distinct_cells": {},
+    "pya_rle_encode": {},
+    "pya_rle_decode": {
+     "sum_nums": 0.5
+    },
+    "pya_longest_run": {},
+    "pya_runs_count": {},
+    "pya_merge_intervals": {
+     "ans_is_prompt_num": 0.41,
+     "ans_substr_prompt": 0.41,
+     "copy_first": 0.05,
+     "copy_max": 0.02,
+     "copy_last": 0.03,
+     "count_nums": 0.03
+    },
+    "pya_brackets_balanced": {
+     "ans_substr_prompt": 1.0
+    },
+    "pya_max_subarray": {
+     "ans_is_prompt_num": 0.23,
+     "ans_substr_prompt": 0.27,
+     "copy_max": 0.23,
+     "count_nums": 0.05,
+     "copy_last": 0.06,
+     "copy_first": 0.02
+    },
+    "pya_spiral_order": {},
+    "pya_rpn_eval": {
+     "count_nums": 0.02,
+     "ans_is_prompt_num": 0.07,
+     "ans_substr_prompt": 0.07,
+     "copy_max": 0.01,
+     "copy_last": 0.02,
+     "copy_min": 0.02,
+     "sum_nums": 0.01,
+     "copy_first": 0.01
+    },
+    "pya_lis_length": {
+     "ans_substr_prompt": 0.93,
+     "ans_is_prompt_num": 0.28,
+     "copy_min": 0.06,
+     "copy_last": 0.01
+    }
+   }
+  },
+  "dev": {
+   "pooled": {
+    "ans_is_prompt_num": 0.1592,
+    "ans_substr_prompt": 0.3223,
+    "copy_first": 0.0311,
+    "copy_last": 0.0359,
+    "copy_min": 0.035,
+    "copy_max": 0.0146,
+    "count_nums": 0.0107,
+    "sum_nums": 0.0223
+   },
+   "per_family": {
+    "pya_list_cond_agg": {
+     "ans_is_prompt_num": 0.2,
+     "ans_substr_prompt": 0.4
+    },
+    "pya_list_count_between": {
+     "ans_substr_prompt": 0.8,
+     "ans_is_prompt_num": 0.1
+    },
+    "pya_list_second_largest": {
+     "ans_is_prompt_num": 1.0,
+     "ans_substr_prompt": 1.0,
+     "copy_first": 0.2
+    },
+    "pya_list_kth_smallest": {
+     "ans_is_prompt_num": 1.0,
+     "ans_substr_prompt": 1.0,
+     "copy_first": 0.3,
+     "copy_last": 0.1
+    },
+    "pya_list_median": {
+     "ans_is_prompt_num": 1.0,
+     "ans_substr_prompt": 1.0,
+     "copy_last": 0.1,
+     "copy_first": 0.3
+    },
+    "pya_list_mode": {
+     "ans_is_prompt_num": 1.0,
+     "ans_substr_prompt": 1.0,
+     "copy_first": 0.4,
+     "copy_last": 0.1,
+     "copy_min": 0.1,
+     "copy_max": 0.1
+    },
+    "pya_list_distinct_count": {
+     "ans_is_prompt_num": 0.5,
+     "ans_substr_prompt": 0.6,
+     "copy_first": 0.1,
+     "copy_last": 0.1,
+     "copy_min": 0.1
+    },
+    "pya_list_record_highs": {
+     "ans_is_prompt_num": 0.2,
+     "ans_substr_prompt": 0.9,
+     "copy_last": 0.1,
+     "copy_min": 0.1
+    },
+    "pya_list_longest_rise": {
+     "ans_substr_prompt": 0.8,
+     "ans_is_prompt_num": 0.3,
+     "copy_last": 0.1,
+     "copy_min": 0.2,
+     "copy_first": 0.1
+    },
+    "pya_list_pair_sum_count": {
+     "ans_is_prompt_num": 0.7,
+     "ans_substr_prompt": 1.0,
+     "copy_min": 0.3,
+     "copy_last": 0.1
+    },
+    "pya_list_sorted_gap": {
+     "ans_is_prompt_num": 0.2,
+     "ans_substr_prompt": 0.3
+    },
+    "pya_list_dedupe_order": {},
+    "pya_list_rotate": {},
+    "pya_list_prefix_sums": {},
+    "pya_list_top_k_sum": {},
+    "pya_list_alt_sum": {
+     "ans_substr_prompt": 0.1
+    },
+    "pya_list_dot_product": {},
+    "pya_list_window_threshold": {
+     "ans_substr_prompt": 0.9,
+     "ans_is_prompt_num": 0.1
+    },
+    "pya_list_first_exceed": {
+     "ans_is_prompt_num": 0.7,
+     "ans_substr_prompt": 0.7,
+     "copy_first": 0.3
+    },
+    "pya_list_merge_sorted": {},
+    "pya_list_max_gain": {
+     "ans_is_prompt_num": 0.3,
+     "ans_substr_prompt": 0.3,
+     "copy_first": 0.1
+    },
+    "pya_group_sum_top": {
+     "ans_substr_prompt": 1.0
+    },
+    "pya_group_count_key": {},
+    "pya_latest_value": {
+     "ans_is_prompt_num": 0.5,
+     "ans_substr_prompt": 1.0,
+     "copy_last": 0.1,
+     "copy_min": 0.1,
+     "count_nums": 0.1
+    },
+    "pya_dict_keys_above": {},
+    "pya_word_freq": {
+     "ans_substr_prompt": 0.6
+    },
+    "pya_group_avg": {
+     "ans_is_prompt_num": 0.2,
+     "ans_substr_prompt": 0.2
+    },
+    "pya_merge_total": {
+     "ans_is_prompt_num": 0.4,
+     "ans_substr_prompt": 0.4,
+     "copy_last": 0.1,
+     "copy_min": 0.1,
+     "copy_max": 0.1
+    },
+    "pya_nested_total": {
+     "ans_is_prompt_num": 0.2,
+     "ans_substr_prompt": 0.2,
+     "copy_min": 0.1,
+     "copy_max": 0.1
+    },
+    "pya_rank_name": {
+     "ans_substr_prompt": 1.0
+    },
+    "pya_join_price": {},
+    "pya_value_ties": {
+     "ans_is_prompt_num": 0.6,
+     "ans_substr_prompt": 0.6,
+     "copy_last": 0.6,
+     "copy_min": 0.6
+    },
+    "pya_set_intersection_list": {},
+    "pya_set_a_only_count": {
+     "ans_is_prompt_num": 0.7,
+     "ans_substr_prompt": 0.9,
+     "copy_last": 0.2,
+     "copy_min": 0.1
+    },
+    "pya_set_subset_check": {
+     "ans_substr_prompt": 1.0
+    },
+    "pya_set_first_repeat": {
+     "ans_substr_prompt": 1.0,
+     "ans_is_prompt_num": 0.8,
+     "copy_first": 0.2,
+     "copy_max": 0.1
+    },
+    "pya_set_missing_numbers": {},
+    "pya_text_char_count": {
+     "count_nums": 0.3
+    },
+    "pya_text_vowel_count": {},
+    "pya_text_kana_class": {},
+    "pya_text_palindrome": {
+     "ans_substr_prompt": 1.0
+    },
+    "pya_text_reverse_words": {},
+    "pya_text_caesar": {},
+    "pya_text_acronym": {},
+    "pya_text_longest_word": {
+     "ans_substr_prompt": 1.0
+    },
+    "pya_text_digit_sum": {},
+    "pya_text_anagram": {
+     "ans_substr_prompt": 1.0
+    },
+    "pya_text_replace": {},
+    "pya_text_count_pair": {
+     "ans_is_prompt_num": 0.4,
+     "ans_substr_prompt": 0.4,
+     "copy_first": 0.4,
+     "copy_last": 0.4,
+     "copy_max": 0.4,
+     "copy_min": 0.4,
+     "sum_nums": 0.4,
+     "count_nums": 0.1
+    },
+    "pya_text_first_unique": {
+     "ans_substr_prompt": 1.0
+    },
+    "pya_text_sort_chars": {},
+    "pya_text_split_numbers": {
+     "sum_nums": 0.5,
+     "ans_is_prompt_num": 0.5,
+     "ans_substr_prompt": 0.5,
+     "copy_min": 0.5,
+     "copy_first": 0.1
+    },
+    "pya_text_zero_pad": {},
+    "pya_text_swapcase": {},
+    "pya_text_remove_vowels": {},
+    "pya_text_positions": {},
+    "pya_nt_gcd": {
+     "ans_is_prompt_num": 0.3,
+     "ans_substr_prompt": 0.6,
+     "copy_last": 0.3,
+     "copy_min": 0.3
+    },
+    "pya_nt_lcm": {},
+    "pya_nt_count_primes": {},
+    "pya_nt_digit_sum": {},
+    "pya_nt_to_base": {},
+    "pya_nt_from_base": {},
+    "pya_nt_divisor_count": {
+     "ans_substr_prompt": 0.1
+    },
+    "pya_nt_digital_root_steps": {
+     "ans_substr_prompt": 0.2
+    },
+    "pya_nt_collatz_steps": {},
+    "pya_nt_nth_prime": {},
+    "pya_nt_fib_mod": {
+     "ans_substr_prompt": 0.5,
+     "count_nums": 0.2
+    },
+    "pya_nt_proper_divisor_sum": {
+     "ans_substr_prompt": 0.1,
+     "count_nums": 0.1
+    },
+    "pya_nt_is_prime": {
+     "ans_substr_prompt": 1.0
+    },
+    "pya_nt_prime_factors": {
+     "ans_is_prompt_num": 0.1,
+     "ans_substr_prompt": 0.1,
+     "copy_first": 0.1,
+     "copy_max": 0.1
+    },
+    "pya_nt_count_multiples": {},
+    "pya_nt_trailing_zeros": {},
+    "pya_nt_palindrome_numbers": {
+     "ans_substr_prompt": 0.1
+    },
+    "pya_nt_pow_mod": {
+     "ans_substr_prompt": 0.2,
+     "ans_is_prompt_num": 0.1,
+     "copy_first": 0.1,
+     "copy_min": 0.1
+    },
+    "pya_cal_days_between": {},
+    "pya_cal_add_days": {},
+    "pya_cal_weekday": {
+     "ans_substr_prompt": 0.3
+    },
+    "pya_cal_leap_count": {},
+    "pya_cal_day_of_year": {
+     "ans_is_prompt_num": 0.2,
+     "ans_substr_prompt": 0.2,
+     "copy_last": 0.2
+    },
+    "pya_cal_time_add": {},
+    "pya_cal_month_range_days": {},
+    "pya_cal_duration_format": {},
+    "pya_cal_weekday_count": {
+     "ans_is_prompt_num": 0.2,
+     "ans_substr_prompt": 0.3,
+     "copy_last": 0.2,
+     "copy_min": 0.2
+    },
+    "pya_sim_bank": {
+     "sum_nums": 0.6,
+     "ans_is_prompt_num": 0.2,
+     "ans_substr_prompt": 0.2,
+     "copy_first": 0.1,
+     "copy_max": 0.1,
+     "copy_last": 0.1
+    },
+    "pya_sim_stack": {
+     "ans_is_prompt_num": 0.2,
+     "ans_substr_prompt": 0.4
+    },
+    "pya_sim_queue": {
+     "sum_nums": 0.4,
+     "ans_is_prompt_num": 0.2,
+     "ans_substr_prompt": 0.2,
+     "copy_first": 0.1,
+     "copy_min": 0.1
+    },
+    "pya_sim_inventory": {
+     "ans_substr_prompt": 0.4,
+     "ans_is_prompt_num": 0.2,
+     "copy_first": 0.1,
+     "copy_max": 0.1
+    },
+    "pya_sim_walk_1d": {
+     "ans_is_prompt_num": 0.6,
+     "ans_substr_prompt": 0.9,
+     "copy_max": 0.2,
+     "copy_last": 0.3
+    },
+    "pya_sim_change_greedy": {
+     "count_nums": 0.1
+    },
+    "pya_sim_round_robin": {},
+    "pya_sim_josephus": {
+     "ans_substr_prompt": 0.1
+    },
+    "pya_sim_parking": {
+     "ans_is_prompt_num": 0.5,
+     "ans_substr_prompt": 0.5,
+     "copy_first": 0.1,
+     "copy_max": 0.2,
+     "sum_nums": 0.4,
+     "copy_last": 0.1
+    },
+    "pya_sim_game_score": {
+     "ans_is_prompt_num": 0.3,
+     "ans_substr_prompt": 0.3,
+     "copy_last": 0.3
+    },
+    "pya_sim_elevator": {},
+    "pya_sim_bounce": {
+     "ans_is_prompt_num": 0.1,
+     "ans_substr_prompt": 0.3,
+     "copy_last": 0.1,
+     "copy_min": 0.1
+    },
+    "pya_sim_savings_years": {
+     "ans_substr_prompt": 0.2,
+     "count_nums": 0.2
+    },
+    "pya_mat_row_col": {
+     "ans_substr_prompt": 0.4,
+     "ans_is_prompt_num": 0.1
+    },
+    "pya_mat_diag_both": {},
+    "pya_mat_rotate_row": {},
+    "pya_mat_border_sum": {},
+    "pya_mat_rows_increasing": {
+     "ans_substr_prompt": 1.0,
+     "ans_is_prompt_num": 0.5,
+     "copy_first": 0.1,
+     "copy_min": 0.1
+    },
+    "pya_mat_matmul_entry": {},
+    "pya_mat_maximin": {
+     "ans_is_prompt_num": 1.0,
+     "ans_substr_prompt": 1.0
+    }
+   }
+  },
+  "train": {
+   "pooled": {
+    "ans_is_prompt_num": 0.1666,
+    "ans_substr_prompt": 0.3262,
+    "copy_min": 0.0284,
+    "copy_last": 0.0274,
+    "copy_first": 0.0299,
+    "count_nums": 0.0134,
+    "copy_max": 0.0214,
+    "sum_nums": 0.0198
+   },
+   "per_family": {
+    "pya_list_cond_agg": {
+     "ans_is_prompt_num": 0.5344,
+     "ans_substr_prompt": 0.6891,
+     "copy_min": 0.1359,
+     "copy_last": 0.0516,
+     "copy_first": 0.0453,
+     "count_nums": 0.0125,
+     "copy_max": 0.0969
+    },
+    "pya_list_count_between": {
+     "ans_substr_prompt": 0.8313,
+     "ans_is_prompt_num": 0.2781,
+     "copy_min": 0.0875,
+     "copy_first": 0.025,
+     "copy_last": 0.0016
+    },
+    "pya_list_second_largest": {
+     "ans_is_prompt_num": 1.0,
+     "ans_substr_prompt": 1.0,
+     "copy_first": 0.0922,
+     "copy_last": 0.0234,
+     "count_nums": 0.0063
+    },
+    "pya_list_kth_smallest": {
+     "ans_is_prompt_num": 1.0,
+     "ans_substr_prompt": 1.0,
+     "copy_first": 0.125,
+     "copy_max": 0.0203,
+     "copy_last": 0.0172,
+     "count_nums": 0.0391,
+     "copy_min": 0.0047
+    },
+    "pya_list_median": {
+     "ans_is_prompt_num": 1.0,
+     "ans_substr_prompt": 1.0,
+     "copy_first": 0.0922,
+     "copy_last": 0.1406,
+     "count_nums": 0.0359
+    },
+    "pya_list_mode": {
+     "ans_is_prompt_num": 1.0,
+     "ans_substr_prompt": 1.0,
+     "copy_first": 0.3172,
+     "copy_min": 0.1641,
+     "copy_last": 0.3312,
+     "copy_max": 0.1641,
+     "count_nums": 0.0375
+    },
+    "pya_list_distinct_count": {
+     "ans_is_prompt_num": 0.6562,
+     "ans_substr_prompt": 0.7078,
+     "copy_last": 0.1094,
+     "copy_max": 0.1719,
+     "copy_first": 0.1047,
+     "count_nums": 0.0266,
+     "copy_min": 0.0047
+    },
+    "pya_list_record_highs": {
+     "ans_substr_prompt": 0.8578,
+     "ans_is_prompt_num": 0.2969,
+     "copy_last": 0.0641,
+     "copy_min": 0.1141,
+     "copy_first": 0.0312
+    },
+    "pya_list_longest_rise": {
+     "ans_substr_prompt": 0.8766,
+     "ans_is_prompt_num": 0.2375,
+     "copy_min": 0.0969,
+     "copy_first": 0.0328,
+     "copy_last": 0.0156
+    },
+    "pya_list_pair_sum_count": {
+     "ans_is_prompt_num": 0.6641,
+     "ans_substr_prompt": 0.85,
+     "copy_first": 0.0859,
+     "copy_last": 0.0594,
+     "copy_min": 0.1719,
+     "copy_max": 0.0078
+    },
+    "pya_list_sorted_gap": {
+     "ans_is_prompt_num": 0.1328,
+     "ans_substr_prompt": 0.1875,
+     "copy_min": 0.0141,
+     "count_nums": 0.0625,
+     "copy_first": 0.0047,
+     "copy_last": 0.0109
+    },
+    "pya_list_dedupe_order": {
+     "ans_substr_prompt": 0.0109
+    },
+    "pya_list_rotate": {},
+    "pya_list_prefix_sums": {
+     "ans_is_prompt_num": 0.0172,
+     "ans_substr_prompt": 0.0203,
+     "copy_last": 0.0016,
+     "copy_max": 0.0078,
+     "count_nums": 0.0031
+    },
+    "pya_list_top_k_sum": {},
+    "pya_list_alt_sum": {
+     "ans_is_prompt_num": 0.1031,
+     "ans_substr_prompt": 0.1375,
+     "copy_last": 0.0094,
+     "copy_first": 0.0094,
+     "copy_max": 0.0078,
+     "count_nums": 0.0078,
+     "copy_min": 0.0094
+    },
+    "pya_list_dot_product": {},
+    "pya_list_window_threshold": {
+     "ans_substr_prompt": 0.8219,
+     "ans_is_prompt_num": 0.3141,
+     "copy_min": 0.1203,
+     "copy_first": 0.0234
+    },
+    "pya_list_first_exceed": {
+     "ans_is_prompt_num": 0.5156,
+     "ans_substr_prompt": 0.6734,
+     "copy_first": 0.0672,
+     "copy_min": 0.0141
+    },
+    "pya_list_merge_sorted": {},
+    "pya_list_max_gain": {
+     "ans_is_prompt_num": 0.1703,
+     "ans_substr_prompt": 0.1719,
+     "count_nums": 0.0047,
+     "copy_first": 0.0172
+    },
+    "pya_group_sum_top": {
+     "ans_substr_prompt": 1.0
+    },
+    "pya_group_count_key": {
+     "ans_is_prompt_num": 0.0406,
+     "ans_substr_prompt": 0.0406,
+     "copy_first": 0.0406,
+     "copy_last": 0.0406,
+     "copy_max": 0.0406,
+     "copy_min": 0.0406,
+     "sum_nums": 0.0406,
+     "count_nums": 0.0297
+    },
+    "pya_latest_value": {
+     "ans_is_prompt_num": 0.7438,
+     "ans_substr_prompt": 1.0,
+     "copy_max": 0.0688,
+     "copy_last": 0.175,
+     "copy_min": 0.1,
+     "count_nums": 0.0125,
+     "copy_first": 0.0125
+    },
+    "pya_dict_keys_above": {},
+    "pya_word_freq": {
+     "ans_substr_prompt": 0.5437
+    },
+    "pya_group_avg": {
+     "ans_is_prompt_num": 0.1938,
+     "ans_substr_prompt": 0.1938,
+     "copy_first": 0.0328,
+     "copy_last": 0.0344,
+     "copy_min": 0.0031,
+     "copy_max": 0.0016
+    },
+    "pya_merge_total": {
+     "ans_is_prompt_num": 0.4531,
+     "ans_substr_prompt": 0.475,
+     "copy_max": 0.0891,
+     "copy_first": 0.0781,
+     "copy_last": 0.0625,
+     "copy_min": 0.0578,
+     "count_nums": 0.025
+    },
+    "pya_nested_total": {
+     "ans_is_prompt_num": 0.0625,
+     "ans_substr_prompt": 0.0672,
+     "copy_last": 0.0141,
+     "copy_min": 0.0078,
+     "copy_max": 0.0141,
+     "copy_first": 0.0125,
+     "count_nums": 0.0016
+    },
+    "pya_rank_name": {
+     "ans_substr_prompt": 1.0
+    },
+    "pya_join_price": {},
+    "pya_value_ties": {
+     "ans_is_prompt_num": 0.2859,
+     "ans_substr_prompt": 0.2859,
+     "copy_last": 0.2859,
+     "copy_min": 0.2859
+    },
+    "pya_set_intersection_list": {},
+    "pya_set_a_only_count": {
+     "ans_substr_prompt": 0.9078,
+     "ans_is_prompt_num": 0.7,
+     "copy_first": 0.0906,
+     "copy_last": 0.0625,
+     "copy_min": 0.0844
+    },
+    "pya_set_subset_check": {
+     "ans_substr_prompt": 1.0
+    },
+    "pya_set_first_repeat": {
+     "ans_substr_prompt": 1.0,
+     "ans_is_prompt_num": 0.6109,
+     "copy_min": 0.0437,
+     "copy_first": 0.1672,
+     "copy_max": 0.0844,
+     "count_nums": 0.0234,
+     "copy_last": 0.0422
+    },
+    "pya_set_missing_numbers": {},
+    "pya_text_char_count": {
+     "ans_is_prompt_num": 0.1484,
+     "ans_substr_prompt": 0.1484,
+     "copy_first": 0.1094,
+     "copy_max": 0.1094,
+     "sum_nums": 0.1094,
+     "copy_last": 0.0391,
+     "copy_min": 0.0391,
+     "count_nums": 0.0578
+    },
+    "pya_text_vowel_count": {},
+    "pya_text_kana_class": {},
+    "pya_text_palindrome": {
+     "ans_substr_prompt": 1.0
+    },
+    "pya_text_reverse_words": {},
+    "pya_text_caesar": {},
+    "pya_text_acronym": {},
+    "pya_text_longest_word": {
+     "ans_substr_prompt": 1.0
+    },
+    "pya_text_digit_sum": {
+     "sum_nums": 0.0484,
+     "ans_substr_prompt": 0.0359,
+     "ans_is_prompt_num": 0.0187,
+     "copy_max": 0.0078,
+     "copy_first": 0.0047,
+     "copy_last": 0.0047,
+     "copy_min": 0.0016
+    },
+    "pya_text_anagram": {
+     "ans_substr_prompt": 1.0
+    },
+    "pya_text_replace": {},
+    "pya_text_count_pair": {
+     "count_nums": 0.2391,
+     "ans_is_prompt_num": 0.1781,
+     "ans_substr_prompt": 0.1781,
+     "copy_first": 0.1781,
+     "copy_last": 0.1781,
+     "copy_max": 0.1781,
+     "copy_min": 0.1781,
+     "sum_nums": 0.1781
+    },
+    "pya_text_first_unique": {
+     "ans_substr_prompt": 1.0
+    },
+    "pya_text_sort_chars": {
+     "ans_substr_prompt": 0.0047
+    },
+    "pya_text_split_numbers": {
+     "ans_is_prompt_num": 0.6734,
+     "ans_substr_prompt": 0.6734,
+     "copy_max": 0.3266,
+     "sum_nums": 0.3266,
+     "copy_first": 0.0969,
+     "copy_min": 0.3469,
+     "copy_last": 0.0797,
+     "count_nums": 0.0172
+    },
+    "pya_text_zero_pad": {},
+    "pya_text_swapcase": {},
+    "pya_text_remove_vowels": {},
+    "pya_text_positions": {},
+    "pya_nt_gcd": {
+     "ans_substr_prompt": 0.3766,
+     "count_nums": 0.0516,
+     "ans_is_prompt_num": 0.1484,
+     "copy_last": 0.0688,
+     "copy_min": 0.1484,
+     "copy_first": 0.0797
+    },
+    "pya_nt_lcm": {
+     "ans_is_prompt_num": 0.0953,
+     "ans_substr_prompt": 0.0953,
+     "copy_last": 0.0469,
+     "copy_max": 0.0953,
+     "copy_first": 0.0484
+    },
+    "pya_nt_count_primes": {
+     "ans_substr_prompt": 0.0047
+    },
+    "pya_nt_digit_sum": {
+     "ans_substr_prompt": 0.0625
+    },
+    "pya_nt_to_base": {},
+    "pya_nt_from_base": {
+     "ans_substr_prompt": 0.0063
+    },
+    "pya_nt_divisor_count": {
+     "ans_substr_prompt": 0.2469
+    },
+    "pya_nt_digital_root_steps": {
+     "ans_substr_prompt": 0.4641,
+     "count_nums": 0.0141
+    },
+    "pya_nt_collatz_steps": {
+     "ans_substr_prompt": 0.0234
+    },
+    "pya_nt_nth_prime": {},
+    "pya_nt_fib_mod": {
+     "ans_substr_prompt": 0.2422,
+     "count_nums": 0.1,
+     "ans_is_prompt_num": 0.0016,
+     "copy_first": 0.0016,
+     "copy_min": 0.0016
+    },
+    "pya_nt_proper_divisor_sum": {
+     "count_nums": 0.1078,
+     "ans_substr_prompt": 0.1062,
+     "ans_is_prompt_num": 0.0031,
+     "copy_first": 0.0031,
+     "copy_last": 0.0031,
+     "copy_max": 0.0031,
+     "copy_min": 0.0031,
+     "sum_nums": 0.0031
+    },
+    "pya_nt_is_prime": {
+     "ans_substr_prompt": 1.0
+    },
+    "pya_nt_prime_factors": {
+     "ans_is_prompt_num": 0.1344,
+     "ans_substr_prompt": 0.1344,
+     "copy_first": 0.1344,
+     "copy_max": 0.1344
+    },
+    "pya_nt_count_multiples": {
+     "ans_is_prompt_num": 0.0125,
+     "ans_substr_prompt": 0.0172,
+     "copy_last": 0.0078,
+     "copy_min": 0.0063
+    },
+    "pya_nt_trailing_zeros": {
+     "ans_substr_prompt": 0.0094,
+     "count_nums": 0.0031
+    },
+    "pya_nt_palindrome_numbers": {
+     "ans_substr_prompt": 0.0766,
+     "ans_is_prompt_num": 0.0031,
+     "copy_first": 0.0031,
+     "copy_min": 0.0031
+    },
+    "pya_nt_pow_mod": {
+     "ans_is_prompt_num": 0.1531,
+     "ans_substr_prompt": 0.2266,
+     "copy_first": 0.1406,
+     "copy_min": 0.1359,
+     "count_nums": 0.025
+    },
+    "pya_cal_days_between": {
+     "ans_substr_prompt": 0.0063,
+     "ans_is_prompt_num": 0.0016,
+     "copy_last": 0.0016
+    },
+    "pya_cal_add_days": {},
+    "pya_cal_weekday": {
+     "ans_substr_prompt": 0.1547
+    },
+    "pya_cal_leap_count": {
+     "ans_substr_prompt": 0.125,
+     "count_nums": 0.0031
+    },
+    "pya_cal_day_of_year": {
+     "ans_is_prompt_num": 0.0859,
+     "ans_substr_prompt": 0.0891,
+     "copy_last": 0.0859,
+     "count_nums": 0.0031,
+     "copy_min": 0.0016
+    },
+    "pya_cal_time_add": {},
+    "pya_cal_month_range_days": {
+     "ans_substr_prompt": 0.0109
+    },
+    "pya_cal_duration_format": {},
+    "pya_cal_weekday_count": {
+     "ans_substr_prompt": 0.2562,
+     "ans_is_prompt_num": 0.1062,
+     "copy_last": 0.1062,
+     "copy_min": 0.1062
+    },
+    "pya_sim_bank": {
+     "sum_nums": 0.4828,
+     "ans_is_prompt_num": 0.1297,
+     "ans_substr_prompt": 0.2734,
+     "copy_first": 0.0437,
+     "copy_max": 0.0406,
+     "copy_last": 0.0156
+    },
+    "pya_sim_stack": {
+     "ans_substr_prompt": 0.5797,
+     "ans_is_prompt_num": 0.4188,
+     "copy_first": 0.0312,
+     "copy_max": 0.0609,
+     "count_nums": 0.0125,
+     "copy_last": 0.0031,
+     "copy_min": 0.0031
+    },
+    "pya_sim_queue": {
+     "ans_is_prompt_num": 0.2844,
+     "ans_substr_prompt": 0.2938,
+     "copy_last": 0.025,
+     "copy_max": 0.0297,
+     "sum_nums": 0.3391,
+     "copy_first": 0.0813,
+     "count_nums": 0.0031,
+     "copy_min": 0.0109
+    },
+    "pya_sim_inventory": {
+     "ans_is_prompt_num": 0.3312,
+     "ans_substr_prompt": 0.4828,
+     "copy_first": 0.0641,
+     "count_nums": 0.0391,
+     "copy_max": 0.0422,
+     "copy_last": 0.0234,
+     "sum_nums": 0.0063
+    },
+    "pya_sim_walk_1d": {
+     "ans_is_prompt_num": 0.5672,
+     "ans_substr_prompt": 0.6469,
+     "copy_first": 0.1531,
+     "copy_last": 0.1062,
+     "copy_max": 0.1609,
+     "count_nums": 0.0281,
+     "sum_nums": 0.0078
+    },
+    "pya_sim_change_greedy": {
+     "ans_substr_prompt": 0.1187,
+     "count_nums": 0.0344,
+     "ans_is_prompt_num": 0.0609
+    },
+    "pya_sim_round_robin": {
+     "ans_is_prompt_num": 0.0891,
+     "ans_substr_prompt": 0.0891,
+     "copy_first": 0.0641,
+     "count_nums": 0.0156,
+     "copy_max": 0.0078
+    },
+    "pya_sim_josephus": {
+     "count_nums": 0.0375,
+     "ans_substr_prompt": 0.0703,
+     "ans_is_prompt_num": 0.0187,
+     "copy_first": 0.0187,
+     "copy_min": 0.0031,
+     "copy_max": 0.0156
+    },
+    "pya_sim_parking": {
+     "ans_is_prompt_num": 0.3906,
+     "ans_substr_prompt": 0.5,
+     "copy_last": 0.0984,
+     "sum_nums": 0.4531,
+     "copy_first": 0.1125,
+     "copy_max": 0.0781,
+     "count_nums": 0.0266,
+     "copy_min": 0.0016
+    },
+    "pya_sim_game_score": {
+     "ans_is_prompt_num": 0.2484,
+     "ans_substr_prompt": 0.2891,
+     "copy_last": 0.1547,
+     "sum_nums": 0.0391,
+     "count_nums": 0.0281,
+     "copy_max": 0.0813,
+     "copy_first": 0.0297
+    },
+    "pya_sim_elevator": {
+     "ans_is_prompt_num": 0.0141,
+     "ans_substr_prompt": 0.0141,
+     "copy_max": 0.0094,
+     "copy_first": 0.0016,
+     "copy_last": 0.0047,
+     "sum_nums": 0.0047
+    },
+    "pya_sim_bounce": {
+     "ans_substr_prompt": 0.2641,
+     "ans_is_prompt_num": 0.0344,
+     "copy_last": 0.0344,
+     "copy_min": 0.0344
+    },
+    "pya_sim_savings_years": {
+     "ans_is_prompt_num": 0.0469,
+     "ans_substr_prompt": 0.275,
+     "copy_min": 0.0469,
+     "count_nums": 0.1297
+    },
+    "pya_mat_row_col": {
+     "ans_is_prompt_num": 0.2016,
+     "ans_substr_prompt": 0.4594,
+     "copy_min": 0.1,
+     "copy_first": 0.0094,
+     "copy_last": 0.0234,
+     "copy_max": 0.0063,
+     "count_nums": 0.0016
+    },
+    "pya_mat_diag_both": {
+     "ans_is_prompt_num": 0.0016,
+     "ans_substr_prompt": 0.0016,
+     "copy_max": 0.0016
+    },
+    "pya_mat_rotate_row": {
+     "ans_substr_prompt": 0.0016
+    },
+    "pya_mat_border_sum": {},
+    "pya_mat_rows_increasing": {
+     "ans_substr_prompt": 0.9797,
+     "ans_is_prompt_num": 0.4062,
+     "copy_min": 0.1516,
+     "copy_first": 0.0641,
+     "copy_last": 0.0078
+    },
+    "pya_mat_matmul_entry": {
+     "ans_is_prompt_num": 0.1391,
+     "ans_substr_prompt": 0.1391,
+     "copy_last": 0.0219,
+     "copy_max": 0.0375,
+     "copy_first": 0.0172,
+     "count_nums": 0.0344,
+     "copy_min": 0.0359
+    },
+    "pya_mat_maximin": {
+     "ans_is_prompt_num": 1.0,
+     "ans_substr_prompt": 1.0,
+     "copy_last": 0.125,
+     "copy_first": 0.0781,
+     "count_nums": 0.0422
+    }
+   }
+  }
+ }
+}

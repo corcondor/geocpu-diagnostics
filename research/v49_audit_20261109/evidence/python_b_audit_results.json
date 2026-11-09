@@ -1,0 +1,888 @@
+{
+ "inventory": {
+  "family_dir_files": {
+   "golden_digests.json": {
+    "bytes": 386,
+    "sha256": "eaa1f427f7d1c0d4"
+   },
+   "heldout_baselines.json": {
+    "bytes": 1021,
+    "sha256": "8c2e5021eb19703d"
+   },
+   "pb_core.py": {
+    "bytes": 11732,
+    "sha256": "fd366c46d4662cfa"
+   },
+   "pb_heldout.py": {
+    "bytes": 21582,
+    "sha256": "ccc18658dc4cd448"
+   },
+   "pb_repair.py": {
+    "bytes": 33368,
+    "sha256": "5bc5a4c882dd5efe"
+   },
+   "pb_solvers.py": {
+    "bytes": 51387,
+    "sha256": "f713c7c6d61bbfa1"
+   },
+   "pb_train_a.py": {
+    "bytes": 31766,
+    "sha256": "b5c674e7b7534c6c"
+   },
+   "pb_train_b.py": {
+    "bytes": 50996,
+    "sha256": "b9c43dc0a787405b"
+   },
+   "python_b.py": {
+    "bytes": 3527,
+    "sha256": "d106ac3c6fdd98b7"
+   },
+   "reexec_runner.py": {
+    "bytes": 4065,
+    "sha256": "6c6780bd8a8bbdf9"
+   },
+   "render_samples.py": {
+    "bytes": 1243,
+    "sha256": "f36d4490b589e451"
+   },
+   "smoke.py": {
+    "bytes": 689,
+    "sha256": "fe583ede58f4b145"
+   },
+   "smoke2.py": {
+    "bytes": 887,
+    "sha256": "991a1bab97d28d71"
+   },
+   "smoke3.py": {
+    "bytes": 536,
+    "sha256": "e60c99eb3bdef4b0"
+   },
+   "test_python_b.py": {
+    "bytes": 26757,
+    "sha256": "2c01a99c508d8d78"
+   }
+  },
+  "sample_files": {
+   "train": {
+    "lines": 1000,
+    "bytes": 2605297,
+    "sha256": "f1e61c6eb5ca419e05a1b1dda3d5060637344952af08b971c8e5fd985f81fd26"
+   },
+   "dev": {
+    "lines": 300,
+    "bytes": 778785,
+    "sha256": "49ab4c7fd3e50a9b0c813d7ce50f4ced48f5ef30a594e59d2901f7755067d0a1"
+   },
+   "heldout": {
+    "lines": 450,
+    "bytes": 1516326,
+    "sha256": "dac87f89d5684a8e31f3461c1aa3431f3d9945e5e9939fa6328cba4d6a547b2f"
+   }
+  },
+  "family_dir_has_data_jsonl": [],
+  "all_cases_q_lines": 72550
+ },
+ "schema": {
+  "violations": {
+   "dup_ids_within_train": 0,
+   "dup_ids_within_dev": 0,
+   "dup_ids_within_heldout": 0,
+   "ids_duplicated_across_splits": 0
+  },
+  "examples": {},
+  "n_rows": {
+   "train": 1000,
+   "dev": 300,
+   "heldout": 450
+  }
+ },
+ "fields_in_row0": [
+  "_v46_group",
+  "difficulty",
+  "expected_stdout",
+  "family",
+  "full_text",
+  "id",
+  "license",
+  "loss_mask_spans",
+  "prompt",
+  "python_code",
+  "reference_final_answer",
+  "repair",
+  "source",
+  "split",
+  "structural_template",
+  "target",
+  "tool_steps",
+  "training_category"
+ ],
+ "lengths": {
+  "train": {
+   "n": 1000,
+   "max": 1023,
+   "mean": 515.7,
+   "p50": 492,
+   "p99": 900,
+   "over_2047_chars(len+1>2048)": 0,
+   "min": 174
+  },
+  "dev": {
+   "n": 300,
+   "max": 974,
+   "mean": 515.2,
+   "p50": 495,
+   "p99": 879,
+   "over_2047_chars(len+1>2048)": 0,
+   "min": 171
+  },
+  "heldout": {
+   "n": 450,
+   "max": 1065,
+   "mean": 690.7,
+   "p50": 699,
+   "p99": 1063,
+   "over_2047_chars(len+1>2048)": 0,
+   "min": 394
+  }
+ },
+ "supervised_chars_train_sample(sum len(target)+1)": 398405,
+ "train_sample_rows": 1000,
+ "mean_target_len_train_sample": 397.4,
+ "masked_chars_train_sample(tool observations)": 53731,
+ "masked_share_of_target_train_sample": 0.1352,
+ "mean_full_text_chars_all_sample": 560.6,
+ "mean_full_text_chars_train_sample": 515.7,
+ "extrapolated_supervised_chars_train_700_per_family": 27888350,
+ "extrapolated_train_rows": 70000,
+ "structure": {
+  "rows_with_diag": 690,
+  "repair_rows": 690,
+  "steps2": 690,
+  "has_python_fence": 1750
+ },
+ "vocab": {
+  "census_chars": 3498,
+  "census_source": "union of characters in train_40500_exact.jsonl full_text",
+  "oov_rows_vs_census": {
+   "train": 0,
+   "dev": 0,
+   "heldout": 0
+  },
+  "top_oov_chars_vs_census": [],
+  "oov_examples": [],
+  "family_vocab_(base_metadata.json)_size": 3898,
+  "family_vocab_minus_census_size": 405,
+  "census_minus_family_vocab_size": 5,
+  "oov_rows_vs_family_vocab": 0,
+  "top_oov_chars_vs_family_vocab": [],
+  "sample_distinct_chars_used": 581,
+  "distinct_chars_used_nonascii": 495,
+  "ascii_share_of_chars": 0.7756
+ },
+ "duplicates": {
+  "exact_dup_full_text_train_sample": 0,
+  "same_prompt_different_target_sample": 0,
+  "train_dev_prompt_overlap_sample": 0,
+  "train_heldout_prompt_overlap_sample": 0,
+  "dev_heldout_prompt_overlap_sample": 0,
+  "max_template_share_train_sample": 0.01,
+  "n_templates_train_sample": 100,
+  "max_family_share_train_sample": 0.01,
+  "train_kind_share_sample": {
+   "repair": 0.3
+  },
+  "case_counts_per_split": {
+   "train": 70000,
+   "dev": 1200,
+   "heldout": 1350
+  },
+  "n_families_per_split": {
+   "train": 100,
+   "dev": 100,
+   "heldout": 15
+  },
+  "case_level_duplicate_prompts_by_split_pair(owner,this)": {},
+  "case_level_same_prompt_different_answer": 0,
+  "case_level_max_family_share_of_train": 0.01,
+  "train_regular_vs_repair_rows_full": null
+ },
+ "skeleton_diversity_train": {
+  "families": 100,
+  "distinct_digit_masked_skeletons_per_family_median": 2.0,
+  "families_with_<=3_skeletons": 61,
+  "families_with_>50_skeletons": 31,
+  "total_distinct_skeletons_all_train": 20508,
+  "min5": [
+   [
+    1,
+    "accumulate_until"
+   ],
+   [
+    1,
+    "bank_class"
+   ],
+   [
+    1,
+    "base_convert"
+   ],
+   [
+    1,
+    "binomial_memo"
+   ],
+   [
+    1,
+    "bsearch_steps"
+   ]
+  ],
+  "max5": [
+   [
+    700,
+    "robot"
+   ],
+   [
+    700,
+    "sort_key"
+   ],
+   [
+    700,
+    "vowel_filter"
+   ],
+   [
+    700,
+    "word_freq"
+   ],
+   [
+    700,
+    "zip_lookup"
+   ]
+  ],
+  "mean_top_skeleton_share_per_family": 0.555
+ },
+ "question_len_train": {
+  "mean": 99.6,
+  "max": 337
+ },
+ "baselines_train_full_cases": {
+  "N": 70000,
+  "most_frequent_answer_global": 0.0664,
+  "top5_answers_global": [
+   [
+    "4",
+    4648
+   ],
+   [
+    "3",
+    4394
+   ],
+   [
+    "2",
+    3330
+   ],
+   [
+    "5",
+    2878
+   ],
+   [
+    "6",
+    2181
+   ]
+  ],
+  "most_frequent_answer_per_family_oracle": 0.1239,
+  "chance_mean_1_over_distinct_per_family": 0.049,
+  "copy_first": 0.0248,
+  "copy_last": 0.0245,
+  "copy_second": 0.0209,
+  "copy_max": 0.0159,
+  "copy_min": 0.0273,
+  "copy_sum": 0.0261,
+  "copy_count": 0.0125,
+  "copy_answer_is_some_number_in_prompt(upper bound of copy rules)": 0.156,
+  "copy_answer_is_a_substring_of_prompt": 0.2997,
+  "answer_types": {
+   "int": 0.9148,
+   "other": 0.0852
+  },
+  "distinct_answers": 8634
+ },
+ "baselines_dev_full_cases": {
+  "N": 1200,
+  "most_frequent_answer_global": 0.0667,
+  "top5_answers_global": [
+   [
+    "4",
+    80
+   ],
+   [
+    "2",
+    67
+   ],
+   [
+    "3",
+    64
+   ],
+   [
+    "5",
+    52
+   ],
+   [
+    "1",
+    42
+   ]
+  ],
+  "most_frequent_answer_per_family_oracle": 0.2125,
+  "chance_mean_1_over_distinct_per_family": 0.1319,
+  "copy_first": 0.025,
+  "copy_last": 0.0267,
+  "copy_second": 0.0233,
+  "copy_max": 0.0192,
+  "copy_min": 0.0325,
+  "copy_sum": 0.025,
+  "copy_count": 0.0092,
+  "copy_answer_is_some_number_in_prompt(upper bound of copy rules)": 0.1592,
+  "copy_answer_is_a_substring_of_prompt": 0.3075,
+  "answer_types": {
+   "int": 0.9133,
+   "other": 0.0867
+  },
+  "distinct_answers": 455
+ },
+ "baselines_heldout_full_cases": {
+  "N": 1350,
+  "most_frequent_answer_global": 0.023,
+  "top5_answers_global": [
+   [
+    "-1",
+    31
+   ],
+   [
+    "10",
+    26
+   ],
+   [
+    "12",
+    25
+   ],
+   [
+    "1",
+    24
+   ],
+   [
+    "11",
+    24
+   ]
+  ],
+  "most_frequent_answer_per_family_oracle": 0.0748,
+  "chance_mean_1_over_distinct_per_family": 0.0259,
+  "copy_first": 0.0141,
+  "copy_last": 0.0304,
+  "copy_second": 0.0052,
+  "copy_max": 0.0141,
+  "copy_min": 0.0252,
+  "copy_sum": 0.0044,
+  "copy_count": 0.003,
+  "copy_answer_is_some_number_in_prompt(upper bound of copy rules)": 0.1222,
+  "copy_answer_is_a_substring_of_prompt": 0.157,
+  "answer_types": {
+   "int": 1.0
+  },
+  "distinct_answers": 552
+ },
+ "families_with_<=12_distinct_answers(family,n_distinct,top_answer_share)": [
+  [
+   "digit_root",
+   9,
+   0.131
+  ],
+  [
+   "longest_run",
+   5,
+   0.544
+  ],
+  [
+   "pair_sum",
+   8,
+   0.319
+  ],
+  [
+   "bsearch_steps",
+   5,
+   0.459
+  ],
+  [
+   "islands",
+   11,
+   0.228
+  ],
+  [
+   "lis_len",
+   6,
+   0.362
+  ],
+  [
+   "edit_distance",
+   7,
+   0.308
+  ],
+  [
+   "lcs_len",
+   7,
+   0.362
+  ],
+  [
+   "interval_sched",
+   7,
+   0.385
+  ],
+  [
+   "word_freq",
+   8,
+   0.185
+  ],
+  [
+   "anagram_groups",
+   8,
+   0.275
+  ],
+  [
+   "brackets",
+   2,
+   0.529
+  ],
+  [
+   "overlap_count",
+   12,
+   0.242
+  ],
+  [
+   "best_scorer",
+   10,
+   0.124
+  ],
+  [
+   "group_sum",
+   6,
+   0.177
+  ],
+  [
+   "exactly_two",
+   9,
+   0.257
+  ],
+  [
+   "freq_of_freq",
+   8,
+   0.346
+  ],
+  [
+   "cycle_len",
+   9,
+   0.24
+  ],
+  [
+   "sort_key",
+   10,
+   0.11
+  ],
+  [
+   "fix_index_range",
+   9,
+   0.282
+  ],
+  [
+   "fix_index_pop",
+   10,
+   0.199
+  ],
+  [
+   "fix_index_str",
+   2,
+   0.56
+  ],
+  [
+   "fix_key_count",
+   7,
+   0.378
+  ],
+  [
+   "fix_unbound_global",
+   8,
+   0.303
+  ],
+  [
+   "fix_silent_ge",
+   11,
+   0.195
+  ]
+ ],
+ "families_with_top_answer_share>=0.30": [
+  [
+   "longest_run",
+   0.544,
+   "3"
+  ],
+  [
+   "pair_sum",
+   0.319,
+   "2"
+  ],
+  [
+   "bsearch_steps",
+   0.459,
+   "4"
+  ],
+  [
+   "lis_len",
+   0.362,
+   "4"
+  ],
+  [
+   "edit_distance",
+   0.308,
+   "5"
+  ],
+  [
+   "lcs_len",
+   0.362,
+   "4"
+  ],
+  [
+   "interval_sched",
+   0.385,
+   "4"
+  ],
+  [
+   "brackets",
+   0.529,
+   "True"
+  ],
+  [
+   "freq_of_freq",
+   0.346,
+   "1"
+  ],
+  [
+   "fix_name_order",
+   0.301,
+   "4"
+  ],
+  [
+   "fix_index_str",
+   0.56,
+   "False"
+  ],
+  [
+   "fix_key_count",
+   0.378,
+   "3"
+  ],
+  [
+   "fix_unbound_global",
+   0.303,
+   "2"
+  ],
+  [
+   "h_fix_stopiter",
+   0.344,
+   "-1"
+  ]
+ ],
+ "answer_value_hist_train_int_lt_10": 23531,
+ "eval_shingles": {
+  "files": {
+   "benchmark_8100_manifest.jsonl": {
+    "rows": 8100,
+    "shingles": 163221
+   },
+   "eval_swe_step_control_heldout.jsonl": {
+    "rows": 200,
+    "shingles": 2914
+   },
+   "eval_v33_state_tracking_heldout.jsonl": {
+    "rows": 188,
+    "shingles": 11215
+   },
+   "eval_v38_decomposed_state_bench200.jsonl": {
+    "rows": 200,
+    "shingles": 2063
+   },
+   "eval_v41_logical_instruction_operators_heldout.jsonl": {
+    "rows": 400,
+    "shingles": 14479
+   },
+   "eval_v42_search_retrieval_aligned.jsonl": {
+    "rows": 200,
+    "shingles": 770
+   },
+   "eval_v42_search_retrieval_heldout.jsonl": {
+    "rows": 200,
+    "shingles": 1413
+   },
+   "jamcqa_manifest_test.jsonl": {
+    "rows": 2309,
+    "shingles": 19999
+   },
+   "T8_tier8_prompts": {
+    "rows": 4,
+    "shingles": 33
+   }
+  },
+  "unique_shingles": 164633,
+  "unique_short_strings": 52074
+ },
+ "leakage_sample_rows_vs_eval": {
+  "audited_rows": 1750,
+  "rows_with_any_shingle_hit": 0,
+  "rows_only_generic_hits(shingle in >500 audited rows)": 0,
+  "rows_with_content_overlap": 0,
+  "content_overlap_rows_by_eval_file": {},
+  "content_overlap_regions(row counts)": {},
+  "content_overlap_examples": [],
+  "n_generic_shingles": 0,
+  "rows_with_exact_eval_short_string(segment 12-300 chars split on newline/。)": 1750,
+  "exact_short_string_hit_counts(top)": [
+   [
+    "```python",
+    1750
+   ],
+   [
+    "for _ in range(7):",
+    1
+   ]
+  ],
+  "rows_with_exact_eval_short_string_NON_generic(string in <=500 rows)": 1,
+  "exact_short_string_examples": [
+   [
+    "v49pyb_train_digit_root_25",
+    [
+     "```python"
+    ]
+   ],
+   [
+    "v49pyb_train_digit_root_29",
+    [
+     "```python"
+    ]
+   ],
+   [
+    "v49pyb_train_digit_root_89",
+    [
+     "```python"
+    ]
+   ],
+   [
+    "v49pyb_train_digit_root_195",
+    [
+     "```python"
+    ]
+   ],
+   [
+    "v49pyb_train_digit_root_238",
+    [
+     "```python"
+    ]
+   ]
+  ],
+  "positive_control_windows_found_in_eval_prompt_(len 113)": 12,
+  "positive_control_short_string_found": 1
+ },
+ "leakage_case_level_vs_eval": {
+  "cases_scanned": 72550,
+  "cases_with_any_hit": 0,
+  "cases_with_content_overlap(q-only; shingle in <=500 cases)": 0,
+  "generic_only_cases(shingle in >500 cases)": 0,
+  "content_overlap_by_split": {},
+  "content_overlap_by_family": {},
+  "content_overlap_by_eval_file": {},
+  "examples": [],
+  "generic_shingles_top": [],
+  "n_generic_shingles_q_level": 0,
+  "cases_with_exact_eval_short_string_in_q": 0,
+  "exact_short_examples": [],
+  "t8_keyword_hits_in_q(count of cases)": {
+   "導関数": 0,
+   "微分係数": 0,
+   "斜方投射": 0,
+   "滞空時間": 0,
+   "水平到達距離": 0,
+   "二分探索": 712,
+   "Binary Search": 0,
+   "フィボナッチ": 712,
+   "メモ化": 712,
+   "C++": 0,
+   "Rust": 0,
+   "sin(": 0,
+   "仰角": 0
+  }
+ },
+ "train_vs_heldout_dev_leakage_q_level": {
+  "heldout_shingles_vs_train_q": {
+   "cases_scanned": 70000,
+   "cases_with_any_24gram_hit": 261,
+   "cases_with_content_overlap(shingle in <=500 scanned cases)": 261,
+   "n_generic_shingles(>500 cases)": 0,
+   "overlap_cases_by_family": {
+    "fix_silent_prec": 257,
+    "fix_silent_slice": 2,
+    "fix_silent_intdiv": 2
+   },
+   "examples": [
+    {
+     "scanned_family": "fix_silent_slice",
+     "window": "てください。(動作確認の例: リスト [2, 4",
+     "from_family": "h_fix_mutiter",
+     "n_scanned_cases_with_window": 4
+    },
+    {
+     "scanned_family": "fix_silent_slice",
+     "window": "てください。(動作確認の例: リスト [2, 4",
+     "from_family": "h_fix_mutiter",
+     "n_scanned_cases_with_window": 4
+    },
+    {
+     "scanned_family": "fix_silent_intdiv",
+     "window": "てください。(動作確認の例: リスト [2, 4",
+     "from_family": "h_fix_mutiter",
+     "n_scanned_cases_with_window": 4
+    },
+    {
+     "scanned_family": "fix_silent_intdiv",
+     "window": "てください。(動作確認の例: リスト [2, 4",
+     "from_family": "h_fix_mutiter",
+     "n_scanned_cases_with_window": 4
+    },
+    {
+     "scanned_family": "fix_silent_prec",
+     "window": "を答えてください。(動作確認の例: リスト [2",
+     "from_family": "h_fix_mutiter",
+     "n_scanned_cases_with_window": 257
+    },
+    {
+     "scanned_family": "fix_silent_prec",
+     "window": "を答えてください。(動作確認の例: リスト [2",
+     "from_family": "h_fix_mutiter",
+     "n_scanned_cases_with_window": 257
+    }
+   ]
+  },
+  "heldout_shingles_vs_dev_q": {
+   "cases_scanned": 1200,
+   "cases_with_any_24gram_hit": 1,
+   "cases_with_content_overlap(shingle in <=500 scanned cases)": 1,
+   "n_generic_shingles(>500 cases)": 0,
+   "overlap_cases_by_family": {
+    "fix_silent_prec": 1
+   },
+   "examples": [
+    {
+     "scanned_family": "fix_silent_prec",
+     "window": "を答えてください。(動作確認の例: リスト [2",
+     "from_family": "h_fix_mutiter",
+     "n_scanned_cases_with_window": 1
+    }
+   ]
+  },
+  "dev_shingles_vs_train_q (dev is in-distribution by design)": {
+   "cases_scanned": 70000,
+   "cases_with_any_24gram_hit": 63182,
+   "cases_with_content_overlap(shingle in <=500 scanned cases)": 38840,
+   "n_generic_shingles(>500 cases)": 1532,
+   "overlap_cases_by_family": {
+    "euclid": 700,
+    "prefix_max": 700,
+    "longest_run": 700,
+    "window_max": 700,
+    "coins": 700,
+    "nqueens_forb": 700,
+    "matpow": 700,
+    "time_parse": 700
+   },
+   "examples": [
+    {
+     "scanned_family": "digit_root",
+     "window": "47 の各桁の和を求め、その結果が1桁になるまで",
+     "from_family": "digit_root",
+     "n_scanned_cases_with_window": 5
+    },
+    {
+     "scanned_family": "digit_root",
+     "window": "07 の各桁の和を求め、その結果が1桁になるまで",
+     "from_family": "digit_root",
+     "n_scanned_cases_with_window": 7
+    },
+    {
+     "scanned_family": "digit_root",
+     "window": "26 の各桁の和を求め、その結果が1桁になるまで",
+     "from_family": "digit_root",
+     "n_scanned_cases_with_window": 11
+    },
+    {
+     "scanned_family": "digit_root",
+     "window": "40 の各桁の和を求め、その結果が1桁になるまで",
+     "from_family": "digit_root",
+     "n_scanned_cases_with_window": 9
+    },
+    {
+     "scanned_family": "digit_root",
+     "window": "30 の各桁の和を求め、その結果が1桁になるまで",
+     "from_family": "digit_root",
+     "n_scanned_cases_with_window": 9
+    },
+    {
+     "scanned_family": "digit_root",
+     "window": "75 の各桁の和を求め、その結果が1桁になるまで",
+     "from_family": "digit_root",
+     "n_scanned_cases_with_window": 8
+    }
+   ]
+  },
+  "dev_cases_whose_digit_masked_skeleton_occurs_in_train": 0.7133,
+  "heldout_cases_whose_digit_masked_skeleton_occurs_in_train": 0.0,
+  "heldout_families_shared_with_train_families": [],
+  "heldout_q_token_novelty_share(words>=3ch not in any train q), mean": 0.743
+ },
+ "code_line_overlap_sample": {
+  "heldout_distinct_code_lines>=25ch": 399,
+  "of_which_present_in_train+dev_sample_code": 2
+ },
+ "provenance": {
+  "source_values": {
+   "selfauthored:geocpu/v49-python-b": 1750
+  },
+  "license_values": {
+   "CC0-1.0": 1750
+  },
+  "training_category": {
+   "python": 1750
+  },
+  "_v46_group": {
+   "v49_python_b": 1750
+  }
+ },
+ "format": {
+  "prompt_example": "問題: 整数 8675541 の各桁の和を求め、その結果が1桁になるまで同じ操作を繰り返します。最終的な1桁の値を答えてください。\n道具: Python\n思考:",
+  "target_head_example": "\n計画: 各桁の和をとる操作を、1桁になるまでwhile文で繰り返す。\n```python\ndef f(n):\n    while n >= 10:\n        n = sum(int(c) for c in str(n))\n    return n\nprint(f(8675541))\n```\n```output\n9\n```\n確認: 8675541→36→9。\n答え: 9。",
+  "target_contains_any_of_起承転結求_train_sample_share": 0.119,
+  "prompt_starts_with_問題: share": 1.0,
+  "prompt_ends_with_道具: Python\\n思考: share": 1.0,
+  "rows_mentioning_C++_or_Rust_in_prompt_or_target": 0,
+  "rows_with_fence_labels": {
+   "python": 2440,
+   "": 4880,
+   "output": 2440
+  },
+  "rows_with_selectable_options_A_B_C": 0,
+  "rows_with_JNLI_or_search_words": 0
+ },
+ "code_static_scan": {
+  "imports": {
+   "itertools": 126,
+   "datetime": 13,
+   "functools": 30,
+   "math": 73,
+   "heapq": 30,
+   "collections": 30
+  },
+  "risky_tokens_in_code": {}
+ },
+ "elapsed_s": 17.8
+}

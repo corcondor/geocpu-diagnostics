@@ -1,0 +1,618 @@
+GLOBAL rows 399686 sample_rows 20174 sample_violations 0 p 0.050039280835455835
+sample_by_file {'logic_trace/train': [4142, 0], 'jglue_human/train': [3788, 0], 'option_judgement/train': [2340, 0], 'python_a/train': [3305, 0], 'reading_evidence/train': [3003, 0], 'search_use/train': [2544, 0], 'logic_trace/dev': [81, 0], 'jglue_human/dev': [105, 0], 'option_judgement/dev': [85, 0], 'python_a/dev': [52, 0], 'reading_evidence/dev': [41, 0], 'search_use/dev': [67, 0], 'logic_trace/heldout': [95, 0], 'jglue_human/heldout': [114, 0], 'option_judgement/heldout': [142, 0], 'python_a/heldout': [82, 0], 'reading_evidence/heldout': [95, 0], 'search_use/heldout': [93, 0]}
+gzip.open on train.jsonl.gz -> BadGzipFile: Not a gzipped file (b'{"')
+T5 {"n": 400, "unparsed": 0, "items_with_3_distinct_cited_k": 400, "goldk_by_operator": {"positive_entailment": {"1": 100}, "negation_contradiction": {"2": 100}, "non_entailment_undeducible": {"3": 100}, "not_necessarily_true": {"3": 100}}, "n_sentences_cnorm_len10": 588}
+JGLUE-T5 {"eq_cnorm": {"n": 34, "by_split": {"train": 32, "dev": 2}}, "eq_nfkc": {"n": 34, "by_split": {"train": 32, "dev": 2}}, "contain_cnorm": {"n": 34, "by_split": {"train": 34}}, "contain_nfkc": {"n": 34, "by_split": {"train": 34}}}
+
+== logic_trace/train
+   rows = 84000
+   ft_viol = 0
+   over = 0
+   maxlen = 1234
+   mean_ft = 203.54703571428573
+   sum_ft = 17097951
+   sum_sup = 8857360
+   oov_census = 0
+   oov_bundle_raw = 0
+   oov_bundle_norm = 0
+   lic = {'CC0-1.0': 84000}
+   n_families = 105
+   fams_min_max = [800, 800]
+   dup_prompt = 0
+   dup_ft = 0
+   cross_hit = 0
+   cross_fam_hit = 0
+   ids_dup = 0
+   empty_ans = 0
+   search_rows = 0
+   jiang = 0
+   split_field_bad = 0
+   tool_steps_nonempty = 0
+   lms_nonempty = 0
+   answer_line_missing = 0
+   missing_fields = {}
+   n_distinct_prompts = 84000
+   n_distinct_ft = 84000
+   idprefix = {}
+   tmpl_top = [['logic_trace/number', 8800], ['logic_trace/time', 8000], ['logic_trace/ratio', 8000], ['logic_trace/seq', 8000], ['logic_trace/arith', 8000], ['logic_trace/count', 6400]]
+   oov_chars_raw []
+   oov_chars_norm []
+== jglue_human/train
+   rows = 73863
+   ft_viol = 0
+   over = 0
+   maxlen = 1245
+   mean_ft = 292.662144781555
+   sum_ft = 21616904
+   sum_sup = 4652214
+   oov_census = 9105
+   oov_bundle_raw = 6816
+   oov_bundle_norm = 6705
+   lic = {'CC-BY-SA-4.0': 73863}
+   n_families = 4
+   fams_min_max = [6446, 52348]
+   dup_prompt = 34
+   dup_ft = 15
+   cross_hit = 0
+   cross_fam_hit = 0
+   ids_dup = 0
+   empty_ans = 0
+   search_rows = 0
+   jiang = 0
+   split_field_bad = 0
+   tool_steps_nonempty = 0
+   lms_nonempty = 0
+   answer_line_missing = 0
+   missing_fields = {}
+   n_distinct_prompts = 73829
+   n_distinct_ft = 73848
+   idprefix = {'v49human_jnli': 12916, 'v49human_jsquad': 52348, 'v49human_jcqa': 8599}
+   tmpl_top = [['human_jsquad', 52348], ['human_jnli', 12916], ['human_jcqa', 8599]]
+   oov_chars_raw [['℃', 139], ['蔣', 92], ['阜', 91], ['鄧', 91], ['哺', 90], ['嶼', 88], ['款', 86], ['壌', 84], ['袁', 80], ['嶋', 77], ['竣', 73], ['沃', 66]]
+   oov_chars_norm [['℃', 139], ['蔣', 92], ['阜', 91], ['鄧', 91], ['哺', 90], ['嶼', 88], ['款', 86], ['壌', 84], ['袁', 80], ['嶋', 77], ['竣', 73], ['沃', 66]]
+== option_judgement/train
+   rows = 46008
+   ft_viol = 0
+   over = 0
+   maxlen = 710
+   mean_ft = 420.1744261867501
+   sum_ft = 19331385
+   sum_sup = 5137820
+   oov_census = 0
+   oov_bundle_raw = 0
+   oov_bundle_norm = 0
+   lic = {'CC0-1.0': 32400, 'CC-BY-SA-4.0': 13608}
+   n_families = 71
+   fams_min_max = [648, 648]
+   dup_prompt = 0
+   dup_ft = 0
+   cross_hit = 0
+   cross_fam_hit = 0
+   ids_dup = 0
+   empty_ans = 0
+   search_rows = 0
+   jiang = 0
+   split_field_bad = 0
+   tool_steps_nonempty = 0
+   lms_nonempty = 0
+   answer_line_missing = 0
+   missing_fields = {}
+   n_distinct_prompts = 46008
+   n_distinct_ft = 46008
+   idprefix = {}
+   tmpl_top = [['oj_atom', 3888], ['oj_pointer', 3888], ['oj_negation', 3888], ['oj_conj', 3888], ['oj_disj', 3888], ['oj_same', 3888]]
+   oov_chars_raw []
+   oov_chars_norm []
+== python_a/train
+   rows = 65920
+   ft_viol = 0
+   over = 0
+   maxlen = 724
+   mean_ft = 308.3485133495146
+   sum_ft = 20326334
+   sum_sup = 13528184
+   oov_census = 0
+   oov_bundle_raw = 0
+   oov_bundle_norm = 0
+   lic = {'CC0-1.0': 65920}
+   n_families = 103
+   fams_min_max = [640, 640]
+   dup_prompt = 0
+   dup_ft = 0
+   cross_hit = 0
+   cross_fam_hit = 0
+   ids_dup = 0
+   empty_ans = 0
+   search_rows = 0
+   jiang = 0
+   split_field_bad = 0
+   tool_steps_nonempty = 65920
+   lms_nonempty = 65920
+   answer_line_missing = 0
+   missing_fields = {}
+   n_distinct_prompts = 65920
+   n_distinct_ft = 65920
+   idprefix = {}
+   tmpl_top = [['pya/list', 13440], ['pya/text', 12160], ['pya/numtheory', 11520], ['pya/sim', 8320], ['pya/dict', 7040], ['pya/calendar', 5760]]
+   oov_chars_raw []
+   oov_chars_norm []
+== reading_evidence/train
+   rows = 59500
+   ft_viol = 0
+   over = 0
+   maxlen = 708
+   mean_ft = 344.70112605042016
+   sum_ft = 20509717
+   sum_sup = 5942707
+   oov_census = 177
+   oov_bundle_raw = 0
+   oov_bundle_norm = 0
+   lic = {'CC0-1.0': 42700, 'CC-BY-SA-4.0': 16800}
+   n_families = 85
+   fams_min_max = [700, 700]
+   dup_prompt = 0
+   dup_ft = 0
+   cross_hit = 0
+   cross_fam_hit = 0
+   ids_dup = 0
+   empty_ans = 0
+   search_rows = 0
+   jiang = 177
+   split_field_bad = 0
+   tool_steps_nonempty = 0
+   lms_nonempty = 0
+   answer_line_missing = 0
+   missing_fields = {}
+   n_distinct_prompts = 59500
+   n_distinct_ft = 59500
+   idprefix = {}
+   tmpl_top = [['reading_lookup_mixed_relations', 2800], ['reading_count_by_relation', 2800], ['reading_lookup', 2100], ['reading_lookup_near_name', 2100], ['reading_lookup_two_entities', 2100], ['reading_lookup_multiple_choice', 2100]]
+   oov_chars_raw []
+   oov_chars_norm []
+== search_use/train
+   rows = 49004
+   ft_viol = 0
+   over = 0
+   maxlen = 965
+   mean_ft = 387.72608358501344
+   sum_ft = 19000129
+   sum_sup = 16124119
+   oov_census = 10
+   oov_bundle_raw = 0
+   oov_bundle_norm = 0
+   lic = {'CC0-1.0': 42907, 'CC-BY-SA-4.0': 6097}
+   n_families = 57
+   fams_min_max = [646, 900]
+   dup_prompt = 0
+   dup_ft = 0
+   cross_hit = 0
+   cross_fam_hit = 0
+   ids_dup = 0
+   empty_ans = 0
+   search_rows = 45412
+   jiang = 0
+   split_field_bad = 0
+   tool_steps_nonempty = 45412
+   lms_nonempty = 45412
+   answer_line_missing = 0
+   missing_fields = {}
+   n_distinct_prompts = 49004
+   n_distinct_ft = 49004
+   idprefix = {}
+   tmpl_top = [['search_post_string_op', 4500], ['search_verify_yn', 4500], ['search_mcq4', 3600], ['search_claim_correction', 2700], ['search_multipart', 2700], ['search_lookup1', 2580]]
+   oov_chars_raw []
+   oov_chars_norm []
+== logic_trace/dev
+   rows = 1680
+   ft_viol = 0
+   over = 0
+   maxlen = 1191
+   mean_ft = 204.25714285714287
+   sum_ft = 343152
+   sum_sup = 178189
+   oov_census = 0
+   oov_bundle_raw = 0
+   oov_bundle_norm = 0
+   lic = {'CC0-1.0': 1680}
+   n_families = 105
+   fams_min_max = [16, 16]
+   dup_prompt = 0
+   dup_ft = 0
+   cross_hit = 0
+   cross_fam_hit = 0
+   ids_dup = 0
+   empty_ans = 0
+   search_rows = 0
+   jiang = 0
+   split_field_bad = 0
+   tool_steps_nonempty = 0
+   lms_nonempty = 0
+   answer_line_missing = 0
+   missing_fields = {}
+   n_distinct_prompts = 1680
+   n_distinct_ft = 1680
+   idprefix = {}
+   tmpl_top = [['logic_trace/number', 176], ['logic_trace/time', 160], ['logic_trace/ratio', 160], ['logic_trace/seq', 160], ['logic_trace/arith', 160], ['logic_trace/count', 128]]
+   oov_chars_raw []
+   oov_chars_norm []
+== jglue_human/dev
+   rows = 2043
+   ft_viol = 0
+   over = 0
+   maxlen = 1246
+   mean_ft = 374.44346549192363
+   sum_ft = 764988
+   sum_sup = 173551
+   oov_census = 359
+   oov_bundle_raw = 276
+   oov_bundle_norm = 276
+   lic = {'CC-BY-SA-4.0': 2043}
+   n_families = 4
+   fams_min_max = [89, 1715]
+   dup_prompt = 0
+   dup_ft = 0
+   cross_hit = 0
+   cross_fam_hit = 0
+   ids_dup = 0
+   empty_ans = 0
+   search_rows = 0
+   jiang = 0
+   split_field_bad = 0
+   tool_steps_nonempty = 0
+   lms_nonempty = 0
+   answer_line_missing = 0
+   missing_fields = {}
+   n_distinct_prompts = 2043
+   n_distinct_ft = 2043
+   idprefix = {'v49human_jsquad': 1715, 'v49human_jnli': 239, 'v49human_jcqa': 89}
+   tmpl_top = [['human_jsquad', 1715], ['human_jnli', 239], ['human_jcqa', 89]]
+   oov_chars_raw [['輌', 18], ['蔣', 18], ['傀', 17], ['儡', 17], ['蒋', 13], ['ﾏ', 13], ['諜', 12], ['遵', 11], ['溥', 10], ['拮', 10], ['迭', 10], ['牒', 9]]
+   oov_chars_norm [['輌', 18], ['蔣', 18], ['傀', 17], ['儡', 17], ['蒋', 13], ['ﾏ', 13], ['諜', 12], ['遵', 11], ['溥', 10], ['拮', 10], ['迭', 10], ['牒', 9]]
+== option_judgement/dev
+   rows = 1917
+   ft_viol = 0
+   over = 0
+   maxlen = 612
+   mean_ft = 419.9796557120501
+   sum_ft = 805101
+   sum_sup = 213150
+   oov_census = 0
+   oov_bundle_raw = 0
+   oov_bundle_norm = 0
+   lic = {'CC0-1.0': 1350, 'CC-BY-SA-4.0': 567}
+   n_families = 71
+   fams_min_max = [27, 27]
+   dup_prompt = 0
+   dup_ft = 0
+   cross_hit = 0
+   cross_fam_hit = 0
+   ids_dup = 0
+   empty_ans = 0
+   search_rows = 0
+   jiang = 0
+   split_field_bad = 0
+   tool_steps_nonempty = 0
+   lms_nonempty = 0
+   answer_line_missing = 0
+   missing_fields = {}
+   n_distinct_prompts = 1917
+   n_distinct_ft = 1917
+   idprefix = {}
+   tmpl_top = [['oj_atom', 162], ['oj_pointer', 162], ['oj_negation', 162], ['oj_conj', 162], ['oj_disj', 162], ['oj_same', 162]]
+   oov_chars_raw []
+   oov_chars_norm []
+== python_a/dev
+   rows = 1030
+   ft_viol = 0
+   over = 0
+   maxlen = 706
+   mean_ft = 304.47281553398057
+   sum_ft = 313607
+   sum_sup = 208946
+   oov_census = 0
+   oov_bundle_raw = 0
+   oov_bundle_norm = 0
+   lic = {'CC0-1.0': 1030}
+   n_families = 103
+   fams_min_max = [10, 10]
+   dup_prompt = 0
+   dup_ft = 0
+   cross_hit = 0
+   cross_fam_hit = 0
+   ids_dup = 0
+   empty_ans = 0
+   search_rows = 0
+   jiang = 0
+   split_field_bad = 0
+   tool_steps_nonempty = 1030
+   lms_nonempty = 1030
+   answer_line_missing = 0
+   missing_fields = {}
+   n_distinct_prompts = 1030
+   n_distinct_ft = 1030
+   idprefix = {}
+   tmpl_top = [['pya/list', 210], ['pya/text', 190], ['pya/numtheory', 180], ['pya/sim', 130], ['pya/dict', 110], ['pya/calendar', 90]]
+   oov_chars_raw []
+   oov_chars_norm []
+== reading_evidence/dev
+   rows = 850
+   ft_viol = 0
+   over = 0
+   maxlen = 664
+   mean_ft = 340.5247058823529
+   sum_ft = 289446
+   sum_sup = 83309
+   oov_census = 2
+   oov_bundle_raw = 0
+   oov_bundle_norm = 0
+   lic = {'CC0-1.0': 610, 'CC-BY-SA-4.0': 240}
+   n_families = 85
+   fams_min_max = [10, 10]
+   dup_prompt = 0
+   dup_ft = 0
+   cross_hit = 0
+   cross_fam_hit = 0
+   ids_dup = 0
+   empty_ans = 0
+   search_rows = 0
+   jiang = 2
+   split_field_bad = 0
+   tool_steps_nonempty = 0
+   lms_nonempty = 0
+   answer_line_missing = 0
+   missing_fields = {}
+   n_distinct_prompts = 850
+   n_distinct_ft = 850
+   idprefix = {}
+   tmpl_top = [['reading_lookup_mixed_relations', 40], ['reading_count_by_relation', 40], ['reading_lookup', 30], ['reading_lookup_near_name', 30], ['reading_lookup_two_entities', 30], ['reading_lookup_multiple_choice', 30]]
+   oov_chars_raw []
+   oov_chars_norm []
+== search_use/dev
+   rows = 1362
+   ft_viol = 0
+   over = 0
+   maxlen = 816
+   mean_ft = 384.70704845814976
+   sum_ft = 523971
+   sum_sup = 444950
+   oov_census = 14
+   oov_bundle_raw = 0
+   oov_bundle_norm = 0
+   lic = {'CC0-1.0': 1170, 'CC-BY-SA-4.0': 192}
+   n_families = 57
+   fams_min_max = [22, 24]
+   dup_prompt = 0
+   dup_ft = 0
+   cross_hit = 0
+   cross_fam_hit = 0
+   ids_dup = 0
+   empty_ans = 0
+   search_rows = 1266
+   jiang = 14
+   split_field_bad = 0
+   tool_steps_nonempty = 1266
+   lms_nonempty = 1266
+   answer_line_missing = 0
+   missing_fields = {}
+   n_distinct_prompts = 1362
+   n_distinct_ft = 1362
+   idprefix = {}
+   tmpl_top = [['search_post_string_op', 120], ['search_verify_yn', 120], ['search_mcq4', 96], ['search_claim_correction', 72], ['search_chain2', 72], ['search_lookup1', 72]]
+   oov_chars_raw []
+   oov_chars_norm []
+== logic_trace/heldout
+   rows = 1800
+   ft_viol = 0
+   over = 0
+   maxlen = 385
+   mean_ft = 221.90722222222223
+   sum_ft = 399433
+   sum_sup = 205969
+   oov_census = 0
+   oov_bundle_raw = 0
+   oov_bundle_norm = 0
+   lic = {'CC0-1.0': 1800}
+   n_families = 12
+   fams_min_max = [150, 150]
+   dup_prompt = 0
+   dup_ft = 0
+   cross_hit = 0
+   cross_fam_hit = 0
+   ids_dup = 0
+   empty_ans = 1
+   search_rows = 0
+   jiang = 0
+   split_field_bad = 0
+   tool_steps_nonempty = 0
+   lms_nonempty = 0
+   answer_line_missing = 0
+   missing_fields = {}
+   n_distinct_prompts = 1800
+   n_distinct_ft = 1800
+   idprefix = {}
+   tmpl_top = [['logic_trace/heldout', 1800]]
+   oov_chars_raw []
+   oov_chars_norm []
+== jglue_human/heldout
+   rows = 2457
+   ft_viol = 0
+   over = 0
+   maxlen = 810
+   mean_ft = 294.960113960114
+   sum_ft = 724717
+   sum_sup = 147719
+   oov_census = 302
+   oov_bundle_raw = 195
+   oov_bundle_norm = 191
+   lic = {'CC-BY-SA-4.0': 2457}
+   n_families = 4
+   fams_min_max = [250, 1629]
+   dup_prompt = 1
+   dup_ft = 1
+   cross_hit = 0
+   cross_fam_hit = 0
+   ids_dup = 0
+   empty_ans = 0
+   search_rows = 0
+   jiang = 0
+   split_field_bad = 0
+   tool_steps_nonempty = 0
+   lms_nonempty = 0
+   answer_line_missing = 0
+   missing_fields = {}
+   n_distinct_prompts = 2456
+   n_distinct_ft = 2456
+   idprefix = {'v49human_jsquad': 1629, 'v49human_jnli': 578, 'v49human_jcqa': 250}
+   tmpl_top = [['human_jsquad', 1629], ['human_jnli', 578], ['human_jcqa', 250]]
+   oov_chars_raw [['嶋', 21], ['靖', 13], ['訃', 10], ['贖', 9], ['♥', 9], ['桧', 9], ['泌', 8], ['擢', 7], ['哺', 5], ['‐', 5], ['聘', 5], ['拮', 4]]
+   oov_chars_norm [['嶋', 21], ['靖', 13], ['訃', 10], ['贖', 9], ['♥', 9], ['桧', 9], ['泌', 8], ['擢', 7], ['哺', 5], ['‐', 5], ['聘', 5], ['拮', 4]]
+== option_judgement/heldout
+   rows = 2700
+   ft_viol = 0
+   over = 0
+   maxlen = 611
+   mean_ft = 450.90037037037035
+   sum_ft = 1217431
+   sum_sup = 370903
+   oov_census = 0
+   oov_bundle_raw = 0
+   oov_bundle_norm = 0
+   lic = {'CC0-1.0': 2700}
+   n_families = 50
+   fams_min_max = [54, 54]
+   dup_prompt = 0
+   dup_ft = 0
+   cross_hit = 0
+   cross_fam_hit = 0
+   ids_dup = 0
+   empty_ans = 0
+   search_rows = 0
+   jiang = 0
+   split_field_bad = 0
+   tool_steps_nonempty = 0
+   lms_nonempty = 0
+   answer_line_missing = 0
+   missing_fields = {}
+   n_distinct_prompts = 2700
+   n_distinct_ft = 2700
+   idprefix = {}
+   tmpl_top = [['ojh_inlist', 324], ['ojh_notin', 324], ['ojh_xor', 324], ['ojh_notboth', 324], ['ojh_namedcount', 324], ['ojh_alldiff', 324]]
+   oov_chars_raw []
+   oov_chars_norm []
+== python_a/heldout
+   rows = 1500
+   ft_viol = 0
+   over = 0
+   maxlen = 1040
+   mean_ft = 482.28133333333335
+   sum_ft = 723422
+   sum_sup = 547591
+   oov_census = 0
+   oov_bundle_raw = 0
+   oov_bundle_norm = 0
+   lic = {'CC0-1.0': 1500}
+   n_families = 15
+   fams_min_max = [100, 100]
+   dup_prompt = 0
+   dup_ft = 0
+   cross_hit = 0
+   cross_fam_hit = 0
+   ids_dup = 0
+   empty_ans = 0
+   search_rows = 0
+   jiang = 0
+   split_field_bad = 0
+   tool_steps_nonempty = 1500
+   lms_nonempty = 1500
+   answer_line_missing = 0
+   missing_fields = {}
+   n_distinct_prompts = 1500
+   n_distinct_ft = 1500
+   idprefix = {}
+   tmpl_top = [['pya/grid', 500], ['pya/runlength', 400], ['pya/interval', 100], ['pya/bracket', 100], ['pya/kadane', 100], ['pya/spiral', 100]]
+   oov_chars_raw []
+   oov_chars_norm []
+== reading_evidence/heldout
+   rows = 2160
+   ft_viol = 0
+   over = 0
+   maxlen = 890
+   mean_ft = 454.90416666666664
+   sum_ft = 982593
+   sum_sup = 413687
+   oov_census = 0
+   oov_bundle_raw = 0
+   oov_bundle_norm = 0
+   lic = {'CC0-1.0': 1680, 'CC-BY-SA-4.0': 480}
+   n_families = 18
+   fams_min_max = [120, 120]
+   dup_prompt = 0
+   dup_ft = 0
+   cross_hit = 0
+   cross_fam_hit = 0
+   ids_dup = 0
+   empty_ans = 0
+   search_rows = 0
+   jiang = 0
+   split_field_bad = 0
+   tool_steps_nonempty = 0
+   lms_nonempty = 0
+   answer_line_missing = 0
+   missing_fields = {}
+   n_distinct_prompts = 2160
+   n_distinct_ft = 2160
+   idprefix = {}
+   tmpl_top = [['reading_h_reverse_two_hop', 240], ['reading_h_odd_one_out', 240], ['reading_h_count_through_two_hops', 240], ['reading_h_compare_frequency', 240], ['reading_h_negated_list', 240], ['reading_h_distinct_countries_two_hops', 240]]
+   oov_chars_raw []
+   oov_chars_norm []
+== search_use/heldout
+   rows = 1892
+   ft_viol = 0
+   over = 0
+   maxlen = 1149
+   mean_ft = 591.431289640592
+   sum_ft = 1118988
+   sum_sup = 1018602
+   oov_census = 0
+   oov_bundle_raw = 0
+   oov_bundle_norm = 0
+   lic = {'CC0-1.0': 960, 'CC-BY-SA-4.0': 932}
+   n_families = 12
+   fams_min_max = [132, 160]
+   dup_prompt = 0
+   dup_ft = 0
+   cross_hit = 0
+   cross_fam_hit = 0
+   ids_dup = 0
+   empty_ans = 0
+   search_rows = 1892
+   jiang = 0
+   split_field_bad = 0
+   tool_steps_nonempty = 1892
+   lms_nonempty = 1892
+   answer_line_missing = 0
+   missing_fields = {}
+   n_distinct_prompts = 1892
+   n_distinct_ft = 1892
+   idprefix = {}
+   tmpl_top = [['search_count_matching', 160], ['search_compare_dates', 160], ['search_min_of_three', 160], ['search_difference_numbers', 160], ['search_odd_one_out', 160], ['search_order_numbers', 160]]
+   oov_chars_raw []
+   oov_chars_norm []
+
+OJ ptr_rows [total, pointer] {'train': [46008, 3888], 'dev': [1917, 162], 'heldout': [2700, 0]}
+OJ letters {'train': {'A': 15336, 'B': 15336, 'C': 15336}, 'dev': {'A': 639, 'B': 639, 'C': 639}, 'heldout': {'A': 900, 'B': 900, 'C': 900}}
+OJ ureason {"train": {"absent_form": 27379, "X_not_in_premise": 27379, "X_in_option": 25842, "other:(#)と一致=真 かつ 前提にレンヌ第#大学なし": 1, "other:(#)と一致=真 かつ 前提にショウタイムなし": 1, "other:(#)はコアリ=偽 かつ 前提に唐津旅客運輸なし": 1, "other:(#)はハイルブロン=偽 かつ 前提にジーロング・キャッツな": 1, "other:(#)と一致=真 かつ 前提に秋田県立病院機構なし": 1, "other:(#)と一致=真  ...[trimmed]
+OJ form_chk {"train": {"match_form": 9720, "differs_form": 43637, "other:(#)と一致=真 かつ (#)と一致": 3888, "other:(#)と一致=真 かつ (#)はシドニー": 56, "other:前提にインド国立人類学研究所なし=不明 かつ (#)は長春市": 1, "other:前提にルノー・インディアなし=不明 かつ (#)はシドニー": 1, "other:前提にミス・アース・ブラジルなし=不明 かつ (#)と一致": 2, "other:前提にドラゴン・スクールなし=不明 かつ (#)と一致": 1, ...[trimmed]
+OJ kopt (k,label)->n {"train": {"3|T": 1137, "2|F": 1087, "4|U": 586, "1|U": 1098, "1|F": 1098, "3|U": 1132, "1|T": 1086, "4|F": 614, "3|F": 1089, "2|T": 1066, "2|U": 1072, "4|T": 599}, "dev": {"2|T": 55, "4|U": 29, "2|F": 45, "1|U": 37, "3|T": 53, "3|F": 59, "2|U": 35, "3|U": 34, "4|T": 36, "1|F": 39, "4|F": 19, "1|T": 45}}
+OJ goldk dev|con {'4': 3, '1': 7, '3': 10, '2': 6, '5': 1}
+OJ goldk dev|ent {'2': 8, '3': 9, '4': 4, '5': 1, '1': 5}
+OJ goldk dev|notcon {'2': 10, '1': 6, '5': 2, '4': 2, '3': 7}
+OJ goldk dev|notent {'3': 12, '1': 6, '2': 6, '4': 2, '5': 1}
+OJ goldk dev|notund {'1': 5, '3': 8, '2': 7, '4': 6, '5': 1}
+OJ goldk dev|und {'2': 8, '1': 7, '3': 8, '5': 2, '4': 2}
+OJ goldk train|con {'1': 188, '2': 182, '3': 177, '4': 81, '5': 20}
+OJ goldk train|ent {'3': 189, '1': 175, '2': 181, '4': 84, '5': 19}
+OJ goldk train|notcon {'3': 215, '2': 167, '1': 184, '5': 22, '4': 60}
+OJ goldk train|notent {'3': 172, '2': 190, '1': 188, '4': 71, '5': 27}
+OJ goldk train|notund {'1': 182, '2': 191, '3': 177, '4': 76, '5': 22}
+OJ goldk train|und {'3': 180, '4': 77, '1': 177, '5': 23, '2': 191}
