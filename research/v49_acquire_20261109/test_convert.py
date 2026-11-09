@@ -1057,6 +1057,231 @@ class TestShards(RowAsserts):
             self.assertTrue(all(v["status"] == "identical_existing" for v in again["files"].values()))
 
 
+class TestRound3Findings(RowAsserts):
+    """Review round 3: every case below was kept (or crashed a resume) before the fix."""
+
+    def test_a_stored_output_of_another_block_cannot_validate_a_python_block(self):
+        # block A prints 1 and its own stored output says 999; block B's stored output is 1: A was kept as 'stored_output_equals_sandbox'
+        two = msg("two blocks", f"A:\n{FENCE}python\nprint(1)\n{FENCE}\n出力:\n{FENCE}\n999\n{FENCE}\nB:\n{FENCE}python\nprint(2)\n{FENCE}\n出力:\n{FENCE}\n1\n{FENCE}")
+        a_no_output = msg("two blocks", f"A:\n{FENCE}python\nprint(1)\n{FENCE}\nB:\n{FENCE}python\nprint(2)\n{FENCE}\n出力:\n{FENCE}\n1\n{FENCE}")
+        own = msg("two blocks", f"A:\n{FENCE}python\nprint(1)\n{FENCE}\n出力:\n{FENCE}\n1\n{FENCE}\nB:\n{FENCE}python\nprint(2)\n{FENCE}\n出力:\n{FENCE}\n2\n{FENCE}")
+        rows, st = run("coding", [two, a_no_output, own], ck=CKX)
+        self.assertEqual(dict(st.rejects), {"stored_output_mismatch": 1, "no_stored_output_to_corroborate": 1})
+        self.assertEqual([(r["id"], r["verification"]) for r in rows], [("v49acq_coding_0000002", "stored_output_equals_sandbox")])
+        # the helper itself: only the blocks between the python block and the next python block count
+        blocks = C.parse_fences(own["messages"][1]["content"])
+        py = [b for b in blocks if b["lang"] == "python"]
+        self.assertEqual(C._stored_outputs(own["messages"][1]["content"], blocks, py[0]), ["1\n"[:-1]])
+
+    def test_python_fences_with_a_stated_output_are_dropped_wherever_they_sit(self):
+        steps = "1. **まず** 条件を整理します。\n\n2. **次に** 理由を述べます。"
+        base = {"instruction": "合計を求めるコードを書いてください。", "reasoning": steps, "initial_answer": "x"}
+        good = dict(base, refined_answer="合計は次のとおりです。")
+        inline = dict(base, refined_answer=f"次のコードを実行します。{FENCE}python print(1+1) {FENCE} 結果は3になります。")
+        untagged = dict(base, refined_answer=f"次のコードを実行します。\n{FENCE}\nprint(1 + 1)\n{FENCE}\n結果は3になります。")
+        untagged_inline = dict(base, refined_answer=f"次のコードを実行します。{FENCE} print(1 + 1) {FENCE} 結果は3になります。")
+        tilde = dict(base, refined_answer="次のコードです。\n~~~py\nprint(1)\n~~~\n結果は1です。")
+        json_block = dict(base, refined_answer=f"設定は次のとおりです。\n{FENCE}\n{{\"a\": 1}}\n{FENCE}\n以上です。")
+        text_block = dict(base, refined_answer=f"例は次のとおりです。\n{FENCE}\nこれは説明の文章です\n{FENCE}\n以上です。")
+        shell_block = dict(base, refined_answer=f"次のコマンドです。\n{FENCE}\n$ ls -l\n{FENCE}\n以上です。")
+        pyramid = dict(base, refined_answer=f"ピラミッドの例について、日本語で詳しく説明します。\n{FENCE}pyramid\nabc\n{FENCE}\n以上です。")
+        rows, st = run("tengentoppa", [good, inline, untagged, untagged_inline, tilde, json_block, text_block, shell_block, pyramid])
+        self.assertEqual(dict(st.rejects), {"python_block_not_executed": 4})
+        self.assertEqual(sorted(int(r["id"][-7:]) for r in rows), [0, 5, 6, 7, 8])
+        # the same rule for wizardlm rows (and the helper itself)
+        w_inline = msg("計算してください。", f"次のコードを実行します。{FENCE}python print(1+1) {FENCE} 結果は3になります。")
+        w_untagged = msg("計算してください。", f"次のコードを実行します。\n{FENCE}\nprint(1 + 1)\n{FENCE}\n結果は3になります。")
+        w_ok = msg("計算してください。", "二つの数を足すと和になります。詳しい説明は省きます。")
+        rows, st = run("wizard", [w_inline, w_untagged, w_ok])
+        self.assertEqual((dict(st.rejects), [r["id"] for r in rows]), ({"python_block_not_executed": 2}, ["v49acq_wizard_0000002"]))
+        for text, want in ((f"{FENCE}python x=1 {FENCE}", True), (f"{FENCE}\nprint(2)\n{FENCE}", True), (f"{FENCE}\nx = 1\n{FENCE}", False),
+                           (f"{FENCE}json\n{{\"a\": 1}}\n{FENCE}", False), ("no fence at all print(1)", False)):
+            self.assertEqual(C.has_python_block(text), want, text)
+
+    def test_a_character_outside_the_vocabulary_in_the_target_is_rejected_in_the_prompt_it_is_tolerated(self):
+        # the loader silently DELETES every out-of-vocabulary character: 'const msg = ‘hello’;' is trained as 'const msg = hello’;'
+        self.assertGreater(CK.oov_count("\u2018"), 0)
+        js = msg("JavaScriptで挨拶を表示してください。", f"次のとおりです。\n{FENCE}javascript\nconst msg = \u2018hello\u2019;\nconsole.log(msg);\n{FENCE}\nこれで表示されます。")
+        ok = msg("JavaScriptで挨拶を表示してください。", f"次のとおりです。\n{FENCE}javascript\nconst msg = 'hello';\nconsole.log(msg);\n{FENCE}\nこれで表示されます。")
+        rows, st = run("coding", [js, ok])
+        self.assertEqual(dict(st.rejects), {"invalid_row:oov_in_target": 1})
+        self.assertEqual([r["id"] for r in rows], ["v49acq_coding_0000001"])
+        steps = "1. **まず** 条件を整理します。\n\n2. **次に** 理由を述べます。"
+        long_q = "日本の首都について、歴史的な背景も含めて詳しく説明してください。" * 4 + "\U0001F600"          # one emoji in a long prompt: under 1 %, tolerated in the context
+        good = {"instruction": long_q, "reasoning": steps, "initial_answer": "x", "refined_answer": "日本の首都は東京です。"}
+        rows, st = run("tengentoppa", [good])
+        self.assertEqual((len(rows), dict(st.rejects)), (1, {}))
+        self.assertEqual(rows[0]["n_oov"], 1)
+        self.assertEqual(C.validate_row(dict(rows[0], target=rows[0]["target"] + "\U0001F600", full_text=rows[0]["full_text"] + "\U0001F600"), CK), "oov_in_target")
+
+    def test_a_hotpot_answer_must_be_a_whole_word_of_the_evidence(self):
+        part_of_a_word = hp(rid="p", ans="Spa")                                                 # 'Spa' is inside 'Spain'
+        word = hp(rid="q", ans="Spain")
+        phrase = hp(rid="r", ans="old town")
+        rows, st = run("hotpot", [part_of_a_word, word, phrase])
+        self.assertEqual(dict(st.rejects), {"answer_not_in_evidence": 1})
+        self.assertEqual([r["id"] for r in rows], ["v49acq_hotpot_q", "v49acq_hotpot_r"])
+
+    def test_the_manifest_is_written_last_and_atomically(self):
+        # a kill between the manifest and the other files left a folder that the pipeline took for finished (manifest.json = done)
+        order = []
+        real = C._write_new
+
+        def spy(path, text):
+            order.append(Path(path).name)
+            return real(path, text)
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as raw, tempfile.TemporaryDirectory() as out:
+            TestOutputAndCli.raw_jaquad(self, raw)
+            with mock.patch.object(C, "_write_new", spy):
+                C.run_dataset("jaquad", raw, out, CK, sample_dump=3)
+            self.assertEqual(order[-1], "manifest.json")
+            self.assertEqual(sorted(order), ["manifest.json", "rejects_sample.jsonl", "sample_dump.txt"])
+            # the text never appears under its final name before it is complete: the rename is the only step that creates it
+            target = Path(out) / "atomic.txt"
+            with mock.patch("os.replace", side_effect=OSError("killed before the rename")):
+                with self.assertRaises(OSError):
+                    C._write_new(target, "x" * 1000)
+            self.assertFalse(target.exists())
+            self.assertEqual(C._write_new(target, "x" * 1000), "written")
+            self.assertEqual(target.read_text(encoding="utf-8"), "x" * 1000)
+            self.assertEqual(C._write_new(target, "x" * 1000), "identical_existing")
+
+
+class TestSandboxFailsLoudly(RowAsserts):
+    """Review round 4 (major): a sandbox failure in the MIDDLE of a long run (no space in /tmp for a child, the unprivileged user vanished, a child that
+    dies without a result) was turned into a per-row reject 'sandbox_failed:crash:...' / 'sandbox_failed:checks_error:...', so the manifest stayed
+    balanced and every verified python row silently vanished into the reject counts.  It must stop the converter; the CODE under test failing,
+    timing out or being refused stays a per-row reject."""
+
+    GOOD = msg("1から10までの合計を表示するPythonコードを書いて。", f"{PY_PLAN}\n{FENCE}python\nprint(sum(range(1, 11)))\n{FENCE}\n出力:\n{FENCE}\n55\n{FENCE}\n結果は55です。")
+
+    def setUp(self):
+        self.ext = C._load_external_checks()
+        if self.ext is None:
+            self.skipTest("checks.py not available")
+
+    def patched(self, fn):
+        from unittest import mock
+        return mock.patch.object(self.ext, "code_sandbox_check", fn)
+
+    def test_the_infrastructure_categories(self):
+        for reason in ("crash:spawn:OSError: [Errno 28] No space left on device", "crash:returncode=-11:", "crash:returncode=1:Traceback", "crash"):
+            self.assertTrue(C.sandbox_reason_is_infrastructure(reason), reason)
+        for reason in ("timeout:5.0s", "output_limit:captured output exceeded 8192 characters", "exception:ZeroDivisionError: division by zero",
+                       "exception:MemoryError: ", "static:import:os", "static:match_class:keyword attributes in class patterns are disabled: format", ""):
+            self.assertFalse(C.sandbox_reason_is_infrastructure(reason), reason)
+
+    def test_run_python_raises_for_a_broken_sandbox_and_keeps_code_failures_per_row(self):
+        ck = C.Checks(vocab=CK.vocab)
+        for reason in ("crash:spawn:OSError: [Errno 28] No space left on device", "crash:returncode=-9:"):
+            with self.patched(lambda code, timeout, **kw: (False, "", reason)):
+                with self.assertRaises(C.SandboxUnavailable) as cm:
+                    ck.run_python("print(1)")
+            self.assertIn("in the middle of the run", str(cm.exception))
+        for exc in (self.ext.SandboxError("user 'nobody' does not exist on this machine"), OSError(28, "No space left on device"), RuntimeError("boom")):
+            def raiser(code, timeout, _exc=exc, **kw):
+                raise _exc
+            with self.patched(raiser):
+                with self.assertRaises(C.SandboxUnavailable) as cm:
+                    ck.run_python("print(1)")
+            self.assertIn(type(exc).__name__, str(cm.exception))
+        for reason in ("timeout:5.0s", "output_limit:captured output exceeded 8192 characters", "exception:ZeroDivisionError: division by zero",
+                       "exception:MemoryError: ", "static:import:os"):
+            with self.patched(lambda code, timeout, **kw: (False, "", reason)):
+                self.assertEqual(ck.run_python("print(1)"), {"ok": False, "stdout": "", "reason": reason})
+        with self.patched(lambda code, timeout, **kw: (True, "55\n", "")):
+            self.assertEqual(ck.run_python("print(1)"), {"ok": True, "stdout": "55\n", "reason": ""})
+
+    def test_a_failure_in_the_middle_of_a_run_stops_the_conversion_and_writes_no_manifest(self):
+        ck = C.Checks(vocab=CK.vocab)
+        real = self.ext.code_sandbox_check
+        calls = []
+
+        def flaky(code, timeout, **kw):
+            calls.append(code)
+            if len(calls) >= 2:
+                return False, "", "crash:spawn:OSError: [Errno 28] No space left on device"
+            return real(code, timeout, **kw)
+        with self.patched(flaky):
+            spec = C.DATASETS["coding"]
+            st = C.Stats("coding")
+            with self.assertRaises(C.SandboxUnavailable):
+                list(spec.convert(list(enumerate([self.GOOD, self.GOOD, self.GOOD])), st, ck, spec))
+        self.assertEqual(len(calls), 2)                                                      # nothing ran after the failure
+        self.assertNotIn("sandbox_failed:crash:spawn:OSError: [Errno 28] No space left on device", st.rejects)
+
+    def test_the_cli_exits_with_4_and_leaves_no_manifest(self):
+        if pa is None:
+            self.skipTest("pyarrow missing")
+        import io
+        from contextlib import redirect_stderr
+        flaky_calls = []
+        real = self.ext.code_sandbox_check
+
+        def flaky(code, timeout, **kw):
+            flaky_calls.append(1)
+            if len(flaky_calls) >= 2:
+                raise self.ext.SandboxError("user 'nobody' does not exist on this machine")
+            return real(code, timeout, **kw)
+        with tempfile.TemporaryDirectory() as raw, tempfile.TemporaryDirectory() as out:
+            p = Path(raw) / "data" / "train-00000-of-00001.parquet"
+            p.parent.mkdir()
+            pq.write_table(pa.Table.from_pylist([self.GOOD, self.GOOD, self.GOOD]), p)
+            err = io.StringIO()
+            with self.patched(flaky), redirect_stderr(err):
+                code = C.main(["--dataset", "coding", "--raw-dir", raw, "--out-dir", out, "--sample-dump", "0"])
+            self.assertEqual(code, 4)
+            self.assertIn("SANDBOX FAILED DURING THE RUN", err.getvalue())
+            self.assertIn("SandboxError", err.getvalue())
+            self.assertFalse((Path(out) / "coding" / "manifest.json").exists())              # 'finished' is marked by the manifest, written last
+            self.assertFalse((Path(out) / "coding" / "train.jsonl").exists())
+
+    def test_ordinary_code_failures_are_still_per_row_rejects(self):
+        ck = C.Checks(vocab=CK.vocab)
+        zero = msg("divide", f"{FENCE}python\nprint(1 / 0)\n{FENCE}")
+        rows, st = run("coding", [self.GOOD, zero], ck=ck)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(dict(st.rejects), {"sandbox_failed:exception:ZeroDivisionError: division by zero": 1})
+        slow = C.Checks(vocab=CK.vocab, sandbox_timeout=1.0)
+        loop = msg("loop", f"{FENCE}python\nwhile True:\n    pass\nprint(1)\n{FENCE}")
+        rows, st = run("coding", [loop], ck=slow)
+        self.assertEqual((len(rows), dict(st.rejects)), (0, {"sandbox_failed:timeout:1.0s": 1}))
+
+    def test_termination_signals_are_forwarded_to_the_sandbox_children(self):
+        # POSIX-only behaviour, which cannot run on this Windows PC: the handler is exercised with a fake `signal.signal` and a fake extension
+        from unittest import mock
+        killed = []
+
+        class Ext:
+            @staticmethod
+            def kill_live_sandbox_children():
+                killed.append(1)
+                return 1
+        handlers = {}
+        previous = {C.signal.SIGTERM: "old-term", C.signal.SIGINT: "old-int"}
+
+        def fake_signal(sig, handler):
+            old = handlers.get(sig, previous[sig])
+            handlers[sig] = handler
+            return old
+        with mock.patch.object(C.signal, "signal", fake_signal):
+            with C.forward_termination_to_sandbox(Ext, posix=True) as installed:
+                self.assertTrue(installed)
+                self.assertEqual(set(handlers), {C.signal.SIGTERM, C.signal.SIGINT})
+                with self.assertRaises(SystemExit) as cm:
+                    handlers[C.signal.SIGTERM](C.signal.SIGTERM, None)                    # what `kill -TERM <converter>` (pipeline._terminate) does
+                self.assertEqual(cm.exception.code, 128 + int(C.signal.SIGTERM))
+                self.assertEqual(killed, [1])                                              # the sandbox child was killed before the converter exits
+            self.assertEqual(handlers[C.signal.SIGTERM], "old-term")                       # restored afterwards
+            self.assertEqual(handlers[C.signal.SIGINT], "old-int")
+        n = len(killed)
+        with C.forward_termination_to_sandbox(Ext, posix=False) as installed:             # not POSIX: nothing is installed
+            self.assertFalse(installed)
+        with C.forward_termination_to_sandbox(None, posix=True) as installed:             # no sandbox module: nothing to forward to
+            self.assertFalse(installed)
+        self.assertEqual(len(killed), n)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -50,6 +50,7 @@ import ast
 import bisect
 import collections
 import dataclasses
+import errno
 import glob as _glob
 import gzip
 import hashlib
@@ -66,6 +67,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unicodedata
 import zipfile
@@ -211,6 +213,20 @@ def sha256_file(path: str, chunk: int = 1 << 20) -> str:
             h.update(b)
 
 
+_FSYNC_UNSUPPORTED = {getattr(errno, n) for n in ("EINVAL", "ENOTSUP", "EOPNOTSUPP", "ENOSYS") if hasattr(errno, n)}
+
+
+def fsync_file(fd: int) -> None:
+    """os.fsync that ignores ONLY 'this file system cannot fsync' (EINVAL / ENOTSUP / EOPNOTSUPP / ENOSYS).  Every other error (EIO, ENOSPC,
+    EDQUOT, ...) is raised: on a FUSE mount such as Google Drive the quota-full or I/O error that buffered writes defer shows up here, and
+    swallowing it would record a failed write as a successful one."""
+    try:
+        os.fsync(fd)
+    except OSError as e:
+        if e.errno not in _FSYNC_UNSUPPORTED:
+            raise
+
+
 def quarantine_part(path: str) -> str:
     """Move a leftover `<x>.part` of a dead run aside as `<x>.part.stale-N` (never deleted: the owner's rule); returns the new name."""
     n = 1
@@ -246,10 +262,7 @@ def write_new_file(path: str, data: Union[str, bytes], *, encoding: str = "utf-8
     with open(part, "xb") as f:
         f.write(data)
         f.flush()
-        try:
-            os.fsync(f.fileno())
-        except OSError:
-            pass
+        fsync_file(f.fileno())
     if os.path.lexists(path):                                    # somebody created it while we wrote: never replace it
         return compare()
     os.rename(part, path)
@@ -898,8 +911,8 @@ class MinHasher:
     HOW SHARP THE CUT IS (binomial, k = 128): a pair is reported when the share of equal slots is >= the cut.  With the cut at
     0.75 (the pipeline's choice: target 0.8 minus a 0.05 margin) a pair of true Jaccard 0.90 is found with probability ~1.00,
     0.85 ~0.999, 0.80 ~0.93, 0.75 ~0.55, 0.70 ~0.13, 0.65 ~0.01, 0.60 ~0.00.  With the cut at exactly the target the pair AT the target is
-    found only half of the time, which is a property of any MinHash estimate, not a defect.  Clusters are connected components,
-    so a chain of near pairs can remove a row that is not itself near the survivor (cluster sizes are reported)."""
+    found only half of the time, which is a property of any MinHash estimate, not a defect.  near_dups_within drops a row only when it
+    is near a row that is kept (no chains: the survivor of every dropped row is itself near it)."""
 
     def __init__(self, k: int = 128, ngram: int = 5, seed: int = 20261109, use_numpy: Optional[bool] = None):
         self.k, self.ngram, self.seed = int(k), int(ngram), int(seed)
@@ -1053,10 +1066,13 @@ def near_dups_within(rows: Iterable[Any], *, text_fn: Optional[Callable[[Any], s
                      threshold: float = 0.8, k: int = 128, bands: int = 32, max_per_band: int = 64, max_examples: int = 5,
                      snippet_chars: int = 120, hasher: Optional[MinHasher] = None, progress: Optional[ProgressCB] = None,
                      progress_every: int = 20000) -> dict:
-    """Near-duplicate clusters inside one stream (keep-first: the earliest row of a cluster is kept, the others are listed in
-    dup_positions).  Clusters are the connected components of 'estimated Jaccard >= threshold' pairs, so a chain a~b~c can put a
-    and c together even if J(a, c) < threshold; cluster_size_hist says how many clusters of each size there are (sizes above 9 are
-    pooled as '10+') and largest_cluster the biggest.  `threshold` is applied to the ESTIMATE (see MinHasher for how sharp that is).
+    """Near-duplicate clusters inside one stream, greedy keep-first: rows are taken in order and a row is dropped (listed in
+    dup_positions) only when it is similar (estimated Jaccard >= threshold) to a row that is KEPT; it is then attached to the most
+    similar kept row (root_of[i], the survivor).  There are no chains: a~b~c with J(a, c) < threshold keeps a and c (an earlier
+    version used connected components, where a chain of 31 near pairs removed rows with Jaccard ~0 to the survivor).  Two survivors can
+    still be near each other when the LSH or the max_per_band cap misses the pair.  cluster_size_hist says how many clusters (a survivor
+    plus its dropped rows) of each size there are (sizes above 9 are pooled as '10+') and largest_cluster the biggest.  `threshold` is
+    applied to the ESTIMATE (see MinHasher for how sharp that is).
     Memory: see the module docstring (~1.2 KB per row at k = 128)."""
     text_fn, id_fn = text_fn or default_text, id_fn or default_id
     idx = MinHashIndex(hasher or MinHasher(k=k), bands=bands, snippet_chars=snippet_chars)
@@ -1067,28 +1083,24 @@ def near_dups_within(rows: Iterable[Any], *, text_fn: Optional[Callable[[Any], s
     tick.done()
     idx.build()
     n = len(idx)
-    parent = list(range(n))
-
-    def find(x: int) -> int:
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
+    roots = list(range(n))                                            # roots[i] == i: kept; else the kept row that i duplicates
     examples, tick = [], _Ticker(progress, "minhash query", progress_every)
     for i in range(n):
         tick.tick()
         if not idx.valid[i]:
             continue
+        best = None
         for j, est in idx.query_sig(idx.sig_at(i), threshold, below=i, max_per_band=max_per_band):
-            ri, rj = find(i), find(j)
-            if ri != rj:
-                parent[max(ri, rj)] = min(ri, rj)
-                if len(examples) < max_examples:
-                    examples.append({"position": i, "id": idx.labels[i], "similar_to_position": j, "similar_to_id": idx.labels[j],
-                                     "est_jaccard": round(est, 3), "text": idx.snippets[i] if idx.snippets else "",
-                                     "other_text": idx.snippets[j] if idx.snippets else ""})
+            if roots[j] == j and (best is None or est > best[1]):         # candidates ascend by position: ties keep the earliest
+                best = (j, est)
+        if best is not None:
+            j, est = best
+            roots[i] = j
+            if len(examples) < max_examples:
+                examples.append({"position": i, "id": idx.labels[i], "similar_to_position": j, "similar_to_id": idx.labels[j],
+                                 "est_jaccard": round(est, 3), "text": idx.snippets[i] if idx.snippets else "",
+                                 "other_text": idx.snippets[j] if idx.snippets else ""})
     tick.done()
-    roots = [find(i) for i in range(n)]
     dup_positions = [i for i in range(n) if roots[i] != i]
     sizes = collections.Counter(roots)
     size_hist = collections.Counter(("10+" if c >= 10 else str(c)) for c in sizes.values() if c > 1)
@@ -1419,18 +1431,30 @@ def find_eval_files(drive_root: str = DRIVE_ROOT, *, extra_dirs: Sequence[str] =
 _STRIP_DIGITS_WS = re.compile(r"[\d\s]+")
 
 
+WHOLE_ITEM_MIN_CHARS = 40          # an eval text of at least this many normalised characters is a whole item: a row that contains it is flagged
+
+
 def normalize_for_overlap(text: str) -> str:
-    """NFKC, casefold, every decimal digit (any script) and every whitespace character removed: '12冊で' and '15冊で' become equal."""
-    return _STRIP_DIGITS_WS.sub("", unicodedata.normalize("NFKC", text).casefold())
+    """The training loader's symbol map (RUNTIME_NORMALIZE: U+2212 -> '-', Greek capitals -> Latin, brackets, ...), NFKC, casefold, every
+    decimal digit (any script) and every whitespace character removed: '12冊で' and '15冊で' become equal, and text that the loader turns
+    into identical tokens is identical here too (a superset of what the loader does)."""
+    t = unicodedata.normalize("NFKC", text.translate(RUNTIME_NORMALIZE)).translate(RUNTIME_NORMALIZE)
+    return _STRIP_DIGITS_WS.sub("", t.casefold())
 
 
 class EvalIndex:
     """Set of the digit-stripped n-gram (default 13) shingles of all eval texts + the normalised eval texts (for locating examples).
     Shingles are held as python hash() ints of the n-gram strings: the process-local seed is irrelevant because nothing hashed is
-    persisted or reported (shingle strings are); the chance that one false match occurs in a whole run is ~1e-4."""
+    persisted or reported (shingle strings are); the chance that one false match occurs in a whole run is ~1e-4.
+    Per source: items, texts, indexable_texts (>= n normalised characters), shingles (distinct shingles the source CONTAINS, summed over its
+    texts - not only the ones new to the index: a source that repeats another one still holds its own), new_shingles (the ones it added).
+    `whole`: the eval texts of >= whole_min_chars normalised characters, keyed by the hash of their first n-gram (see whole_matches)."""
 
-    def __init__(self, ngram: int = 13):
+    def __init__(self, ngram: int = 13, whole_min_chars: int = WHOLE_ITEM_MIN_CHARS):
         self.ngram = ngram
+        self.whole_min_chars = max(int(whole_min_chars), ngram)
+        self.whole: Dict[int, List[Tuple[int, int]]] = {}       # first-shingle hash -> [(last-shingle hash, doc id)]
+        self._whole_seen: set = set()
         self.hashes: set = set()
         self.docs: List[Tuple[str, int, str]] = []        # (source label, item index, normalised text)
         self.per_source: Dict[str, Dict[str, int]] = {}
@@ -1447,10 +1471,11 @@ class EvalIndex:
     def add_text(self, label: str, item: int, text: str) -> int:
         norm = normalize_for_overlap(text)
         n = self.ngram
-        st = self.per_source.setdefault(label, {"items": 0, "texts": 0, "shingles": 0})
+        st = self.per_source.setdefault(label, {"items": 0, "texts": 0, "indexable_texts": 0, "shingles": 0, "new_shingles": 0})
         st["texts"] += 1
         if len(norm) < n:
             return 0
+        st["indexable_texts"] += 1
         hset = {hash(norm[i:i + n]) for i in range(len(norm) - n + 1)}
         if (label, item) != self._cur_key:                # texts of ONE item (question + choices) count once per shingle
             self._cur_key, self._cur_seen = (label, item), set()
@@ -1461,9 +1486,33 @@ class EvalIndex:
             if h in self.hashes:
                 self.eval_df[h] = self.eval_df.get(h, 1) + 1
         self.hashes.update(fresh)
+        doc_id = len(self.docs)
         self.docs.append((label, item, norm))
-        st["shingles"] += len(self.hashes) - before
+        if len(norm) >= self.whole_min_chars:             # a whole item: findable by (first n-gram, last n-gram) whatever the df of its shingles
+            key = hash(norm)
+            if key not in self._whole_seen:               # items that differ only in digits have the same normalised text: one entry
+                self._whole_seen.add(key)
+                self.whole.setdefault(hash(norm[:n]), []).append((hash(norm[-n:]), doc_id))
+        st["shingles"] += len(hset)
+        st["new_shingles"] += len(self.hashes) - before
         return len(self.hashes) - before
+
+    def whole_matches(self, norm: str, hset: set, inter: set, limit: int = 1) -> List[Tuple[str, int, str]]:
+        """[(source, item, eval text)] of whole eval texts (>= whole_min_chars normalised characters) that occur verbatim inside the
+        normalised row text `norm`.  hset = the row's n-gram hashes, inter = the ones that are also eval shingles.  A verbatim copy of an
+        eval item is contamination however many other items share its template phrases (their shingles may all be boilerplate)."""
+        out: List[Tuple[str, int, str]] = []
+        if not self.whole:
+            return out
+        for h in inter & self.whole.keys():
+            for last, doc in self.whole[h]:
+                if last in hset:
+                    label, item, text = self.docs[doc]
+                    if text in norm:
+                        out.append((label, item, text))
+                        if len(out) >= limit:
+                            return out
+        return out
 
     def find_sources(self, shingle: str, limit: int = 3) -> List[dict]:
         out = []
@@ -1477,7 +1526,8 @@ class EvalIndex:
 
     def stats(self) -> dict:
         return {"ngram": self.ngram, "distinct_shingles": len(self.hashes), "normalised_texts": len(self.docs), "per_source": self.per_source,
-                "shingles_in_several_eval_items": len(self.eval_df), "max_eval_items_per_shingle": max(self.eval_df.values(), default=1)}
+                "shingles_in_several_eval_items": len(self.eval_df), "max_eval_items_per_shingle": max(self.eval_df.values(), default=1),
+                "whole_item_texts": len(self._whole_seen), "whole_item_min_chars": self.whole_min_chars}
 
 
 def build_eval_index(sources: Iterable[Union[EvalSource, str, Tuple[str, Iterable[str]]]], *, ngram: int = 13,
@@ -1512,7 +1562,14 @@ def decontaminate(rows: Iterable[Any], index: EvalIndex, *, text_fn: Optional[Ca
     of the following ...') when it occurs in at least `boilerplate_eval_df` (20) distinct EVAL ITEMS - the count is taken on the eval
     side (EvalIndex.eval_df), never on the training side: an eval question owned by one item has eval df 1, so it flags every row that
     copies it however many rows do (a train-side count would wave a widely copied leak through).  Boilerplate is reported and never
-    flags a row.  A row is flagged when it shares >= min_shared non-boilerplate shingles.
+    flags a row.  A row is flagged when it shares >= min_shared non-boilerplate shingles, OR when it contains a WHOLE eval text of
+    >= index.whole_min_chars (40) normalised characters verbatim (rows_flagged_whole_item): eval items that differ only in digits
+    (T1, T6, the v48 unseen_eval sets) share every shingle, so all their shingles are boilerplate by the df rule and a verbatim copy
+    of a whole item would otherwise pass; copying a template phrase alone (a part of the item) is still only boilerplate.  Two limits of
+    this rule that were measured and are NOT fixed (the thresholds 13 / 40 / 20 stay: false positives cannot be measured without the
+    real rows): an eval text of 13-39 normalised characters whose 13-grams are ALL boilerplate can be copied verbatim without being
+    flagged (the v33 prompt template, 50 items, and one v42 question), and a template phrase that is itself an eval text of 40+
+    characters flags EVERY row that contains it - read rows_flagged_whole_item per dataset before trusting the drop counts.
     One streaming pass.  Returns n_rows, rows_with_any_shared_shingle, rows_boilerplate_only, rows_flagged, flagged_positions (stream
     positions, to drop with drop_flagged), shared_count_hist, boilerplate {n_shingles, top[20]: shingle, eval_items, rows},
     real_shingles_top (the non-boilerplate shingles that most rows share: a big number means one eval text is copied widely),
@@ -1524,6 +1581,7 @@ def decontaminate(rows: Iterable[Any], index: EvalIndex, *, text_fn: Optional[Ca
     df: collections.Counter = collections.Counter()
     shingle_text: Dict[int, str] = {}
     hits: Dict[int, Tuple[str, Tuple[int, ...], str]] = {}
+    whole_pos: Dict[int, Tuple[str, int, str]] = {}          # position -> (source, item, whole eval text) of rows that contain a whole eval item
     n_rows = n_short = rows_any = 0
     tick = _Ticker(progress, "decontaminate", progress_every)
     for pos, row in enumerate(rows):
@@ -1551,31 +1609,37 @@ def decontaminate(rows: Iterable[Any], index: EvalIndex, *, text_fn: Optional[Ca
                 shingle_text[h] = norm[first[h]:first[h] + ng]
             if eval_df.get(h, 1) < boilerplate_eval_df:
                 real.append(h)
-        if real:
+        whole = index.whole_matches(norm, hset, inter)
+        if whole:
+            whole_pos[pos] = whole[0]
+        if real or whole:
             hits[pos] = (id_fn(row, pos), tuple(sorted(real, key=lambda h: shingle_text[h])), text[:row_prefix_chars])
     tick.done()
     boiler = {h for h in df if eval_df.get(h, 1) >= boilerplate_eval_df}
     flagged: Dict[int, List[int]] = {}
     for pos, (rid, hs, prefix) in hits.items():
-        if len(hs) >= min_shared:
+        if len(hs) >= min_shared or pos in whole_pos:
             flagged[pos] = list(hs)
     any_real = len(hits)
     hist = collections.Counter()
-    for real in flagged.values():
+    for pos, real in flagged.items():
         c = len(real)
-        hist["1" if c == 1 else ("2-4" if c <= 4 else ("5-19" if c <= 19 else "20+"))] += 1
+        hist["whole_item_only" if c == 0 else ("1" if c == 1 else ("2-4" if c <= 4 else ("5-19" if c <= 19 else "20+")))] += 1
     examples = []
     for pos in sorted(flagged, key=lambda p: (-len(flagged[p]), p))[:max_examples]:
         rid, _, prefix = hits[pos]
         shingles = sorted(shingle_text[h] for h in flagged[pos])
+        whole_text = whole_pos[pos][2] if pos in whole_pos else None
+        probe = shingles[0] if shingles else whole_text[:ng]
         examples.append({"position": pos, "id": rid, "n_shared_shingles": len(shingles), "shared_shingles": shingles[:3],
-                         "row_prefix": prefix, "eval_matches": index.find_sources(shingles[0])})
+                         "contains_whole_eval_item": pos in whole_pos, "row_prefix": prefix, "eval_matches": index.find_sources(probe)})
     top = sorted(((shingle_text[h], eval_df.get(h, 1), df[h]) for h in boiler), key=lambda t: (-t[2], t[0]))
     real_top = sorted(((shingle_text[h], eval_df.get(h, 1), d) for h, d in df.items() if h not in boiler), key=lambda t: (-t[2], t[0]))
     return {"n_rows": n_rows, "n_rows_shorter_than_ngram": n_short, "ngram": ng, "boilerplate_eval_df": boilerplate_eval_df, "min_shared": min_shared,
             "rows_with_any_shared_shingle": rows_any, "rows_boilerplate_only": rows_any - any_real,
             "rows_with_real_overlap": any_real, "rows_flagged": len(flagged), "flagged_positions": sorted(flagged),
-            "shared_count_hist": {k: hist[k] for k in ("1", "2-4", "5-19", "20+")},
+            "rows_flagged_whole_item": len(whole_pos), "whole_item_positions": sorted(whole_pos), "whole_item_min_chars": index.whole_min_chars,
+            "shared_count_hist": {k: hist[k] for k in ("1", "2-4", "5-19", "20+", "whole_item_only")},
             "boilerplate": {"n_shingles": len(boiler), "top": [{"shingle": sh, "eval_items": e, "rows": d} for sh, e, d in top[:20]]},
             "real_shingles_top": [{"shingle": sh, "eval_items": e, "rows": d} for sh, e, d in real_top[:10]],
             "examples": examples, "eval_index": index.stats(),
@@ -1799,6 +1863,8 @@ DENIED_ATTRS = {'save','savez','savez_compressed','load','loads','dump','fromfil
 IMPORT_DENIED = DENIED_NAMES | DENIED_ATTRS | {'call'}
 ALLOWED_DOTTED = {'collections.abc'}
 _READ_PREFIXES = ('read_','to_csv','to_excel','to_json','to_pickle','to_parquet','to_hdf','to_sql','to_feather','to_orc')
+_STR_FORMATTERS = ('format','format_map')
+MATCH_CLASS_OK = ('int','float','str','bool','list','tuple','dict','set','frozenset','complex','bytes')
 _FMT_TRAVERSAL = re.compile(r"\{[^{}]*__")
 _FIELD_OK = re.compile(r"[0-9]+|[A-Za-z][A-Za-z0-9_]*")
 def _check_format(s):
@@ -1811,6 +1877,16 @@ def _check_format(s):
             raise StaticReject("format_string|only plain {}, {0} and {name} fields are allowed (no attribute or index access)")
         if spec:
             _check_format(spec)
+def _attr_bad(a, cfg):
+    priv = a.startswith("__") if cfg["allow_private_attrs"] else a.startswith("_")
+    return priv or a in DENIED_ATTRS or a.startswith(_READ_PREFIXES)
+def _name_bad(n, cfg):
+    return (n.startswith("__") and n not in cfg["dunder_names"]) or n in DENIED_NAMES
+def _strname_bad(a, cfg):
+    # a name that is carried as a plain STRING in the tree but is looked up as an ATTRIBUTE at run time (from-import names): the attribute
+    # rules plus the two str formatters, which are only allowed on a string literal (ast.Attribute branch below)
+    return _attr_bad(a, cfg) or a in _STR_FORMATTERS
+_MATCH_CLASS_NODE = getattr(ast, 'MatchClass', ())
 def validate(code, cfg):
     roots = set(cfg["roots"])
     if not isinstance(code, str):
@@ -1825,6 +1901,7 @@ def validate(code, cfg):
         raise StaticReject("syntax|%s" % e.msg)
     except (ValueError, RecursionError, MemoryError) as e:
         raise StaticReject("syntax|%s" % type(e).__name__)
+    bound, class_pattern_names = set(), set()
     for node in ast.walk(tree):
         if isinstance(node, (ast.Global, ast.Nonlocal)):
             raise StaticReject("global_nonlocal|global/nonlocal declarations are disabled")
@@ -1832,12 +1909,39 @@ def validate(code, cfg):
             raise StaticReject("async|async code is disabled")
         if isinstance(node, ast.ClassDef) and not cfg["allow_classes"]:
             raise StaticReject("class_def|class definitions are disabled")
-        if isinstance(node, ast.Name) and ((node.id.startswith("__") and node.id not in cfg["dunder_names"]) or node.id in DENIED_NAMES):
+        if isinstance(node, ast.Name) and _name_bad(node.id, cfg):
             raise StaticReject("name|" + node.id)
+        # Names that are carried as plain STRINGS instead of ast.Name / ast.Attribute nodes.  Two kinds:
+        # (1) names that are LOOKED UP as an attribute at run time: ast.MatchClass.kwd_attrs (`case str(format=f)` is getattr(subject, 'format')
+        #     - it handed out str.format on a string built at run time) and the names of `from m import n`.  Patching one forbidden name at a
+        #     time failed twice (__class__, then format), so keyword attributes are DENY BY DEFAULT: a class pattern may not have any, and a
+        #     class pattern may only name a builtin type.  With no keyword attribute a positional pattern on int / str / ... matches the
+        #     subject itself (no attribute is read at all).  Honest math code essentially never needs a class pattern with attributes.
+        # (2) names that are only BOUND (as-patterns, star / mapping captures, except-as, import-as, def names, parameters, type
+        #     parameters, call keywords such as dict(format=1)): no attribute is ever read from them, so they only get the name rules below.
+        if getattr(node, "kwd_attrs", None):                                 # ast.MatchClass (Python 3.10+)
+            raise StaticReject("match_class|keyword attributes in class patterns are disabled: " + ", ".join(str(a) for a in node.kwd_attrs))
+        if isinstance(node, _MATCH_CLASS_NODE):
+            if not (isinstance(node.cls, ast.Name) and node.cls.id in MATCH_CLASS_OK):
+                raise StaticReject("match_class|class patterns are only allowed on these builtin types: " + " ".join(MATCH_CLASS_OK))
+            class_pattern_names.add(node.cls.id)
+        for _fld in ("name", "rest", "asname"):
+            _bound = getattr(node, _fld, None)
+            if isinstance(_bound, str) and not (_fld == "name" and isinstance(node, ast.alias)) and _name_bad(_bound, cfg):
+                raise StaticReject("name|" + _bound)
+            if isinstance(_bound, str) and not isinstance(node, ast.alias):
+                bound.add(_bound)
+        if isinstance(node, ast.arg):
+            if _name_bad(node.arg, cfg):
+                raise StaticReject("name|" + node.arg)
+            bound.add(node.arg)
+        if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            bound.add(node.id)
+        if isinstance(node, ast.alias):
+            bound.add(node.asname or node.name.split(".")[0])
         if isinstance(node, ast.Attribute):
             a = node.attr
-            priv = a.startswith("__") if cfg["allow_private_attrs"] else a.startswith("_")
-            if priv or a in DENIED_ATTRS or a.startswith(_READ_PREFIXES):
+            if _attr_bad(a, cfg):
                 raise StaticReject("attr|" + a)
             if isinstance(node.ctx, (ast.Store, ast.Del)) and not cfg["allow_attr_store"]:
                 raise StaticReject("attr_store|attribute assignment is disabled: ." + a)
@@ -1857,10 +1961,13 @@ def validate(code, cfg):
             for a in node.names:
                 if a.name == "*" or a.name.startswith("_"):
                     raise StaticReject("wildcard_import|wildcard or private import")
-                if a.name in IMPORT_DENIED:
+                if a.name in IMPORT_DENIED or _strname_bad(a.name, cfg):
                     raise StaticReject("import_name|" + a.name)
         if isinstance(node, ast.Constant) and isinstance(node.value, str) and _FMT_TRAVERSAL.search(node.value):
             raise StaticReject("format_string|attribute traversal inside a format string")
+    clash = sorted(class_pattern_names & bound)                  # `str = namedtuple(...)` would turn `case str(x)` into a pattern on another class
+    if clash:
+        raise StaticReject("match_class|a name that a class pattern uses is rebound in this code: " + ", ".join(clash))
     return tree
 '''
 
@@ -2008,10 +2115,12 @@ def _profile_cfg(profile: str, allowed_modules: Optional[Iterable[str]], allow_t
 def static_check(code: str, *, profile: str = "executor", allowed_modules: Optional[Iterable[str]] = None,
                  allow_third_party: bool = False) -> str:
     """'' when the code passes the static rules, else '<category>:<detail>' (syntax, too_long, global_nonlocal, async, class_def, name,
-    attr, attr_store, import, import_name, wildcard_import, format_string).  Profile 'executor' = the GeoCPU math worker's rules
+    attr, attr_store, import, import_name, wildcard_import, format_string, match_class).  Profile 'executor' = the GeoCPU math worker's rules
     (imports only from math cmath decimal fractions statistics itertools functools operator collections; no classes, no attribute
     assignment, no underscore attributes, no open/eval/exec/compile/getattr/globals..., no 'os'/'sys'/'subprocess'/'socket'
-    attributes, no frame / code introspection attributes, str.format only on a literal with plain fields).  This is the ONLY profile:
+    attributes, no frame / code introspection attributes, str.format only on a literal with plain fields, no keyword attribute in a
+    match class pattern and class patterns only on the builtin types int float str bool list tuple dict set frozenset complex bytes).
+    This is the ONLY profile:
     the earlier 'wide' profile (classes, random, re, json ...) was removed because the model's own executor cannot run such code."""
     cfg = _profile_cfg(profile, allowed_modules, allow_third_party)
     try:
@@ -2044,6 +2153,37 @@ def _resolve_run_as(run_as: Union[None, bool, str]) -> Optional[Tuple[int, int, 
     if pw.pw_uid == 0:
         raise SandboxError("refusing to run the sandbox child as root")
     return pw.pw_uid, pw.pw_gid, str(run_as)
+
+
+_POSIX = os.name == "posix"
+_LIVE_CHILDREN: Dict[int, bool] = {}                 # pid (= process-group id: every child is a session leader) of the sandbox children running right now
+_LIVE_LOCK = threading.RLock()                     # re-entrant on purpose: convert.py's SIGTERM handler runs in the main thread, possibly while _track_child holds the lock
+
+
+def _track_child(pid: int, running: bool) -> None:
+    with _LIVE_LOCK:
+        if running:
+            _LIVE_CHILDREN[pid] = True
+        else:
+            _LIVE_CHILDREN.pop(pid, None)
+
+
+def kill_live_sandbox_children() -> int:
+    """SIGKILL the process group of every sandbox child that is running right now (POSIX only; returns how many groups were signalled).
+    Each child is a session leader (start_new_session), so a signal sent to the CONVERTER's process group never reaches it: convert.py calls
+    this from its SIGTERM / SIGINT handler and at exit, so that stopping a converter also stops the untrusted code it started."""
+    if not _POSIX:
+        return 0
+    with _LIVE_LOCK:
+        pids = list(_LIVE_CHILDREN)
+    n = 0
+    for pid in pids:
+        try:
+            os.killpg(pid, signal.SIGKILL)
+            n += 1
+        except OSError:
+            pass                                       # already gone
+    return n
 
 
 def _file_tail(path: str, nbytes: int) -> bytes:
@@ -2090,18 +2230,24 @@ def _spawn(script_text: str, args: Sequence[str], *, timeout: float, flags: Sequ
             except (OSError, ValueError) as e:
                 proc, spawn_error = None, f"{type(e).__name__}: {e}"
             if proc is not None:
+                if _POSIX:
+                    _track_child(proc.pid, True)
                 try:
-                    proc.wait(timeout=timeout)
-                except subprocess.TimeoutExpired:
-                    timed_out = True
                     try:
-                        if os.name == "posix":
-                            os.killpg(proc.pid, signal.SIGKILL)
-                        else:
-                            proc.kill()
-                    except OSError:
-                        pass
-                    proc.wait()
+                        proc.wait(timeout=timeout)
+                    except subprocess.TimeoutExpired:
+                        timed_out = True
+                        try:
+                            if os.name == "posix":
+                                os.killpg(proc.pid, signal.SIGKILL)
+                            else:
+                                proc.kill()
+                        except OSError:
+                            pass
+                        proc.wait()
+                finally:
+                    if _POSIX:
+                        _track_child(proc.pid, False)
                 rc = proc.returncode
         raw_out, raw_err = _file_tail(out_p, 1 << 18), _file_tail(err_p, 4096)
     return {"returncode": rc, "out": raw_out, "err": raw_err, "timed_out": timed_out, "spawn_error": spawn_error}
@@ -2172,6 +2318,16 @@ SANDBOX_MUST_REJECT = (
     ("import random", "import random\nprint(random.random())\n"),
     ("open()", "print(open('x'))\n"),
     ("getattr()", "print(getattr(1, 'real'))\n"),
+    ("match class pattern reads __class__", "match 0:\n    case int(__class__=c):\n        print(c)\n"),
+    ("match capture named like a dunder", "match 0:\n    case int() as __builtins__:\n        print(1)\n"),
+    # keyword attributes in class patterns are refused whatever their name (the format / format_map hole: the str.format rule only existed on ast.Attribute)
+    ("match keyword attribute: str.format on a built string", "s = '{0._' + '_class__}'\nmatch s:\n    case str(format=f):\n        print(f(1))\n"),
+    ("match keyword attribute: str.format_map", "s = '{a._' + '_class__}'\nmatch s:\n    case str(format_map=f):\n        print(f({'a': 1}))\n"),
+    ("match keyword attribute: format walks to __globals__", "def g():\n    pass\ns = '{0._' + '_globals__}'\nmatch s:\n    case str(format=f):\n        print(f(g)[:60])\n"),
+    ("match keyword attribute: format_map walks to __globals__", "def g():\n    pass\ns = '{a._' + '_globals__}'\nmatch s:\n    case str(format_map=f):\n        print(f({'a': g})[:60])\n"),
+    ("match keyword attribute with a benign-looking name", "match 3:\n    case int(real=r):\n        print(r)\n"),
+    ("match class pattern on a name that is not a builtin type", "from collections import Counter\nmatch Counter('a'):\n    case Counter():\n        print(1)\n"),
+    ("match class pattern on a rebound builtin name", "from collections import namedtuple\nstr = namedtuple('P', 'x')\nmatch str(1):\n    case str(a):\n        print(a)\n"),
 )
 _PROBE_SRC = r'''
 import json, os
@@ -2194,24 +2350,33 @@ print(json.dumps(res))
 def sandbox_selftest(*, timeout: float = 20.0, python: Optional[str] = None, require_os_containment: bool = False, light: bool = False,
                      run_as: Union[None, bool, str] = "auto", drive_unmounted: bool = False) -> dict:
     """Proves on THIS machine that the sandbox works and refuses what it must.  Returns {ok, backend, run_as, checks: [{name, ok,
-    detail}], failed: [names]}.  light=True runs only the cheap start-up checks (convert.Checks uses it); the full run (the notebook,
-    step '7-0') adds the escape payloads, the runtime-import smoke test, timeout handling and the OS probe.  With
+    detail[, info]}], failed: [names], n_passed, n_info}.  light=True runs only the cheap start-up checks (convert.Checks uses it); the full run (the notebook,
+    step '3d') adds the escape payloads, the runtime-import smoke test, timeout handling and the OS probe.  With
     require_os_containment=True a machine where the child cannot be switched to an unprivileged user (Windows, a non-root Linux
     process) FAILS: that is the setting for the Colab run.  On a root POSIX process the OS probe additionally requires that the
     child is not root, cannot list or write a mounted /content/drive and cannot read /etc/shadow.  drive_unmounted=True says that the
-    notebook unmounts Drive while code runs (and verifies it): the two Drive checks then only report what the child could see, because
-    the unmount is the barrier that matters for Drive (a mounted Drive that happens to be world-readable must not block the run)."""
+    notebook unmounts Drive while code runs (and verifies it): the two Drive checks are then replaced by ONE information line (info=True,
+    never a failure, not counted in n_passed) that only reports what the child could see of the mounted Drive, because the unmount is the
+    barrier that matters for Drive (a mounted Drive that happens to be world-readable must not block the run).  This test runs while
+    Drive is still mounted: it proves nothing about the unmount, which happens only during 7a / 7b."""
     out: List[dict] = []
 
-    def add(name: str, ok: bool, detail: str = "") -> bool:
-        out.append({"name": name, "ok": bool(ok), "detail": detail})
+    def add(name: str, ok: bool, detail: str = "", info: bool = False) -> bool:
+        # info=True: a line that only REPORTS something (it can never fail and is not counted as a passed check)
+        out.append({"name": name, "ok": bool(ok), "detail": detail, **({"info": True} if info else {})})
         return bool(ok)
+
+    def finish(acct: Optional[Tuple[int, int, str]]) -> dict:
+        failed = [c["name"] for c in out if not c["ok"]]
+        return {"ok": not failed, "backend": SANDBOX_BACKEND, "run_as": None if acct is None else acct[2], "light": light, "checks": out,
+                "failed": failed, "n_passed": sum(1 for c in out if c["ok"] and not c.get("info")), "n_info": sum(1 for c in out if c.get("info")),
+                "platform": sys.platform, "python": sys.version.split()[0]}
 
     try:
         acct = _resolve_run_as(run_as)
     except SandboxError as e:
         add("run_as", False, str(e))
-        acct = None
+        return finish(None)                    # the other checks would call code_sandbox_run with the same unusable run_as and raise out of here
     else:
         add("run_as", True, "no user switch (not root / not POSIX)" if acct is None else f"child runs as {acct[2]} (uid {acct[0]})")
     if require_os_containment:
@@ -2235,7 +2400,9 @@ def sandbox_selftest(*, timeout: float = 20.0, python: Optional[str] = None, req
                 ("itertools", "import itertools\nprint(list(itertools.permutations([1, 2, 3]))[0])\n", "(1, 2, 3)"),
                 ("math", "import math\nprint(round(math.sqrt(2), 4), math.gcd(12, 18))\n", "1.4142 6"),
                 ("str.format literal", "print('{:>5}|{name}'.format(3, name='x'))\n", "3|x"),
-                ("function and loop", "def f(n):\n    return sum(i * i for i in range(n))\nprint(f(10))\n", "285")):
+                ("function and loop", "def f(n):\n    return sum(i * i for i in range(n))\nprint(f(10))\n", "285"),
+                ("match without a class pattern", "match (3, 4):\n    case (a, b) if a < b:\n        print(a + b)\n    case _:\n        print(0)\n", "7"),
+                ("match with a positional builtin class pattern", "match 5:\n    case int(n):\n        print(n + 1)\n", "6")):
             r = code_sandbox_run(code, timeout, python=python, run_as=run_as)
             add("runs: " + name, r["ok"] and r["stdout"].strip() == expect, r["error"] or r["stdout"].strip())
         for name, code in SANDBOX_MUST_REJECT:
@@ -2263,15 +2430,16 @@ def sandbox_selftest(*, timeout: float = 20.0, python: Optional[str] = None, req
                 sees = str(info.get("listdir_drive", "")).startswith("ok:") or str(info.get("listdir_mydrive", "")).startswith("ok:")
                 writes = bool(info.get("can_write_mydrive"))
                 if drive_unmounted:
-                    add("Drive is unmounted while code runs (what a child could see of a mounted Drive: " + ("it could list it" if sees else "nothing")
-                        + ("; it could write it" if writes else "") + ")", True, f"{info.get('listdir_drive')} / {info.get('listdir_mydrive')}")
+                    # NOT a proof that Drive is unmounted: 3d runs with Drive mounted; the unmount happens only during 7a / 7b and is enforced
+                    # by the notebook's _detach (which verifies it).  This line only reports what a child could see of a mounted Drive.
+                    add("info: what the child could see of Drive at 3d time (Drive is unmounted only during 7a/7b, enforced by the notebook _detach)", True,
+                        ("it could list it" if sees else "it saw nothing") + ("; it could write it" if writes else "")
+                        + f" [{info.get('listdir_drive')} / {info.get('listdir_mydrive')}]", info=True)
                 else:
                     add("child cannot list /content/drive", not sees, f"{info.get('listdir_drive')} / {info.get('listdir_mydrive')}")
                     add("child cannot write Drive", not writes, str(info.get("can_write_mydrive")))
                 add("child cannot read /etc/shadow", not str(info.get("read_etc_shadow", "")).startswith("ok:"), str(info.get("read_etc_shadow")))
-    failed = [c["name"] for c in out if not c["ok"]]
-    return {"ok": not failed, "backend": SANDBOX_BACKEND, "run_as": None if acct is None else acct[2], "light": light, "checks": out, "failed": failed,
-            "platform": sys.platform, "python": sys.version.split()[0]}
+    return finish(acct)
 
 
 def code_sandbox_check_many(codes: Sequence[str], timeout: float = 5.0, *, workers: int = 2, progress: Optional[ProgressCB] = None,

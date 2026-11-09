@@ -167,6 +167,23 @@ class TestIO(unittest.TestCase):
             self.assertFalse(os.path.exists(q))
             self.assertEqual(C.write_new_file(q, "x"), "created")                    # the leftover part is quarantined, the write succeeds
 
+    def test_an_fsync_error_that_is_not_just_unsupported_is_not_swallowed(self):
+        # review round 3: every fsync error was swallowed.  On Drive (FUSE) the quota-full / I/O error that buffered writes defer to fsync would
+        # have been recorded as a successful write; only "this file system cannot fsync" may be ignored.
+        import errno
+        from unittest import mock
+        with tmpdir() as d:
+            p = os.path.join(d, "a.txt")
+            for code in (errno.EIO, errno.ENOSPC):
+                with mock.patch("os.fsync", side_effect=OSError(code, "deferred write error")):
+                    with self.assertRaises(OSError):
+                        C.write_new_file(p, "x")
+                self.assertFalse(os.path.exists(p), code)                      # nothing was renamed into place
+            with mock.patch("os.fsync", side_effect=OSError(errno.EINVAL, "fsync not supported")):
+                self.assertEqual(C.write_new_file(p, "x"), "created")           # a file system without fsync still works
+            with open(p, encoding="utf-8") as f:
+                self.assertEqual(f.read(), "x")
+
     def test_progress_callback(self):
         calls = []
         rows = [{"a": i} for i in range(25)]
@@ -414,6 +431,35 @@ class TestDuplicates(unittest.TestCase):
         self.assertEqual(r["cluster_size_hist"], {"2": 1, "3": 1})
         self.assertEqual((r["n_clusters_gt1"], r["largest_cluster"], r["n_dups"]), (2, 3, 3))
 
+    def test_a_chain_of_near_pairs_does_not_wipe_out_rows_that_are_far_from_the_survivor(self):
+        # review round 3: connected components let a chain a~b~c~... drop rows with Jaccard ~0 to the survivor (31 chained rows: 13 of the
+        # 16 removed ones were < 0.5 from the kept row).  Now a row is dropped only when it is near a row that is KEPT.
+        base = rand_text(77, 1200, alphabet="".join(chr(0x3041 + i) for i in range(80)))
+        noise = rand_text(78, 1400, alphabet="".join(chr(0x30A1 + i) for i in range(80)))
+
+        def link(k):                                                    # the first 100*k characters replaced: neighbours differ by one 100-char block
+            return noise[:100 * k] + base[100 * k:]
+        rows = [{"full_text": link(k)} for k in range(12)]
+        h = C.MinHasher()
+
+        def jac(a, b):
+            sa, sb = set(h.shingles(a)), set(h.shingles(b))
+            return len(sa & sb) / len(sa | sb)
+        self.assertGreater(min(jac(rows[k]["full_text"], rows[k + 1]["full_text"]) for k in range(11)), 0.8)        # a chain of near pairs ...
+        self.assertLess(jac(rows[0]["full_text"], rows[11]["full_text"]), 0.05)                                     # ... whose ends have nothing in common
+        r = C.near_dups_within(rows, threshold=0.75)
+        kept = [i for i in range(12) if r["root_of"][i] == i]
+        self.assertGreaterEqual(len(kept), 4)                           # connected components would keep exactly one row
+        self.assertLessEqual(r["largest_cluster"], 3)
+        for i in range(12):
+            self.assertEqual(r["root_of"][r["root_of"][i]], r["root_of"][i])           # the survivor of a dropped row is itself kept
+            if r["root_of"][i] != i:
+                self.assertGreater(jac(rows[i]["full_text"], rows[r["root_of"][i]]["full_text"]), 0.7, i)
+        for a in kept:                                                  # no two survivors are near each other
+            for b in kept:
+                if a < b:
+                    self.assertLess(jac(rows[a]["full_text"], rows[b]["full_text"]), 0.8, (a, b))
+
     def test_deadlines_stop_the_optional_reviews(self):
         import time
         rows = lambda: ({"full_text": rand_text(i, 300)} for i in range(5000))                    # noqa: E731
@@ -547,6 +593,52 @@ class TestDecontaminate(unittest.TestCase):
     def test_normalize_for_overlap(self):
         self.assertEqual(C.normalize_for_overlap("12冊で、 ７５ Ａ"), "冊で、a")
         self.assertEqual(C.normalize_for_overlap("①②あ"), "あ")
+
+    def test_normalize_for_overlap_applies_the_loaders_symbol_map(self):
+        # review round 3: the loader turns U+2212 into '-', Greek capitals into Latin ones, ... ; text that becomes identical tokens at
+        # training time must be identical here too (a short eval sentence whose every 13-gram window holds the symbol was missed)
+        self.assertEqual(C.normalize_for_overlap("ここでは値から−をとって計算します"), C.normalize_for_overlap("ここでは値から-をとって計算します"))
+        self.assertEqual(C.normalize_for_overlap("ΑΒΕ型の判定をここで行います"), C.normalize_for_overlap("ABE型の判定をここで行います"))
+        self.assertEqual(C.normalize_for_overlap("a÷b⟨x⟩"), C.normalize_for_overlap("a/b(x)"))
+        idx = C.build_eval_index([("e", ["ここでは値から−をとって計算します"])])
+        r = C.decontaminate([{"full_text": "ここでは値から-をとって計算します"}], idx)
+        self.assertEqual(r["flagged_positions"], [0])
+
+    def test_a_source_that_repeats_another_sources_content_still_reports_its_own_shingles(self):
+        # review round 3 (blocker): the per-source count only counted shingles NEW to the index, so eval_swe_step_control_heldout_v43labels.jsonl
+        # (the same prompts as eval_swe_step_control_heldout.jsonl) reported 0 and step 6b refused the real required eval files
+        texts = [self.EVAL_A, self.EVAL_B]
+        idx = C.build_eval_index([("first", texts), ("second", texts), ("short", ["短い文だけ"])])
+        ps = idx.per_source
+        self.assertGreater(ps["second"]["shingles"], 0)
+        self.assertEqual(ps["first"]["shingles"], ps["second"]["shingles"])
+        self.assertEqual(ps["second"]["new_shingles"], 0)
+        self.assertEqual(ps["first"]["new_shingles"], ps["first"]["shingles"])
+        self.assertEqual((ps["second"]["items"], ps["second"]["indexable_texts"]), (2, 2))
+        self.assertEqual((ps["short"]["shingles"], ps["short"]["indexable_texts"]), (0, 0))              # nothing indexable: 6b still refuses such a source
+
+    def test_a_verbatim_copy_of_a_templated_eval_item_is_flagged_although_all_its_shingles_are_boilerplate(self):
+        # review round 3 (major): items that differ only in digits share ALL their shingles, so every shingle had eval df >= 20 and a verbatim
+        # copy of a whole item (T1 193/200, T6 100/200, v48 unseen_eval 96-128/128 in the real files) was never flagged
+        items = [f"問題: 箱に{i + 2}個のりんごが入っています。そこから{i}個取り出すと、残りは何個になりますか。理由も書きなさい。" for i in range(30)]
+        idx = C.build_eval_index([("T1", items)])
+        self.assertGreaterEqual(idx.stats()["max_eval_items_per_shingle"], 20)
+        rows = [{"id": "copy", "full_text": items[7] + "\n答え: 5個。"},
+                {"id": "copy_other_digits", "full_text": "問題: 箱に91個のりんごが入っています。そこから38個取り出すと、残りは何個になりますか。理由も書きなさい。\n答え: 53個。"},
+                {"id": "partial_template_only", "full_text": "メモ: そこから4個取り出すと、残りは何個になりますか。という言い回しだけを借りた別の文章です。"},
+                {"id": "clean", "full_text": "まったく関係のない文章がここに入ります。条件は何もありません。十分に長い文字列です。"}]
+        r = C.decontaminate(rows, idx)
+        self.assertEqual(r["flagged_positions"], [0, 1])
+        self.assertEqual(r["rows_flagged_whole_item"], 2)
+        self.assertEqual(r["rows_boilerplate_only"], 1)                          # the shared phrase alone is still boilerplate
+        self.assertEqual(r["examples"][0]["id"], "copy")
+        self.assertEqual(r["examples"][0]["eval_matches"][0]["source"], "T1")
+        # 2,000 verbatim copies of one item: all flagged
+        many = [{"id": f"m{i}", "full_text": items[3] + f"\n補足{i}: " + rand_text(i, 30)} for i in range(2000)]
+        self.assertEqual(C.decontaminate(many, idx)["rows_flagged"], 2000)
+        # a short eval text (< 40 normalised characters) is a phrase, not an item: it never flags a row by itself
+        idx2 = C.build_eval_index([("s", [f"次の文章を読んで、条件を順に考えなさい{i}。" for i in range(30)])])
+        self.assertEqual(C.decontaminate([{"id": "x", "full_text": "次の文章を読んで、条件を順に考えなさい7。"}], idx2)["rows_flagged"], 0)
 
     def test_missing_eval_source_is_an_error(self):
         with self.assertRaises(C.EvalFilesMissing):
@@ -777,6 +869,158 @@ class TestSandbox(unittest.TestCase):
             self.assertEqual(r["category"], "static", (name, r))
             self.assertEqual(r["stdout"], "", name)
 
+    def test_match_statement_patterns_cannot_read_attributes_the_static_rules_forbid(self):
+        # review round 3 (blocker): ast.MatchClass carries attribute names as plain STRINGS (kwd_attrs) - `case int(__class__=c)` read
+        # __class__, a second pattern __base__, a third __subclasses__ - and the validator only looked at ast.Attribute.  Every payload
+        # below is a harmless stand-in (it only prints); static_check must refuse it before anything runs.
+        if sys.version_info < (3, 10):
+            self.skipTest("match statements need Python 3.10")
+        payloads = {
+            "match keyword pattern reads __class__": "match 0:\n    case int(__class__=c):\n        print(c)\n",
+            "match chain reaches the subclass graph": ("match 0:\n    case int(__class__=c):\n        match c:\n            case c(__base__=b):\n"
+                                                       "                match b:\n                    case b(__subclasses__=f):\n                        print(len(f()) > 10)\n"),
+            "match keyword pattern reads a frame attribute": "g = (1 for _ in [1])\nmatch g:\n    case g(gi_frame=f):\n        print(f)\n",
+            "match keyword pattern reads a read_ method": "match 0:\n    case int(read_csv=f):\n        print(f)\n",
+            "match capture named like a dunder": "match 0:\n    case int() as __builtins__:\n        print(1)\n",
+            "match star capture named like a dunder": "match [1]:\n    case [*__x]:\n        print(1)\n",
+            "match mapping rest named like a dunder": "match {}:\n    case {**__r}:\n        print(1)\n",
+            "except as a dunder name": "try:\n    pass\nexcept Exception as __e:\n    pass\n",
+            "import alias that is a dunder name": "import math as __m\nprint(__m)\n",
+        }
+        for name, code in payloads.items():
+            why = C.static_check(code)
+            self.assertNotEqual(why, "", name)
+            r = C.code_sandbox_run(code)
+            self.assertFalse(r["ok"], name)
+            self.assertEqual((r["category"], r["stdout"]), ("static", ""), (name, r))
+        self.assertTrue(C.static_check(payloads["match keyword pattern reads __class__"]).startswith("match_class:"))
+        self.assertTrue(any(n.startswith("match") for n, _ in C.SANDBOX_MUST_REJECT))           # the 3d self-test checks it on the Colab machine too
+        # ordinary match statements still run
+        ok, out, err = C.code_sandbox_check("x = (3, 4)\nmatch x:\n    case (a, b) if a < b:\n        print(a + b)\n    case _:\n        print(0)\n")
+        self.assertEqual((ok, out), (True, "7\n"), err)
+        # review round 4: a class pattern with keyword attributes is refused WHATEVER the name (this case used to run and print 3)
+        ok, out, err = C.code_sandbox_check("match 3:\n    case int(real=r):\n        print(r)\n")
+        self.assertEqual((ok, out), (False, ""), err)
+        self.assertTrue(err.startswith("static:match_class:"), err)
+
+    def test_class_patterns_are_deny_by_default_the_format_hole(self):
+        # review round 4 (major): `case str(format=f)` is getattr(subject, 'format'); the str.format rule only existed in the ast.Attribute branch, so on a
+        # string built at run time it handed out str.format and '{0._' + '_globals__}' walked to the function's __globals__ (including the child's SAFE
+        # builtins).  Patching names one by one failed twice (__class__, then format): keyword attributes are now refused by default.
+        if sys.version_info < (3, 10):
+            self.skipTest("match statements need Python 3.10")
+        probe = {
+            "p6 kwd format on a built string": "s = '{0._' + '_class__}'\nmatch s:\n    case str(format=f):\n        print(f(1))\n",
+            "p6 kwd format_map": "s = '{a._' + '_class__}'\nmatch s:\n    case str(format_map=f):\n        print(f({'a': 1}))\n",
+            "p6 kwd format walk to __globals__": "def g():\n    pass\ns = '{0._' + '_globals__}'\nmatch s:\n    case str(format=f):\n        print(f(g)[:60])\n",
+            "kwd format_map walk to __globals__": "def g():\n    pass\ns = '{a._' + '_globals__}'\nmatch s:\n    case str(format_map=f):\n        print(f({'a': g})[:60])\n",
+            "benign-looking keyword (int.real)": "match 3:\n    case int(real=r):\n        print(r)\n",
+            "benign-looking keyword on complex": "match 3j:\n    case complex(imag=i):\n        print(i)\n",
+            "keyword in a nested alternative": "match [1]:\n    case [int(x)] | [str(format=x)]:\n        print(x)\n",
+            "keyword next to a positional pattern": "match 3:\n    case int(n, real=r):\n        print(n)\n",
+        }
+        for name, code in probe.items():
+            self.assertTrue(C.static_check(code).startswith("match_class:keyword attributes in class patterns are disabled"), (name, C.static_check(code)))
+            r = C.code_sandbox_run(code)
+            self.assertEqual((r["ok"], r["category"], r["stdout"]), (False, "static", ""), (name, r))
+        self.assertIn("format", C.static_check(probe["p6 kwd format on a built string"]))
+        # the class name itself: only the builtin types of the short allow-list (a positional pattern on them reads no attribute at all)
+        for t in ("int", "float", "str", "bool", "list", "tuple", "dict", "set", "frozenset", "complex", "bytes"):
+            self.assertEqual(C.static_check(f"match 1:\n    case {t}():\n        pass\n"), "", t)
+            self.assertEqual(C.static_check(f"match 1:\n    case {t}(x):\n        pass\n"), "", t)
+        self.assertEqual(sorted(C._VALIDATE_NS["MATCH_CLASS_OK"]),
+                         sorted(("int", "float", "str", "bool", "list", "tuple", "dict", "set", "frozenset", "complex", "bytes")))
+        for code, needle in {
+                "from collections import Counter\nmatch Counter('a'):\n    case Counter():\n        pass\n": "only allowed on these builtin types",
+                "from collections import namedtuple\nP = namedtuple('P', 'format')\nmatch P('x'):\n    case P(f):\n        pass\n": "only allowed on these builtin types",
+                "import collections\nmatch 1:\n    case collections.OrderedDict():\n        pass\n": "only allowed on these builtin types",
+                "match 1:\n    case bytearray():\n        pass\n": "only allowed on these builtin types",       # not on the list
+                "match 1:\n    case Foo(x):\n        pass\n": "only allowed on these builtin types",
+                "from collections import namedtuple\nstr = namedtuple('P', 'x')\nmatch str(1):\n    case str(a):\n        pass\n": "is rebound",
+                "def int(x):\n    return x\nmatch 1:\n    case int():\n        pass\n": "is rebound",
+                "match 1:\n    case int() as int:\n        pass\n": "is rebound",
+                "import math as str\nmatch 1:\n    case str():\n        pass\n": "is rebound"}.items():
+            why = C.static_check(code)
+            self.assertTrue(why.startswith("match_class:"), (code, why))
+            self.assertIn(needle, why)
+        # what keeps running (the 3d self-test checks the first two on the Colab machine as well)
+        for code, want in (("match (3, 4):\n    case (a, b) if a < b:\n        print(a + b)\n    case _:\n        print(0)\n", "7\n"),
+                           ("match 5:\n    case int(n):\n        print(n + 1)\n", "6\n"),
+                           ("match 'abc':\n    case str() | bytes():\n        print('text')\n", "text\n"),
+                           ("match [1, 2]:\n    case list([a, b]):\n        print(a + b)\n", "3\n"),
+                           ("match 2.5:\n    case int():\n        print('int')\n    case float(x):\n        print(x * 2)\n", "5.0\n")):
+            ok, out, err = C.code_sandbox_check(code)
+            self.assertEqual((ok, out), (True, want), (code, err))
+        names = {n for n, _ in C.SANDBOX_MUST_REJECT}
+        for needle in ("str.format on a built string", "str.format_map", "format walks to __globals__", "format_map walks to __globals__", "benign-looking name"):
+            self.assertTrue(any(needle in n for n in names), needle)
+        reject = dict(C.SANDBOX_MUST_REJECT)
+        for code in list(probe.values())[:3]:
+            self.assertIn(code, reject.values())                                       # the three payloads of the verifier's probe, verbatim
+        for n, code in C.SANDBOX_MUST_REJECT:
+            self.assertNotEqual(C.static_check(code), "", n)                           # every payload of the 3d list is refused by the static rules
+
+    def test_names_that_become_attribute_lookups_or_are_only_bound(self):
+        # every place where a NAME is carried as a plain string in the tree.  (1) looked up as an attribute at run time: refused for the same names an
+        # attribute access is; (2) only bound: never an attribute read, so only the name rules apply (and `format` as a variable name is harmless).
+        if sys.version_info < (3, 10):
+            self.skipTest("match statements need Python 3.10")
+        lookup = {                                                                    # {n} is read with getattr at run time
+            "Attribute.attr": "(1).{n}\n", "MatchClass.kwd_attrs": "match 0:\n    case int({n}=c):\n        pass\n", "ImportFrom alias.name": "from math import {n}\n"}
+        for what, tmpl in lookup.items():
+            for n in ("format", "format_map", "__class__", "__globals__", "gi_frame", "read_csv", "os"):
+                self.assertNotEqual(C.static_check(tmpl.format(n=n)), "", (what, n))
+        bound = {
+            "Name store": "{n} = 1\n", "FunctionDef.name": "def {n}():\n    pass\n", "arg.arg": "def f({n}):\n    return {n}\n",
+            "Lambda arg": "f = lambda {n}: {n}\n", "ExceptHandler.name": "try:\n    pass\nexcept ValueError as {n}:\n    pass\n",
+            "MatchAs.name": "match 0:\n    case int() as {n}:\n        pass\n", "MatchStar.name": "match [1]:\n    case [*{n}]:\n        pass\n",
+            "MatchMapping.rest": "match {{}}:\n    case {{**{n}}}:\n        pass\n", "alias.asname": "import math as {n}\n",
+            "keyword.arg": "print(dict({n}=1))\n"}
+        for what, tmpl in bound.items():
+            self.assertEqual(C.static_check(tmpl.format(n="format")), "", what)                       # a variable called format reads no attribute
+            self.assertEqual(C.static_check(tmpl.format(n="format_map")), "", what)
+            if what != "keyword.arg":                                                                  # a call keyword is only a dict key: not a name
+                self.assertTrue(C.static_check(tmpl.format(n="__class__")).startswith("name:"), what)
+        for code in ("global {n}\n", "def f():\n    nonlocal {n}\n"):
+            self.assertTrue(C.static_check(code.format(n="format")).startswith("global_nonlocal"), code)       # refused for every name
+        if sys.version_info >= (3, 12):
+            for tmpl in ("def f[{n}](x):\n    pass\n", "type {n} = int\n"):
+                self.assertEqual(C.static_check(tmpl.format(n="format")), "", tmpl)
+                self.assertNotEqual(C.static_check(tmpl.format(n="__class__")), "", tmpl)
+        ok, out, err = C.code_sandbox_check("def f(format):\n    return format\nprint(f(1), dict(format_map=2))\n")
+        self.assertEqual((ok, out), (True, "1 {'format_map': 2}\n"), err)
+
+    def test_no_unreviewed_node_field_carries_a_name_as_a_string(self):
+        # tripwire: parse every statement form and list the AST fields that hold a plain string (or a list of strings) - each one has to be a field that
+        # validate() deals with (see the two tests above).  A Python version that adds another one must fail here, not pass silently.
+        reviewed = {("Name", "id"), ("Attribute", "attr"), ("FunctionDef", "name"), ("AsyncFunctionDef", "name"), ("ClassDef", "name"),
+                    ("arg", "arg"), ("keyword", "arg"), ("alias", "name"), ("alias", "asname"), ("ImportFrom", "module"),
+                    ("ExceptHandler", "name"), ("MatchAs", "name"), ("MatchStar", "name"), ("MatchMapping", "rest"), ("MatchClass", "kwd_attrs"),
+                    ("Global", "names"), ("Nonlocal", "names"), ("TypeVar", "name"), ("ParamSpec", "name"), ("TypeVarTuple", "name")}
+        import ast
+        corpus = ["import a.b as c\nfrom m import n as o, p\n", "def f(x, /, y=1, *args, z, **kw) -> int:\n    global g\n    return lambda u, *v, **w: u\n",
+                  "async def af(x):\n    async with x as y:\n        await y\n    async for i in x:\n        pass\n", "class K(B, metaclass=M):\n    attr = 1\n",
+                  "x.attr = 2\ndel x.attr\n", "try:\n    pass\nexcept (E1, E2) as err:\n    pass\n", "try:\n    pass\nexcept* E3 as err2:\n    pass\n",
+                  "with open() as fh, other() as oh:\n    pass\n", "f(1, k=2, **{'a': 1})\n[a for a in b if a]\n{k: v for k, v in b}\nf\"{x!r:>{w}} {y=}\"\n",
+                  "match v:\n    case 1 | 2 | 's' | None:\n        pass\n    case [a, b, *rest]:\n        pass\n    case {'k': v1, **others}:\n        pass\n"
+                  "    case Cls(1, 2, kx=3) as whole:\n        pass\n    case mod.Cls(x):\n        pass\n    case _:\n        pass\n",
+                  "def gen[T: int, *Ts, **Ps](x: T): pass\ntype Alias[T] = list[T]\nclass G[T]: pass\n", "x: int = 1\ndef h():\n    nonlocal zz\n"]
+        found = set()
+        for src in corpus:
+            try:
+                tree = ast.parse(src)
+            except SyntaxError:                                                       # syntax of a newer Python (type parameters, match, except*)
+                continue
+            for node in ast.walk(tree):
+                for fld in node._fields:
+                    v = getattr(node, fld, None)
+                    if isinstance(node, ast.Constant) and fld in ("value", "kind"):
+                        continue
+                    if isinstance(v, str) or (isinstance(v, list) and v and all(isinstance(e, str) for e in v)):
+                        found.add((type(node).__name__, fld))
+        self.assertTrue(found <= reviewed, sorted(found - reviewed))
+        self.assertIn(("MatchClass", "kwd_attrs"), found if sys.version_info >= (3, 10) else {("MatchClass", "kwd_attrs")})
+
     def test_module_namespaces_hide_submodules_at_run_time(self):
         for code, needle in (("import statistics\nprint(statistics.random)", "AttributeError"),
                              ("import functools\nprint(functools.partial)", None),
@@ -831,11 +1075,93 @@ class TestSandbox(unittest.TestCase):
             self.assertEqual(sorted(strict["failed"]), ["child cannot list /content/drive", "child cannot write Drive"])
             lenient = C.sandbox_selftest(drive_unmounted=True)                                   # the unmount is the barrier for Drive
             self.assertTrue(lenient["ok"], lenient["failed"])
-            self.assertTrue(any(c["name"].startswith("Drive is unmounted while code runs") and "could list it" in c["name"] for c in lenient["checks"]))
+            # review round 4: 3d runs while Drive is STILL mounted, so a line named 'Drive is unmounted while code runs' proved nothing and was counted as a
+            # pass; it is now one information line that says what the child could see, and it is not a passed check
+            self.assertFalse(any("Drive is unmounted while code runs" in c["name"] for c in lenient["checks"]))
+            info = [c for c in lenient["checks"] if c.get("info")]
+            self.assertEqual(len(info), 1)
+            self.assertTrue(info[0]["name"].startswith("info: what the child could see of Drive at 3d time"))
+            self.assertIn("Drive is unmounted only during 7a/7b, enforced by the notebook _detach", info[0]["name"])
+            self.assertIn("could list it", info[0]["detail"])
+            self.assertIn("could write it", info[0]["detail"])
+            self.assertEqual((lenient["n_info"], lenient["n_passed"]), (1, len(lenient["checks"]) - 1))
+            self.assertEqual(strict["n_info"], 0)
+            self.assertNotIn("info", strict["checks"][0])
             probe.update({"uid": 0})                                                              # but a root child is never acceptable
             self.assertIn("child is not root", C.sandbox_selftest(drive_unmounted=True)["failed"])
             probe.update({"uid": 65534, "read_etc_shadow": "ok:900"})
             self.assertIn("child cannot read /etc/shadow", C.sandbox_selftest(drive_unmounted=True)["failed"])
+
+    def test_an_unusable_run_as_fails_the_selftest_instead_of_raising_out_of_it(self):
+        # review round 4: the failed 'run_as' check was recorded and the next line called code_sandbox_run with the same bad run_as, which raised
+        # SandboxError out of sandbox_selftest.  On Windows run_as='nobody' triggers it for real; the mock makes it the same on every platform.
+        from unittest import mock
+        r = C.sandbox_selftest(run_as="nobody") if (os.name != "posix" or os.geteuid() != 0) else None
+        if r is not None:
+            self.assertFalse(r["ok"])
+            self.assertEqual(r["failed"], ["run_as"])
+        with mock.patch.object(C, "_resolve_run_as", side_effect=C.SandboxError("user 'nobody' does not exist on this machine")), \
+                mock.patch.object(C, "code_sandbox_run", side_effect=AssertionError("must not run code with an unusable run_as")):
+            for light in (True, False):
+                r = C.sandbox_selftest(light=light, require_os_containment=True)
+                self.assertFalse(r["ok"])
+                self.assertEqual(r["failed"], ["run_as"])
+                self.assertEqual([c["name"] for c in r["checks"]], ["run_as"])
+                self.assertIn("does not exist", r["checks"][0]["detail"])
+                self.assertEqual((r["backend"], r["run_as"], r["n_passed"], r["n_info"]), (C.SANDBOX_BACKEND, None, 0, 0))
+
+    def test_sandbox_children_are_registered_and_killed_by_process_group(self):
+        # review round 4: the children are session leaders (start_new_session), so killing the CONVERTER's process group never reached them.
+        # POSIX-only: this Windows PC runs it with a fake os.killpg.
+        from unittest import mock
+        calls = []
+        with mock.patch.object(C.os, "killpg", lambda pid, sig: calls.append((pid, sig)), create=True), \
+                mock.patch.object(C.signal, "SIGKILL", 9, create=True), mock.patch.object(C, "_POSIX", True):
+            self.assertEqual(C.kill_live_sandbox_children(), 0)                              # nothing running
+            C._track_child(4242, True)
+            C._track_child(4243, True)
+            try:
+                self.assertEqual(C.kill_live_sandbox_children(), 2)
+                self.assertEqual(sorted(calls), [(4242, 9), (4243, 9)])
+                C._track_child(4242, False)
+                calls.clear()
+                self.assertEqual(C.kill_live_sandbox_children(), 1)
+                self.assertEqual(calls, [(4243, 9)])
+            finally:
+                C._track_child(4242, False)
+                C._track_child(4243, False)
+            self.assertEqual(C._LIVE_CHILDREN, {})
+
+            def gone(pid, sig):
+                raise ProcessLookupError(pid)
+            C._track_child(4244, True)
+            try:
+                with mock.patch.object(C.os, "killpg", gone, create=True):
+                    self.assertEqual(C.kill_live_sandbox_children(), 0)                      # already gone: not an error
+            finally:
+                C._track_child(4244, False)
+        with mock.patch.object(C.os, "killpg", lambda pid, sig: calls.append("BAD"), create=True), mock.patch.object(C, "_POSIX", False):
+            C._track_child(4245, True)
+            try:
+                self.assertEqual(C.kill_live_sandbox_children(), 0)                          # not POSIX: nothing is signalled
+            finally:
+                C._track_child(4245, False)
+        self.assertNotIn("BAD", calls)
+        # the signal handler of convert.py runs in the main thread, possibly while _track_child holds the lock: a plain Lock would deadlock there
+        import threading
+        self.assertIsInstance(C._LIVE_LOCK, type(threading.RLock()))
+        # _spawn registers the child while it runs and always unregisters it
+        seen = []
+        with mock.patch.object(C, "_POSIX", True), mock.patch.object(C, "_track_child", lambda pid, running: seen.append((pid, running))):
+            r = C._spawn("print('x')\n", [], timeout=20, flags=["-B", "-X", "utf8"], python=None, acct=None)
+        self.assertEqual(r["out"].strip(), b"x")
+        self.assertEqual([running for _, running in seen], [True, False])
+        self.assertEqual(seen[0][0], seen[1][0])
+        seen.clear()
+        with mock.patch.object(C, "_POSIX", True), mock.patch.object(C, "_track_child", lambda pid, running: seen.append((pid, running))):
+            r = C._spawn("while True:\n    pass\n", [], timeout=1.0, flags=["-B", "-X", "utf8"], python=None, acct=None)   # killed on timeout: still unregistered
+        self.assertTrue(r["timed_out"])
+        self.assertEqual([running for _, running in seen], [True, False])
 
     def test_run_as_resolution(self):
         self.assertIsNone(C._resolve_run_as(None))

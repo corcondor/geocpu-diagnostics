@@ -153,6 +153,9 @@ class Base(unittest.TestCase):
     def prov(self, folder):
         return json.loads((self.ext / folder / "provenance.json").read_text(encoding="utf-8"))
 
+    def prov_pin_sha(self, folder):
+        return json.loads((self.ext / folder / A.PIN_NAME).read_text(encoding="utf-8"))["commit_sha"]
+
 
 class FirstRun(Base):
     def test_layout_verification_and_no_leftovers(self):
@@ -272,7 +275,9 @@ class Refusals(Base):
                 with self.assertRaises(A.ExistingFileMismatch):
                     self.run_acquire()
                 self.assertEqual(final.read_bytes(), new)                                           # not overwritten
-                self.assertEqual(self.hub.data_downloads(), [])                                     # and no data file was fetched for it
+                if len(new) == len(self.hub.content[("orgA/coding", "data/train-0.parquet")]):
+                    self.assertEqual(self.hub.data_downloads(), [])                                 # same size: refused before anything is fetched
+                self.assertEqual([x for x in files_of(self.ext) if ".stale" in x], [])               # a shorter one that is not a prefix: also untouched
 
     def test_existing_dev_file_with_other_content_is_refused_too(self):
         final = self.ext / "do_not_train_dev/orgB__qa/data/dev/q_dev.json"
@@ -504,6 +509,36 @@ class Helpers(Base):
         self.assertEqual(sorted(A.load_manifest(self.root, datasets=self.table)), ["orgA/coding", "orgB/qa", "orgC/hot"])
         with self.assertRaises(ValueError):
             A.train_files(self.root, "nope", datasets=self.table)
+
+    def test_train_files_refuses_a_dataset_on_hold_unless_include_held(self):
+        # review round 4: a held dataset (ToolACE, WizardLM) must not reach a caller by accident; the pipeline converts it only so that the checks can
+        # be read and says so with include_held=True
+        self.table[0]["adoption"] = {"status": "hold", "text": "adoption: hold (generator unverified)"}
+        self.run_acquire()
+        with self.assertRaises(A.HeldDataset) as cm:
+            A.train_files(self.root, "coding", datasets=self.table)
+        self.assertIsInstance(cm.exception, A.AcquireError)
+        self.assertIn("on hold", str(cm.exception))
+        self.assertIn("include_held=True", str(cm.exception))
+        held = A.train_files(self.root, "coding", datasets=self.table, include_held=True)
+        self.assertEqual([p.name for p in held], ["train-0.parquet"])
+        self.assertTrue(all(p.is_file() for p in held))
+        # the datasets that are not on hold are unchanged, with or without the argument
+        for flag in (False, True):
+            self.assertEqual([p.name for p in A.train_files(self.root, "orgC/hot", datasets=self.table, include_held=flag)], ["train-0.parquet"])
+            self.assertEqual(sorted(p.name for p in A.train_files(self.root, "qa", datasets=self.table, include_held=flag)), ["q0.json", "q1.json"])
+        # a provenance record without an adoption block (an older one) is not 'hold'
+        pj = self.ext / "orgC__hot" / "provenance.json"
+        rec = json.loads(pj.read_text(encoding="utf-8"))
+        rec.pop("adoption")
+        pj.write_text(json.dumps(rec), encoding="utf-8")
+        self.assertEqual([p.name for p in A.train_files(self.root, "orgC/hot", datasets=self.table)], ["train-0.parquet"])
+
+    def test_the_six_dataset_table_holds_exactly_toolace_and_wizardlm(self):
+        by = {d["key"]: d["adoption"]["status"] for d in A.DATASETS}
+        self.assertEqual(sorted(k for k, v in by.items() if v == "hold"), ["toolace", "wizardlm"])
+        import inspect
+        self.assertIs(inspect.signature(A.train_files).parameters["include_held"].default, False)
 
     def test_only_selects_datasets(self):
         res = self.run_acquire(only="qa")
@@ -740,10 +775,229 @@ class MovingHead(Base):
         self.assertIsNone(A._pinned_commit(self.ext, ds))                                              # nothing recorded yet
         self.run_acquire()
         self.assertEqual(A._pinned_commit(self.ext, ds), self.prov("orgA__coding")["commit_sha"])
+        pin = self.ext / "orgA__coding" / A.PIN_NAME                                                   # written before the first file: the fallback
+        self.assertEqual(json.loads(pin.read_text(encoding="utf-8"))["commit_sha"], self.prov("orgA__coding")["commit_sha"])
         (self.ext / "orgA__coding" / "provenance.json").write_text('{"commit_sha": "not a sha"}', encoding="utf-8")
+        self.assertEqual(A._pinned_commit(self.ext, ds), self.prov_pin_sha("orgA__coding"))          # an unusable provenance: the pin answers
+        pin.write_text('{"commit_sha": "not a sha"}', encoding="utf-8")
         self.assertIsNone(A._pinned_commit(self.ext, ds))
         (self.ext / "orgA__coding" / "provenance.json").write_text("{broken", encoding="utf-8")
+        pin.write_text("{broken", encoding="utf-8")
         self.assertIsNone(A._pinned_commit(self.ext, ds))
+
+
+class DurabilityRound3(Base):
+    """Review round 3: fsync errors were swallowed; finals and provenance appeared before Drive had the bytes; a truncated final of a dead run
+    was a dead end; a damaged provenance.json gave a raw JSON error; a card edit between two runs broke a half-finished dataset; a new data
+    file upstream went unnoticed."""
+
+    def test_an_fsync_error_that_is_not_just_unsupported_stops_the_copy(self):
+        import errno
+        self.fsync.side_effect = OSError(errno.EIO, "deferred write error")
+        with self.assertRaises(OSError):
+            self.run_acquire()
+        self.assertEqual([x for x in files_of(self.ext) if not x.endswith(".part")], [])         # no final file and no provenance
+        self.assertEqual([x for x in files_of(self.ext) if x.endswith("provenance.json")], [])
+        self.fsync.side_effect = OSError(errno.EINVAL, "fsync not supported")                      # a file system without fsync still works
+        res = self.run_acquire()
+        self.assertEqual(res["downloaded_bytes"], res["total_bytes"] - 0)
+        # the leftover complete .part of the failed run was flushed again before it was renamed (its first flush had failed)
+        data = self.hub.content[("orgA/coding", "data/train-0.parquet")]
+        self.assertEqual((self.ext / "orgA__coding/data/train-0.parquet").read_bytes(), data)
+
+    def test_write_new_text_flushes_and_does_not_hide_a_failed_flush(self):
+        import errno
+        p = self.tmp / "t.txt"
+        A._write_new_text(p, "abc")
+        self.assertTrue(self.fsync.called)
+        q = self.tmp / "u.txt"
+        self.fsync.side_effect = OSError(errno.ENOSPC, "no space")
+        with self.assertRaises(OSError):
+            A._write_new_text(q, "abc")
+        self.assertFalse(q.exists())
+
+    def test_provenance_is_written_only_after_the_hook_has_flushed_the_files(self):
+        seen = []
+
+        def hook(repo):
+            folder = self.ext / A.folder_of(repo)
+            seen.append((repo, (folder / "provenance.json").exists(), (folder / "PROVENANCE.md").exists(),
+                         sum(1 for x in files_of(self.ext) if A.folder_of(repo) in x and not x.endswith(".part"))))
+        self.run_acquire(after_files=hook)
+        self.assertEqual([r for r, *_ in seen], ["orgA/coding", "orgB/qa", "orgC/hot"])
+        self.assertTrue(all(not pj and not pm for _, pj, pm, _ in seen))                          # no provenance yet when the hook runs
+        self.assertTrue(all(n >= 2 for *_, n in seen))                                           # but the files are already in place
+        for repo in ("orgA/coding", "orgB/qa", "orgC/hot"):
+            self.assertTrue((self.ext / A.folder_of(repo) / "provenance.json").is_file())
+        # a hook that fails stops the dataset before any provenance exists for it
+        def boom(repo):
+            raise RuntimeError("Drive flush failed")
+        with self.assertRaises(RuntimeError):
+            self.run_acquire(after_files=boom, ext_dirname=A.EXTERNAL_DIRNAME + "_b")
+        fresh = self.root / (A.EXTERNAL_DIRNAME + "_b")
+        self.assertEqual([x for x in files_of(fresh) if x.endswith("provenance.json")], [])
+        self.assertTrue((fresh / "orgA__coding" / "data" / "train-0.parquet").is_file())
+
+    def test_a_truncated_final_of_a_dead_run_without_provenance_is_moved_aside_and_redone(self):
+        data = self.hub.content[("orgA/coding", "data/train-0.parquet")]
+        for cut in (30, 0):                                                                        # half the bytes reached Drive / none of them
+            ext = self.root / (A.EXTERNAL_DIRNAME + f"_cut{cut}")
+            final = ext / "orgA__coding/data/train-0.parquet"
+            final.parent.mkdir(parents=True)
+            final.write_bytes(data[:cut])
+            self.logs.clear()
+            self.run_acquire(ext_dirname=ext.name)
+            self.assertEqual(final.read_bytes(), data)
+            self.assertEqual(Path(str(final) + ".stale-1").read_bytes(), data[:cut])               # the short bytes are kept, not deleted
+            self.assertTrue(any("moved aside" in l and "train-0.parquet" in l for l in self.logs), self.logs)
+            self.assertTrue((ext / "orgA__coding/provenance.json").is_file())
+        # the same for a truncated dataset card (it is read first, for the licence check)
+        card = self.hub.content[("orgA/coding", "README.md")]
+        ext = self.root / (A.EXTERNAL_DIRNAME + "_card")
+        (ext / "orgA__coding").mkdir(parents=True)
+        (ext / "orgA__coding" / "README.md").write_bytes(card[:25])
+        self.run_acquire(ext_dirname=ext.name)
+        self.assertEqual((ext / "orgA__coding" / "README.md").read_bytes(), card)
+        self.assertEqual((ext / "orgA__coding" / "README.md.stale-1").read_bytes(), card[:25])
+        self.assertTrue((ext / "orgA__coding/provenance.json").is_file())
+
+    def test_a_truncated_final_next_to_a_damaged_provenance_is_a_dead_end_no_more(self):
+        # review round 4: the recovery of a truncated final was keyed on os.path.lexists(provenance.json), not on a VALID provenance.  A runtime that died
+        # while Drive lost the tail of both the last data file and provenance.json left a dataset that every re-run refused.  provenance.json is
+        # written last, so an unreadable one means the acquisition never finished: it counts as absent for that condition (nothing is deleted).
+        data = self.hub.content[("orgA/coding", "data/train-0.parquet")]
+        self.run_acquire()
+        final = self.ext / "orgA__coding/data/train-0.parquet"
+        pj = self.ext / "orgA__coding/provenance.json"
+        good = pj.read_text(encoding="utf-8")
+        for name, damage in (("cut in the middle", good[:40]), ("empty", ""), ("not a provenance record", '{"hello": 1}')):
+            final.write_bytes(data[:30])
+            pj.write_text(damage, encoding="utf-8")
+            self.logs.clear()
+            self.run_acquire()
+            self.assertEqual(final.read_bytes(), data, name)
+            self.assertTrue(any("moved aside" in l and "train-0.parquet" in l for l in self.logs), (name, self.logs))
+            self.assertEqual(json.loads(pj.read_text(encoding="utf-8"))["commit_sha"], self.hub.shas["orgA/coding"], name)        # a fresh record
+        stale = sorted(x for x in files_of(self.ext) if ".stale-" in x)
+        self.assertEqual(sum(1 for x in stale if "train-0.parquet.stale-" in x), 3)                # the short bytes are kept every time ...
+        self.assertEqual(sum(1 for x in stale if "provenance.json.stale-" in x), 3)                # ... and so are the damaged records
+        # the same for a truncated dataset card (read first, for the licence check)
+        card_path = self.ext / "orgA__coding" / "README.md"
+        card = self.hub.content[("orgA/coding", "README.md")]
+        card_path.write_bytes(card[:25])
+        pj.write_text(good[:40], encoding="utf-8")
+        self.run_acquire()
+        self.assertEqual(card_path.read_bytes(), card)
+        self.assertTrue(any(x.endswith("README.md.stale-1") for x in files_of(self.ext)))
+        # ... but a VALID provenance still protects a certified dataset: its truncated final is refused and untouched
+        final.write_bytes(data[:30])
+        with self.assertRaises(A.ExistingFileMismatch):
+            self.run_acquire()
+        self.assertEqual(final.read_bytes(), data[:30])
+        # and a damaged provenance does not license replacing bytes that are NOT the start of the verified file
+        final.write_bytes(b"Z" * 10)
+        pj.write_text(good[:40], encoding="utf-8")
+        with self.assertRaises(A.ExistingFileMismatch):
+            self.run_acquire()
+        self.assertEqual(final.read_bytes(), b"Z" * 10)
+        self.assertEqual(pj.read_text(encoding="utf-8"), good[:40])
+
+    def test_other_wrong_finals_are_still_refused_and_untouched(self):
+        data = self.hub.content[("orgA/coding", "data/train-0.parquet")]
+        final = self.ext / "orgA__coding/data/train-0.parquet"
+        final.parent.mkdir(parents=True)
+        for name, new in (("one extra byte", data + b"X"), ("same size, other bytes", b"Z" * len(data)), ("shorter but not a prefix", b"Z" * 10)):
+            final.write_bytes(new)
+            with self.assertRaises(A.ExistingFileMismatch, msg=name):
+                self.run_acquire()
+            self.assertEqual(final.read_bytes(), new, name)
+            self.assertEqual([x for x in files_of(self.ext) if ".stale" in x], [], name)
+        # a truncated final of a dataset that already HAS a provenance (it was certified) is never touched either
+        final.write_bytes(data)
+        self.run_acquire()
+        final.write_bytes(data[:30])
+        with self.assertRaises(A.ExistingFileMismatch):
+            self.run_acquire()
+        self.assertEqual(final.read_bytes(), data[:30])
+        self.assertEqual([x for x in files_of(self.ext) if ".stale" in x], [])
+
+    def test_a_damaged_provenance_is_a_clear_error_for_readers_and_is_moved_aside_by_acquire(self):
+        self.run_acquire()
+        pj = self.ext / "orgA__coding" / "provenance.json"
+        good = pj.read_text(encoding="utf-8")
+        pj.write_text(good[:40], encoding="utf-8")                                                # Drive lost the tail
+        for fn in (lambda: A.load_manifest(self.root, self.table), lambda: A.train_files(self.root, "coding", self.table),
+                   lambda: A.do_not_train_files(self.root, self.table)):
+            with self.assertRaises(A.AcquireError) as cm:
+                fn()
+            self.assertIn("provenance.json", str(cm.exception))
+            self.assertNotIsInstance(cm.exception, ValueError)
+        (self.ext / "orgA__coding" / "PROVENANCE.md").write_bytes(b"")                           # and an empty PROVENANCE.md
+        res = self.run_acquire()
+        self.assertEqual(res["datasets"]["orgA/coding"]["provenance"], "written")
+        self.assertEqual(json.loads(pj.read_text(encoding="utf-8"))["commit_sha"], self.hub.shas["orgA/coding"])
+        self.assertEqual(Path(str(pj) + ".stale-1").read_text(encoding="utf-8"), good[:40])          # the damaged bytes are kept, not deleted
+        self.assertTrue((self.ext / "orgA__coding" / "PROVENANCE.md").read_text(encoding="utf-8").startswith("# Provenance"))
+        self.assertTrue((self.ext / "orgA__coding" / "PROVENANCE.md.stale-1").is_file())
+
+    def test_new_data_files_upstream_stop_the_run_before_any_download(self):
+        class Hub(FakeHub):
+            extra = {}
+
+            def _dataset_info(self, repo_id, **kw):
+                info = super()._dataset_info(repo_id, **kw)
+                for name in self.extra.get(repo_id, []):
+                    info.siblings.append(SimpleNamespace(rfilename=name, size=5, blob_id="a" * 40, lfs=None))
+                return info
+        self.hub = Hub(self.pairs)
+        for extra in ("data/train-1.parquet", "data/dev/q_dev_2.json", "more/validation-0.jsonl"):
+            self.hub.extra = {"orgA/coding": [extra]}
+            self.hub.downloads.clear()
+            with self.assertRaises(A.UpstreamDrift) as cm:
+                self.run_acquire()
+            self.assertIn(extra, str(cm.exception))
+            self.assertEqual(self.hub.downloads, [])
+        # files that are not data (docs, attributes) and files the table declares as deliberately not fetched are only noted
+        self.table[0]["not_fetched"] = ["fullwiki/"]
+        self.hub.extra = {"orgA/coding": [".gitattributes", "notes.md", "script.py", "fullwiki/train-0.parquet"]}
+        self.run_acquire()
+        self.assertTrue(any("notes.md" in l for l in self.logs), self.logs)
+
+    def test_the_real_table_declares_every_sibling_of_the_planning_snapshot(self):
+        if not META.is_dir():
+            self.skipTest("the saved API JSON is not present")
+        for d in A.DATASETS:
+            p = META / (d["repo"].replace("/", "_") + ".json")
+            names = {s["rfilename"] for s in json.loads(p.read_text(encoding="utf-8"))["siblings"]}
+            fetched = {f["path"] for f in d["files"]}
+            declared = tuple(d.get("not_fetched", ()))
+            for n in sorted(names - fetched):
+                self.assertTrue(any(n == x or (x.endswith("/") and n.startswith(x)) for x in declared), f"{d['repo']}: {n} is neither fetched nor declared not_fetched")
+
+
+class CommitPinRound3(MovingHead):
+    def test_a_commit_pin_written_before_the_data_survives_an_upstream_card_edit_before_provenance_exists(self):
+        # review round 3: the pin existed only after provenance.json; a run that died after the card and one data file of a dataset, followed by an
+        # upstream README edit, made the re-run refuse for ALL datasets and left only RAW_SUFFIX (1.9 GB again)
+        self.hub.corrupt[("orgB/qa", "data/train/q1.json")] = b'{"data": [4, 5, 6, 8]}'              # dies inside dataset 2: card + q0 on Drive, no provenance
+        with self.assertRaises(A.VerificationError):
+            self.run_acquire()
+        self.assertFalse((self.ext / "orgB__qa/provenance.json").exists())
+        self.assertTrue((self.ext / "orgB__qa/README.md").is_file())
+        self.assertTrue((self.ext / "orgB__qa/commit_pin.json").is_file())
+        del self.hub.corrupt[("orgB/qa", "data/train/q1.json")]
+        self.hub.old = dict(self.hub.content)
+        self.hub.content[("orgB/qa", "README.md")] = self.hub.content[("orgB/qa", "README.md")] + b"\nA typo was fixed upstream.\n"
+        self.hub.revisions.clear()
+        res = self.run_acquire()
+        self.assertIn(("orgB/qa", self.hub.shas["orgB/qa"]), self.hub.revisions)                  # fetched at the pinned commit
+        self.assertEqual(res["datasets"]["orgB/qa"]["provenance"], "written")
+        self.assertEqual(json.loads((self.ext / "orgB__qa/commit_pin.json").read_text(encoding="utf-8"))["commit_sha"], self.hub.shas["orgB/qa"])
+        self.assertEqual(A._pinned_commit(self.ext, self.table[1]), self.hub.shas["orgB/qa"])
+        # a broken pin is ignored (the head is taken), like a broken provenance
+        (self.ext / "orgC__hot" / "commit_pin.json").write_text("{broken", encoding="utf-8")
+        (self.ext / "orgC__hot" / "provenance.json").write_text("{broken", encoding="utf-8")
+        self.assertIsNone(A._pinned_commit(self.ext, self.table[2]))
 
 
 class FreshRawFolder(Base):

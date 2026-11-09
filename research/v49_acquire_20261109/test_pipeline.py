@@ -10,6 +10,7 @@ is run on it.
 """
 from __future__ import annotations
 
+import collections
 import hashlib
 import json
 import os
@@ -163,10 +164,16 @@ class TestRealAcquireLayout(unittest.TestCase):
             hub = TA.FakeHub(pairs)
             logs = []
             with mock.patch.object(A, "DATASETS", table), mock.patch.object(A, "HfApi", hub.HfApi), mock.patch.object(A, "hf_hub_download", hub.hf_hub_download):
+                events, after_acq = [], []
                 cfg = P.Cfg(root=str(root), work=str(base / "work"), stage_dir=str(base / "stage"), allow_local=True, vocab_override=str(VOCAB), require_v48=False,
                             only=("jaquad", "hotpot", "toolace"), parallel=1, poll_s=0.2, heartbeat_s=1e9, check_disk=False, expected_counts=None,
-                            run_semantic=False, run_cross=False, log=logs.append)
-                R = {"dry": P.step_dry_run(cfg), "acq": P.step_acquire(cfg), "mirror": P.step_mirror(cfg), "vocab": P.step_vocab_eval(cfg),
+                            run_semantic=False, run_cross=False, log=logs.append, drive_sync=lambda: events.append("sync"))
+
+                def acquire_step():
+                    r = P.step_acquire(cfg)
+                    after_acq.append(len(events))
+                    return r
+                R = {"dry": P.step_dry_run(cfg), "acq": acquire_step(), "mirror": P.step_mirror(cfg), "vocab": P.step_vocab_eval(cfg),
                      "raw": P.step_raw_checks(cfg), "smoke": P.step_convert_smoke(cfg), "full": P.step_convert_full(cfg)}
                 self.assertTrue(all(r["pass"] for r in R.values()))
                 self.assertEqual(R["dry"]["expected_total_bytes"], A.total_bytes([d for d in table if d["key"] in ("jaquad", "hotpotqa", "toolace")]))
@@ -184,7 +191,9 @@ class TestRealAcquireLayout(unittest.TestCase):
                 for ds in table:
                     if ds["key"] in ("jaquad", "hotpotqa", "toolace"):
                         self.assertTrue((cfg.stage_a_drive({"hotpotqa": "hotpot"}.get(ds["key"], ds["key"])) / "stageA_meta.json").is_file())
-                self.assertEqual(sorted(os.listdir(root)), sorted([A.EXTERNAL_DIRNAME, "GeoCPU_v47_fullmodel_bundle_v1.zip", P.OUT_NAME, P.STAGE_A_NAME]))
+                self.assertEqual(sorted(os.listdir(root)), sorted([A.EXTERNAL_DIRNAME, "GeoCPU_v47_fullmodel_bundle_v1.zip", cfg.out.name, P.STAGE_A_NAME]))
+                self.assertEqual(cfg.out.name, P.OUT_NAME + "_only_jaquad-hotpot-toolace")                 # a trial run has its own output folder
+                self.assertEqual(after_acq, [3 + 1])                                         # one Drive flush per acquired dataset (before its provenance.json) + one after step 5
                 self.assertEqual([l for l in logs if l.startswith("FAIL [")], [])
 
 
@@ -246,7 +255,14 @@ class TestEndToEnd(unittest.TestCase):
             cls.cfg.expected_old_rows = len(old)
             R["filters"] = P.step_filters(cls.cfg)
             R["reviews"] = P.step_reviews(cls.cfg)
-            R["final"] = P.step_finalize(cls.cfg)
+            cls.publish_log = []                                                    # (destination, does the hold marker exist yet?) of every publish in step 9
+            real_publish = P.publish_file
+
+            def spy_publish(src, dst, *a, **kw):
+                cls.publish_log.append((str(dst), (Path(dst).parent / "DO_NOT_TRAIN_UNTIL_APPROVED.txt").exists()))
+                return real_publish(src, dst, *a, **kw)
+            with mock.patch.object(P, "publish_file", spy_publish):
+                R["final"] = P.step_finalize(cls.cfg)
         except BaseException as e:                                                  # noqa: BLE001
             cls.failure = e
         cls.pipeline_logs = list(cls.logs)                                          # later tests add their own (intended) FAIL lines
@@ -402,6 +418,14 @@ class TestEndToEnd(unittest.TestCase):
         self.assertIn(P.HOLD_DIRNAME, text)
         self.assertIn("英語の行:", text)
         self.assertIn("NOT found on Drive", text)                                    # the registry suites that are not there are named in section 5
+        self.assertIn("丸ごと入っていた行", text)                                        # whole eval items (templated items that differ only in digits) are counted apart
+        self.assertIn("データセット別の丸ごと一致", text)                                  # ... per dataset, with the warning to read it before trusting the drop counts
+        self.assertIn("この行数を読んでから除外数を信じてください", text)
+        self.assertIn("13〜39文字の評価文は13文字の断片でしか照合しない", text)            # the band between 'shorter than 13' and the 40-character whole items
+        self.assertIn("13 to 39 normalised characters", text)
+        self.assertNotIn("行 - 行", text)                                              # ... with a real number, not a dash
+        self.assertIn("長さ（最終のtrain行）", text)
+        self.assertIn("落とすのは、すでに残した行に似ている行だけです", text)                    # near duplicates: no chains
 
     def test_rerun_is_idempotent_and_never_overwrites(self):
         self.need("final")
@@ -420,7 +444,7 @@ class TestEndToEnd(unittest.TestCase):
             return {p: C.sha256_file(str(p)) for p in list(self.cfg.out.rglob("*")) + list(self.cfg.rows.rglob("*"))
                     if p.is_file() and not p.name.startswith("run_info_")}
         before = tree()
-        for fn in (P.step_vocab_eval, P.step_raw_checks, P.step_convert_full, P.step_filters, P.step_reviews, P.step_finalize):
+        for fn in (P.step_vocab_eval, P.step_raw_checks, P.step_convert_smoke, P.step_convert_full, P.step_filters, P.step_reviews, P.step_finalize):
             self.assertTrue(fn(self.cfg)["pass"], fn.step_name)
         self.assertEqual(before, tree())
 
@@ -466,12 +490,106 @@ class TestEndToEnd(unittest.TestCase):
                     self.assertIn("different converter code", str(cm.exception))
             finally:
                 (d / "stageA_meta.json").write_text(good, encoding="utf-8")
+            # review round 3: rows made from OTHER RAW DATA (another commit, other train files) are refused too - they would be labelled with the
+            # new commit in registry.json while holding the old data
+            for what in ("train", "commit"):
+                meta = json.loads(good)
+                if what == "train":
+                    meta["raw"]["train_sha256"][0][1] = "0" * 64
+                else:
+                    meta["raw"]["commit_sha"] = "f" * 40
+                (d / "stageA_meta.json").write_text(json.dumps(meta), encoding="utf-8")
+                try:
+                    with tempfile.TemporaryDirectory() as w4:
+                        with self.assertRaises(P.StepFailed) as cm:
+                            P.restore_stage_a(self.fresh_cfg(w4, only=("toolace",)), "toolace")
+                        self.assertIn("other raw data", str(cm.exception), what)
+                finally:
+                    (d / "stageA_meta.json").write_text(good, encoding="utf-8")
+            self.assertIn("raw", json.loads(good))
+            # the same for a shard
+            sd = self.cfg.shard_drive("coding", *P.shard_ranges(self.results["raw"]["datasets"]["coding"]["n_raw"], self.cfg.shard_records)[0])
+            smeta_good = (sd / "shard_meta.json").read_text(encoding="utf-8")
+            smeta = json.loads(smeta_good)
+            smeta["raw"]["commit_sha"] = "e" * 40
+            (sd / "shard_meta.json").write_text(json.dumps(smeta), encoding="utf-8")
+            try:
+                with tempfile.TemporaryDirectory() as w5:
+                    cfg5 = self.fresh_cfg(w5, only=("coding",), shard_records=self.cfg.shard_records)
+                    a, b = P.shard_ranges(self.results["raw"]["datasets"]["coding"]["n_raw"], cfg5.shard_records)[0]
+                    with self.assertRaises(P.StepFailed) as cm:
+                        P.restore_shard(cfg5, "coding", a, b)
+                    self.assertIn("other raw data", str(cm.exception))
+            finally:
+                (sd / "shard_meta.json").write_text(smeta_good, encoding="utf-8")
+
+    def test_a_restarted_runtime_regenerates_nothing_different_and_a_finished_smoke_step_is_not_repeated(self):
+        # review round 3 (blocker): 7a saved wall-clock estimates through write-once and a re-run was refused; (major) REPORT_JA.md changed
+        # its dict order after a restart (state reloaded from sorted JSON) and cell 9 was refused too
+        self.need("final")
+        from unittest import mock
+
+        def tree():
+            return {p: C.sha256_file(str(p)) for p in list(self.cfg.out.rglob("*")) + list(self.cfg.rows.rglob("*"))
+                    if p.is_file() and not p.name.startswith("run_info_")}
+        before = tree()
+        cfg2 = P.dataclasses.replace(self.cfg, state={}, timings=[], log=lambda s: None)       # a restarted notebook: nothing in memory but the vocabulary
+        self.assertEqual(cfg2.state, {})
+        with mock.patch.object(P, "_run_converters", side_effect=AssertionError("the smoke converters were started again")):
+            r = P.step_convert_smoke(cfg2)
+        self.assertIn("already done", r["detail"])
+        self.assertEqual(r["estimate_minutes"], self.results["smoke"]["estimate_minutes"])
+        self.assertTrue(P.step_finalize(cfg2)["pass"])
+        self.assertEqual(before, tree())
+
+    def test_registry_carries_the_length_information_the_training_plan_reads(self):
+        self.need("final")
+        reg = json.loads((self.cfg.out / "registry.json").read_text(encoding="utf-8"))
+        seen_train_rows = 0
+        for k in P.KEYS:
+            d = reg["datasets"][k]
+            rd = self.cfg.rows / P.HOLD_DIRNAME / k if k in P.HOLD_KEYS else self.cfg.rows / k
+            lens, masked, sup = [], [], {sp: 0 for sp in P.SPLITS}
+            for sp in P.SPLITS:
+                for line in (rd / f"{sp}.jsonl").read_text(encoding="utf-8").splitlines():
+                    r = json.loads(line)
+                    m = sum(b - a for a, b in r["loss_mask_spans"])
+                    sup[sp] += len(r["target"]) - m
+                    if sp == "train":
+                        lens.append(len(r["full_text"]) + 1)
+                        masked.append(m)
+            self.assertEqual(d["supervised_chars_by_split"], sup, k)
+            self.assertEqual(d["supervised_chars"], {"train": sup["train"], "all": sum(sup.values())}, k)
+            self.assertEqual(d["length_hist_bucket"], 64)
+            self.assertIn("midpoint", d["length_note"])
+            man = json.loads((rd / "manifest.json").read_text(encoding="utf-8"))
+            for key in ("mean_len", "mean_masked", "length_hist", "supervised_chars_by_split"):
+                self.assertEqual(man[key], d[key], (k, key))
+            if lens:
+                seen_train_rows += len(lens)
+                self.assertAlmostEqual(d["mean_len"], sum(lens) / len(lens), places=6, msg=k)            # mean of len(prompt + target) + 1 over the TRAIN rows
+                self.assertAlmostEqual(d["mean_masked"], sum(masked) / len(masked), places=6, msg=k)
+                self.assertEqual(d["length_hist"], dict(collections.Counter(str(64 * (n // 64) + 32) for n in lens)), k)   # 64-character buckets, key = midpoint
+                self.assertGreater(d["mean_len"], sup["train"] / len(lens), k)                           # the plan needs len_mean > sup_mean
+            else:
+                self.assertIsNone(d["mean_len"], k)
+                self.assertEqual(d["length_hist"], {}, k)
+        self.assertGreater(seen_train_rows, 0)
+        self.assertIsNone(reg["only"])
+
+    def test_the_hold_marker_exists_before_any_held_row_is_published(self):
+        self.need("final")
+        held = [(dst, marker) for dst, marker in self.publish_log if P.HOLD_DIRNAME in dst]
+        self.assertTrue(held)
+        self.assertTrue(all(marker for _, marker in held), held)
 
     def test_a_new_run_suffix_redoes_the_filters_but_not_the_conversion(self):
         self.need("final")
         from unittest import mock
         with tempfile.TemporaryDirectory() as w2:
             cfg2 = self.fresh_cfg(w2, suffix="_2", expected_old_rows=22, expected_counts=self.cfg.expected_counts)
+            for name in ("step6c_raw_checks", "step7a_smoke"):                          # (6c and 7a run before 7b in the notebook: their numbers guard 7b; 7b refuses to run without them)
+                P.save_state(cfg2, name, self.cfg.state[name])
             self.assertNotEqual(cfg2.out, self.cfg.out)
             for k in P.KEYS:
                 self.assertEqual(cfg2.stage_a_drive(k), self.cfg.stage_a_drive(k))
@@ -504,6 +622,8 @@ class TestEndToEnd(unittest.TestCase):
             cfg2.vocab_file.parent.mkdir(parents=True, exist_ok=True)
             cfg2.vocab_file.write_bytes(self.cfg.vocab_file.read_bytes())
             P.step_mirror(cfg2)                                                     # a restarted runtime runs 6a again before 7b
+            for name in ("step6c_raw_checks", "step7a_smoke"):                      # (a trial run (only=) has its own output folder: 6c and 7a ran in it first)
+                P.save_state(cfg2, name, self.cfg.state[name])
             lost = ranges[1]
             shutil.rmtree(cfg2.stage_a_drive(key))                                  # (this is a COPY in a temp dir; the notebook never deletes on Drive)
             shutil.rmtree(cfg2.shard_drive(key, *lost))
@@ -533,11 +653,17 @@ class TestEndToEnd(unittest.TestCase):
             cfg2.vocab_file.parent.mkdir(parents=True, exist_ok=True)
             cfg2.vocab_file.write_bytes(self.cfg.vocab_file.read_bytes())
             shutil.rmtree(cfg2.stage_a_drive("toolace"))                                      # (a COPY in a temp dir)
+            cfg2.state["step6c_raw_checks"] = self.cfg.state["step6c_raw_checks"]                  # (7b needs the 6c counts first)
             cfg2.state["step7a_smoke"] = {"estimate_minutes": {"toolace": 300.0}, "est_drive_bytes": 1}
             with self.assertRaises(P.StepFailed) as cm:
                 P.step_convert_full(cfg2)
             self.assertIn("300", str(cm.exception))
             self.assertIn("shard", str(cm.exception).lower())
+            self.assertIn("MAX_UNSHARDED_MINUTES", str(cm.exception))                      # a setting the owner can reach from cell 3a
+            # no estimate for this dataset (7a had nothing to extrapolate from): the guard is off, it must not crash on formatting `None`
+            cfg2.state["step7a_smoke"] = {"estimate_minutes": {}, "est_drive_bytes": 1}
+            P.step_mirror(cfg2)                                                                # (a fresh local disk: the converter reads the mirrored train files)
+            self.assertTrue(P.step_convert_full(cfg2)["pass"])
 
     def test_drive_is_unmounted_while_code_runs_and_flushed_after_the_writing_steps(self):
         self.need("full")
@@ -600,6 +726,12 @@ class TestEndToEnd(unittest.TestCase):
             self.assertIn("NOT group-independent", reg["datasets"][k]["convert"]["split_unit"])
         for k in ("jaquad", "hotpot"):
             self.assertTrue(reg["datasets"][k]["convert"]["group_independent_dev_heldout"], k)
+        self.assertIsInstance(reg["decontam"]["rows_flagged_whole_item"], int)
+        self.assertEqual(reg["decontam"]["whole_item_min_chars"], 40)
+        by = reg["decontam"]["rows_flagged_whole_item_by_dataset"]                      # review round 4: the number to read before trusting the drop counts
+        self.assertEqual(sum(by.values()), reg["decontam"]["rows_flagged_whole_item"])
+        self.assertTrue(set(by) <= set(reg["datasets"]))
+        self.assertTrue(any("13 to 39 normalised characters" in x and "rows_flagged_whole_item" in x for x in reg["not_covered"]))
         self.assertEqual(reg["params"]["near_estimate_cut"], 0.75)
         self.assertEqual(reg["params"]["minhash_k"], 128)
         self.assertEqual(reg["params"]["minhash_detection_probability"]["0.8"], 0.933)
@@ -679,6 +811,26 @@ class TestVocabFromBundleAndCache(unittest.TestCase):
                 P.step_vocab_eval(cfg)
             self.assertIn("no 13-gram", str(cm.exception).replace("contributed no 13-gram at all", "no 13-gram"))
             self.assertIn("jamcqa_manifest_test.jsonl", str(cm.exception))
+
+    def test_a_required_eval_file_that_repeats_the_prompts_of_another_is_not_refused(self):
+        # review round 3 (blocker): eval_swe_step_control_heldout_v43labels.jsonl has the prompts of eval_swe_step_control_heldout.jsonl, so it added
+        # 0 NEW shingles and step 6b stopped on the real files ('eval sources that contributed no 13-gram at all')
+        vocab = json.loads(VOCAB.read_text(encoding="utf-8"))["vocab"]
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "drive" / "GeoCPU_v47_fullmodel_20261106"
+            TC.make_bundle(str(root), vocab=vocab)
+            twin = "eval_swe_step_control_heldout_v43labels.jsonl"
+            self.assertIn(twin, C.EVAL_REQUIRED_JSONL)
+            text = "問題: eval_swe_step_control_heldout.jsonl の評価用の質問文です。ここは十分に長い文章です。"        # the text make_bundle wrote for the first file
+            (root / twin).write_text(json.dumps({"id": "y", "prompt": text, "target": "A"}, ensure_ascii=False) + "\n", encoding="utf-8")
+            cfg = P.Cfg(root=str(root), work=str(Path(td) / "work"), only=("toolace",), require_v48=False, check_disk=False, log=lambda s: None)
+            r = P.step_vocab_eval(cfg)
+            ps = r["eval"]["index"]["per_source"]
+            self.assertEqual(ps[twin]["new_shingles"], 0)
+            self.assertGreater(ps[twin]["shingles"], 0)
+            self.assertEqual(P.eval_source_problems(ps, {twin}), {"no_items": [], "no_shingles": []})
+            self.assertEqual(P.eval_source_problems({"a": {"items": 0, "indexable_texts": 3, "shingles": 5}, "b": {"items": 2, "indexable_texts": 0, "shingles": 0}}, {"a", "b", "c"}),
+                             {"no_items": ["a", "c"], "no_shingles": ["b", "c"]})
 
     def test_a_vocabulary_derived_from_a_corpus_is_refused(self):
         with tempfile.TemporaryDirectory() as td:
@@ -881,7 +1033,7 @@ class TestUnits(unittest.TestCase):
             a, b = P.Cfg(root=td, work=str(Path(td) / "a")), P.Cfg(root=td, work=str(Path(td) / "b"), suffix="_2")
             self.assertEqual(a.converter_tag(), b.converter_tag())                       # RUN_SUFFIX does not change it
             self.assertNotEqual(a.code_tag()[:8], a.converter_tag()[:8])
-            self.assertEqual(sorted(a.converter_hashes()), ["checks.sandbox_and_normaliser", "convert.py", "vocabulary_chars"])
+            self.assertEqual(sorted(a.converter_hashes()), ["checks.sandbox_and_normaliser", "convert.py", "parameters", "vocabulary_chars"])
             self.assertEqual(a.converter_hashes()["vocabulary_chars"], "none")
             before = a.converter_tag()
             Path(a.work).mkdir(parents=True)
@@ -920,6 +1072,11 @@ class TestUnits(unittest.TestCase):
         self.assertEqual(cfg.ext, Path("/r/external_data_v49_raw2"))
         self.assertEqual(cfg.out, Path("/r/v49_acquire_20261109_2"))
         self.assertEqual(P.Cfg(root="/r", suffix="_2").ext, Path("/r/external_data_v49"))
+        # review round 3: converted rows of the old raw data are never looked up for a fresh raw folder (RAW_SUFFIX); RUN_SUFFIX does not matter
+        self.assertEqual(cfg.stage_a_drive("coding").parent.parent, Path("/r/external_data_v49_stageA_raw2"))
+        self.assertEqual(cfg.shard_drive("coding", 0, None).parent.parent.parent, Path("/r/external_data_v49_stageA_raw2"))
+        self.assertEqual(P.Cfg(root="/r", suffix="_2").stage_a_drive("coding").parent.parent, Path("/r/external_data_v49_stageA"))
+        self.assertEqual(Path(cfg.stage_a_drive("coding")).parents[1], cfg.stage_a_root)
 
     def _scheduler(self, parallel, rc_of=None, wave_size=None, hooks=None, on_wave=None, raise_in_sleep=None):
         """Run _run_converters with a fake Popen (no process is started): returns (start order, peak concurrency, error, fake processes)."""
@@ -1036,6 +1193,278 @@ class TestUnits(unittest.TestCase):
             cfg = P.Cfg(root=td, log=lambda s: None, only=("jaquad",))
             with self.assertRaises(P.StepFailed):
                 P.verify_acquired(cfg)
+
+    def test_a_rerun_of_the_smoke_step_returns_the_saved_estimates_instead_of_being_refused(self):
+        # review round 3 (blocker): cell 7a measured seconds, saved estimate_minutes through write-once and a re-run (new runtime, 'Run all' again)
+        # measured slightly different seconds: 'refusing to overwrite state/step7a_smoke.json' - and 'Run all' stopped before 7b
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as td:
+            def make():
+                c = P.Cfg(root=td, work=str(Path(td) / "w"), only=("coding",), check_disk=False, log=lambda s: None)
+                Path(c.work).mkdir(exist_ok=True)
+                c.vocab_file.write_text("{}", encoding="utf-8")
+                return c
+            first, second = make(), make()
+            saved = {"estimate_minutes": {"coding": 3.4}, "est_converted_bytes": 10, "est_drive_bytes": 20}
+            P.save_state(first, "step7a_smoke", saved)
+            with self.assertRaises(P.StepFailed):                                     # the write-once rule itself is unchanged: other numbers are refused
+                P.save_state(second, "step7a_smoke", dict(saved, estimate_minutes={"coding": 3.5}))
+            with mock.patch.object(P, "_run_converters", side_effect=AssertionError("the converters were started again")), \
+                    mock.patch.object(P, "ensure_sandbox_ok", side_effect=AssertionError("the sandbox self-test ran for a finished step")):
+                r = P.step_convert_smoke(second)
+            self.assertTrue(r["pass"])
+            self.assertIn("already done", r["detail"])
+            self.assertEqual((r["estimate_minutes"], r["est_drive_bytes"]), ({"coding": 3.4}, 20))
+
+    def test_a_trial_run_with_ONLY_writes_to_its_own_output_folder(self):
+        # review round 3: a partial run and a later full run with the same RUN_SUFFIX collided at cell 5 ('refusing to overwrite step5_acquire.json')
+        full, trial = P.Cfg(root="/r"), P.Cfg(root="/r", only=("toolace", "jaquad"))
+        self.assertEqual(full.out.name, P.OUT_NAME)
+        self.assertEqual(trial.out.name, P.OUT_NAME + "_only_jaquad-toolace")                 # in KEYS order
+        self.assertEqual(P.Cfg(root="/r", only=("toolace",), suffix="_2").out.name, P.OUT_NAME + "_2_only_toolace")
+        self.assertEqual(P.Cfg(root="/r", only=P.KEYS).out, full.out)                          # all six = a full run
+        self.assertEqual((trial.rows, trial.stage_a_drive("jaquad")), (full.rows, full.stage_a_drive("jaquad")))     # converted / final rows are shared: reused
+
+    def test_only_the_coding_dataset_needs_the_sandbox(self):
+        # review round 3: a failing sandbox self-test stopped all six datasets, although only 'coding' ever runs code
+        from unittest import mock
+        self.assertFalse(P.Cfg(only=("jaquad", "hotpot", "toolace", "wizard", "tengentoppa")).needs_sandbox)
+        self.assertTrue(P.Cfg(only=("coding",)).needs_sandbox)
+        self.assertTrue(P.Cfg().needs_sandbox)
+        self.assertFalse(P.Cfg(run_sandbox=False).needs_sandbox)
+        cfg = P.Cfg(root="/r", work="/w")
+        for key in P.KEYS:
+            cmd = P._converter_cmd(cfg, P.new_job(key, out_root=Path("/o")), None)
+            self.assertEqual("--no-sandbox" in cmd, key != "coding", key)
+        strict = P.Cfg(root="/r", work="/w", run_sandbox=True, require_os_containment=True)
+        self.assertNotIn("--no-sandbox", P._converter_cmd(strict, P.new_job("coding", out_root=Path("/o")), None))
+        self.assertIn("--require-os-containment", P._converter_cmd(strict, P.new_job("coding", out_root=Path("/o")), None))
+        self.assertIn("--no-sandbox", P._converter_cmd(P.Cfg(root="/r", work="/w", run_sandbox=False), P.new_job("coding", out_root=Path("/o")), None))
+        with tempfile.TemporaryDirectory() as td:
+            no_code = P.Cfg(root=td, work=str(Path(td) / "w"), only=("jaquad", "toolace"), log=lambda s: None)
+            with mock.patch.object(P.checks, "sandbox_selftest", side_effect=AssertionError("the self-test must not run")):
+                r = P.step_sandbox_selftest(no_code)
+            self.assertTrue(r["pass"])
+            self.assertIn("not needed", r["detail"])
+
+    def test_the_drive_probe_remounts_a_few_times_and_says_what_to_expect(self):
+        logs, events = [], []
+        cfg = P.Cfg(log=logs.append, drive_detach=lambda: events.append("detach"), drive_attach=lambda: events.append("attach"),
+                    drive_sync=lambda: events.append("sync"))
+        r = P.step_drive_probe(cfg)
+        self.assertTrue(r["pass"])
+        self.assertEqual(events, ["sync", "sync", "detach", "attach"])
+        text = "\n".join(logs)
+        self.assertIn("authorisation", text)
+        self.assertIn(str(P.expected_remounts(cfg)), text)
+        self.assertGreaterEqual(P.expected_remounts(cfg), 15)
+        none = P.Cfg(log=logs.append)
+        self.assertTrue(P.step_drive_probe(none)["pass"])                                    # the hooks are off: nothing is probed
+
+    def test_verify_acquired_hashes_the_dev_validation_and_card_files_after_the_remount(self):
+        if pa is None:
+            self.skipTest("pyarrow missing")
+        with tempfile.TemporaryDirectory() as td:
+            root = build_root(Path(td))
+            cfg = P.Cfg(root=str(root), work=str(Path(td) / "w"), check_disk=False, log=lambda s: None)
+            self.assertEqual(sorted(P.verify_acquired(cfg)), sorted(P.KEYS))
+            dev = root / A.EXTERNAL_DIRNAME / "do_not_train_dev" / "SkelterLabsInc__JaQuAD" / "data" / "dev" / "jaquad_dev_0000.json"
+            data = dev.read_bytes()
+            dev.write_bytes(data[:-3] + b"XYZ")                                              # same size, other bytes (Drive lost / mangled the write)
+            with self.assertRaises(P.StepFailed) as cm:
+                P.verify_acquired(cfg)
+            self.assertIn("jaquad_dev_0000.json", str(cm.exception))
+            dev.write_bytes(data)
+            card = root / A.EXTERNAL_DIRNAME / "SkelterLabsInc__JaQuAD" / "README.md"
+            cdata = card.read_bytes()
+            card.write_bytes(cdata[:-2] + b"ZZ")
+            with self.assertRaises(P.StepFailed):
+                P.verify_acquired(cfg)
+            card.write_bytes(cdata)
+            self.assertTrue(P.verify_acquired(cfg))
+
+    def test_converter_tag_covers_the_parameters_that_change_converted_rows(self):
+        with tempfile.TemporaryDirectory() as td:
+            a = P.Cfg(root=td, work=str(Path(td) / "a"))
+            for kw in ({"max_chars": 1200}, {"python_allow_unverified": True}, {"run_sandbox": False}):
+                self.assertNotEqual(P.Cfg(root=td, work=str(Path(td) / "b"), **kw).converter_tag(), a.converter_tag(), kw)
+            for kw in ({"near_threshold": 0.9}, {"ngram": 11}, {"suffix": "_3"}, {"parallel": 1}):                  # filter / run parameters do not
+                self.assertEqual(P.Cfg(root=td, work=str(Path(td) / "b"), **kw).converter_tag(), a.converter_tag(), kw)
+
+    def test_a_refused_stage_a_file_does_not_send_the_owner_to_RUN_SUFFIX(self):
+        from unittest import mock
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            (td / "a.txt").write_text("one", encoding="utf-8")
+            (td / "b.txt").write_text("two", encoding="utf-8")
+            P.publish_file(td / "a.txt", td / "d" / "a.txt")
+            with self.assertRaises(P.StepFailed) as cm:
+                P.publish_file(td / "b.txt", td / "d" / "a.txt", hint="rename the folder by hand")
+            self.assertIn("rename the folder by hand", str(cm.exception))
+            self.assertNotIn("RUN_SUFFIX", str(cm.exception))
+            cfg = P.Cfg(root=str(td / "drive"), work=str(td / "w"), only=("toolace",), log=lambda s: None)
+            src = cfg.conv_dir("toolace")
+            src.mkdir(parents=True)
+            (src / "manifest.json").write_text(json.dumps({"provenance": {"commit_sha": "c"}}), encoding="utf-8")
+            calls = []
+            with mock.patch.object(P, "publish_file", side_effect=lambda s, d, hint=None: calls.append(hint) or "created"), \
+                    mock.patch.object(P.Cfg, "raw_binding", return_value={"commit_sha": "c", "train_sha256": []}):
+                P.publish_stage_a(cfg, "toolace", SimpleNamespace(sha256_chars="s"))
+            self.assertTrue(calls and all(h and "by hand" in h and "RUN_SUFFIX" not in h.split("RAW_SUFFIX")[0] for h in calls), calls)
+
+    def test_7b_needs_the_7a_numbers_when_it_has_to_convert(self):
+        with tempfile.TemporaryDirectory() as td:
+            cfg = P.Cfg(root=td, work=str(Path(td) / "w"), only=("jaquad",), check_disk=False, log=lambda s: None)
+            Path(cfg.work).mkdir()
+            cfg.vocab_file.write_text("{}", encoding="utf-8")
+            P.save_state(cfg, "step6c_raw_checks", {"datasets": {"jaquad": {"n_raw": 5, "bad_lines": 0}}, "mismatches": [], "binding": {}})       # 6c ran (7b needs it first)
+            saved = P._CACHE.get("vocab")
+            P._CACHE["vocab"] = saved or object()
+            try:
+                with self.assertRaises(P.StepFailed) as cm:
+                    P.step_convert_full(cfg)
+            finally:
+                if saved is None:
+                    P._CACHE.pop("vocab", None)
+            self.assertIn("7a", str(cm.exception))
+
+    def test_7a_and_7b_need_the_6c_record_counts(self):
+        # review round 4: both steps accepted a missing 6c state and silently switched off the record-count check, the sharding decision and the
+        # guard for the time of an unsharded conversion
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as td:
+            cfg = P.Cfg(root=td, work=str(Path(td) / "w"), only=("jaquad",), check_disk=False, log=lambda s: None)
+            Path(cfg.work).mkdir()
+            cfg.vocab_file.write_text("{}", encoding="utf-8")
+            saved = P._CACHE.get("vocab")
+            P._CACHE["vocab"] = saved or object()
+            try:
+                with mock.patch.object(P, "_run_converters", side_effect=AssertionError("a converter was started without the 6c counts")):
+                    for fn in (P.step_convert_smoke, P.step_convert_full):
+                        with self.assertRaises(P.StepFailed) as cm:
+                            fn(cfg)
+                        self.assertIn("run step 6c first", str(cm.exception), fn.__name__)
+                    P.save_state(cfg, "step6c_raw_checks", {"datasets": {"jaquad": {"n_raw": 5, "bad_lines": 0}}, "mismatches": [], "binding": {}})
+                    with self.assertRaises(P.StepFailed) as cm:                                    # with the counts the next requirement (the 7a numbers) is reached
+                        P.step_convert_full(cfg)
+                    self.assertIn("7a", str(cm.exception))
+            finally:
+                if saved is None:
+                    P._CACHE.pop("vocab", None)
+
+    def test_a_balanced_manifest_that_hides_sandbox_failures_fails_the_check(self):
+        # review round 4 (major): a sandbox failure in the middle of a long run became 'sandbox_failed:crash:...' rejects; the manifest stayed balanced
+        # and 7a / 7b passed with the verified python rows gone.  Second net behind convert.SandboxUnavailable.
+        cfg = P.Cfg(root="/r", work="/w", only=("coding",), require_os_containment=False)
+        good = {"backends": {"sandbox": C.SANDBOX_BACKEND, "sandbox_run_as": "nobody"},
+                "rejects": {"sandbox_failed:exception:ZeroDivisionError: division by zero": 3, "sandbox_failed:timeout:5.0s": 2, "sandbox_failed:output_limit:x": 1,
+                            "sandbox_failed:static:import:os": 1, "static:import:os": 4, "no_stored_output_to_corroborate": 1, "stored_output_mismatch": 2}}
+        P.check_sandbox_backend("coding", good, cfg)                                         # ordinary code failures are fine
+        self.assertEqual(P.sandbox_infrastructure_rejects(good), {})
+        for reason in ("sandbox_failed:crash:spawn:OSError: [Errno 28] No space left on device", "sandbox_failed:crash:returncode=-9:",
+                       "sandbox_failed:spawn:x", "sandbox_failed:checks_error:SandboxError", "sandbox_failed:checks_error:OSError"):
+            bad = dict(good, rejects=dict(good["rejects"], **{reason: 7}))
+            self.assertEqual(P.sandbox_infrastructure_rejects(bad), {reason: 7})
+            with self.assertRaises(P.StepFailed) as cm:
+                P.check_sandbox_backend("coding", bad, cfg)
+            self.assertIn("SANDBOX failed", str(cm.exception))
+            self.assertIn(reason, str(cm.exception))                                          # named ...
+            self.assertIn("7 row(s)", str(cm.exception))                                      # ... and counted
+        two = dict(good, rejects={"sandbox_failed:crash:spawn:OSError": 5, "sandbox_failed:checks_error:SandboxError": 2})
+        with self.assertRaises(P.StepFailed) as cm:
+            P.check_sandbox_backend("coding", two, cfg)
+        self.assertIn("7 row(s)", str(cm.exception))
+        self.assertIn("sandbox_failed:crash:spawn:OSError x 5", str(cm.exception))
+        self.assertIn("sandbox_failed:checks_error:SandboxError x 2", str(cm.exception))
+        with self.assertRaises(P.StepFailed):                                                 # also for a run without the sandbox switch / another dataset's manifest
+            P.check_sandbox_backend("jaquad", two, P.Cfg(root="/r", work="/w", run_sandbox=False))
+
+    def _balanced_manifest_with(self, rejects):
+        return {"balanced": True, "n_in": 10, "n_out": 4, "reject_total": 6, "limit": None, "rejects": rejects, "splits": {}, "files": {},
+                "backends": {"sandbox": C.SANDBOX_BACKEND, "sandbox_run_as": "nobody"}, "keep_rate": 0.4}
+
+    def test_7a_and_7b_fail_when_the_manifest_hides_sandbox_failures(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as td:
+            cfg = P.Cfg(root=td, work=str(Path(td) / "w"), only=("coding",), check_disk=False, require_os_containment=False, log=lambda s: None)
+            Path(cfg.work).mkdir()
+            cfg.vocab_file.write_text("{}", encoding="utf-8")
+            P.save_state(cfg, "step6c_raw_checks", {"datasets": {"coding": {"n_raw": 10, "bad_lines": 0}}, "mismatches": [], "binding": {}})
+            man = self._balanced_manifest_with({"sandbox_failed:crash:spawn:OSError: [Errno 28] No space left on device": 6})
+            saved = P._CACHE.get("vocab")
+            P._CACHE["vocab"] = saved or object()
+            try:
+                with mock.patch.object(P, "ensure_sandbox_ok", return_value={}), mock.patch.object(P, "_convert_ck", return_value=None), \
+                        mock.patch.object(P, "_check_manifest", return_value=man), \
+                        mock.patch.object(P, "_run_converters", return_value={"coding": {"rc": 0, "seconds": 1.0, "log": "x"}}):
+                    with self.assertRaises(P.StepFailed) as cm:
+                        P.step_convert_smoke(cfg)                                                  # 7a
+                    self.assertIn("6 row(s)", str(cm.exception))
+                    self.assertIn("sandbox_failed:crash:spawn", str(cm.exception))
+                    P.save_state(cfg, "step7a_smoke", {"estimate_minutes": {}, "est_converted_bytes": 1, "est_drive_bytes": 1})
+                    d = cfg.conv_dir("coding")                                                     # rows of an earlier run (made by an older converter) are 'resumed'
+                    d.mkdir(parents=True)
+                    (d / "manifest.json").write_text("{}", encoding="utf-8")
+                    with self.assertRaises(P.StepFailed) as cm:
+                        P.step_convert_full(cfg)                                                   # 7b
+                    self.assertIn("6 row(s)", str(cm.exception))
+                    self.assertIn("sandbox_failed:crash:spawn", str(cm.exception))
+            finally:
+                if saved is None:
+                    P._CACHE.pop("vocab", None)
+
+    def test_a_shard_manifest_that_hides_sandbox_failures_is_refused_before_it_is_published(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as td:
+            cfg = P.Cfg(root=td, work=str(Path(td) / "w"), only=("coding",), check_disk=False, require_os_containment=False, shard_records=3, log=lambda s: None)
+            Path(cfg.work).mkdir()
+            cfg.vocab_file.write_text("{}", encoding="utf-8")
+            P.save_state(cfg, "step6c_raw_checks", {"datasets": {"coding": {"n_raw": 10, "bad_lines": 0}}, "mismatches": [], "binding": {}})
+            P.save_state(cfg, "step7a_smoke", {"estimate_minutes": {}, "est_converted_bytes": 1, "est_drive_bytes": 1})
+            man = self._balanced_manifest_with({"sandbox_failed:checks_error:SandboxError": 2})
+            published = []
+
+            def fake_run(cfg_, jobs, smoke, limit=None, wave_size=None, on_wave=None):
+                res = {j["id"]: {"rc": 0, "seconds": 1.0, "log": "x"} for j in jobs}
+                on_wave(jobs[:1], res)
+                return res
+            saved = P._CACHE.get("vocab")
+            P._CACHE["vocab"] = saved or object()
+            try:
+                with mock.patch.object(P, "ensure_sandbox_ok", return_value={}), mock.patch.object(P, "_check_manifest", return_value=man), \
+                        mock.patch.object(P, "publish_shard", side_effect=lambda *a, **k: published.append(a)), mock.patch.object(P, "restore_shard", return_value=False), \
+                        mock.patch.object(P, "_run_converters", fake_run):
+                    with self.assertRaises(P.StepFailed) as cm:
+                        P.step_convert_full(cfg)
+                self.assertIn("2 row(s)", str(cm.exception))
+                self.assertEqual(published, [])
+            finally:
+                if saved is None:
+                    P._CACHE.pop("vocab", None)
+
+    def test_the_selftest_step_does_not_count_an_information_line_as_a_pass(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as td:
+            cfg = P.Cfg(root=td, work=str(Path(td) / "w"), only=("coding",), check_disk=False, require_os_containment=False, log=lambda s: None,
+                        drive_detach=lambda: None, drive_attach=lambda: None)
+            fake = {"ok": True, "backend": C.SANDBOX_BACKEND, "run_as": "nobody",
+                    "checks": [{"name": "a", "ok": True, "detail": ""}, {"name": "b", "ok": True, "detail": ""},
+                               {"name": "info: what the child could see of Drive at 3d time (x)", "ok": True, "detail": "it saw nothing", "info": True}]}
+            saved = P._CACHE.get("sandbox")
+            try:
+                with mock.patch.object(P.checks, "sandbox_selftest", return_value=fake):
+                    r = P.step_sandbox_selftest(cfg)
+                self.assertIn("2 checks passed", r["detail"])
+                self.assertIn("1 information line", r["detail"])
+                rec = P._CACHE["sandbox"]
+                self.assertEqual((rec["n_checks"], rec["n_info"]), (2, 1))
+                self.assertEqual([c.get("info", False) for c in rec["checks"]], [False, False, True])
+            finally:
+                if saved is None:
+                    P._CACHE.pop("sandbox", None)
+                else:
+                    P._CACHE["sandbox"] = saved
 
     def test_cfg_paths_use_the_new_folder_names_and_the_suffix(self):
         cfg = P.Cfg(root="/r", suffix="_2")

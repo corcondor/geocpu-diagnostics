@@ -16,9 +16,9 @@ HERE = Path(__file__).resolve().parent
 MODULES = ("acquire.py", "checks.py", "convert.py", "pipeline.py")
 URL = "https://colab.research.google.com/github/corcondor/geocpu-diagnostics/blob/research/v49-acquire-20261109/research/v49_acquire_20261109/colab_acquire_check.ipynb"
 URL_ENCODED = URL.replace("blob/research/v49-acquire-20261109", "blob/research%2Fv49-acquire-20261109")          # Colab's github/ route may need the branch slash encoded
-EXPECTED_CELLS = ["intro", "pip", "config", "modules", "md-dry", "dryrun", "md-acquire", "acquire", "md-raw", "mirror", "vocab", "raw", "md-convert",
-                  "sandbox", "smoke", "full", "md-filters", "filters", "reviews", "md-final", "final", "md-finish", "finish"]
-STEP_CELLS = {"dryrun": "step_dry_run", "acquire": "step_acquire", "mirror": "step_mirror", "vocab": "step_vocab_eval", "raw": "step_raw_checks",
+EXPECTED_CELLS = ["intro", "pip", "config", "modules", "md-probe", "probe", "sandbox", "md-dry", "dryrun", "md-acquire", "acquire", "md-raw", "mirror", "vocab",
+                  "raw", "md-convert", "smoke", "full", "md-filters", "filters", "reviews", "md-final", "final", "md-finish", "finish"]
+STEP_CELLS = {"probe": "step_drive_probe", "dryrun": "step_dry_run", "acquire": "step_acquire", "mirror": "step_mirror", "vocab": "step_vocab_eval", "raw": "step_raw_checks",
               "sandbox": "step_sandbox_selftest", "smoke": "step_convert_smoke", "full": "step_convert_full", "filters": "step_filters",
               "reviews": "step_reviews", "final": "step_finalize"}
 NETWORK_MODULES = {"urllib", "urllib3", "requests", "http", "socket", "ftplib", "smtplib", "telnetlib", "aiohttp", "httpx", "ssl", "websocket", "imaplib", "poplib"}
@@ -85,7 +85,7 @@ class Notebook(unittest.TestCase):
         self.assertEqual(on_disk, self.raw, "colab_acquire_check.ipynb is stale: run python make_notebook.py")
 
     def test_every_code_cell_parses(self):
-        self.assertEqual(len(self.src), 15)
+        self.assertEqual(len(self.src), 16)
         for cid, s in self.src.items():
             ast.parse(s, filename=cid)
 
@@ -184,10 +184,39 @@ class Notebook(unittest.TestCase):
         self.assertIn("hashlib.sha256(_file.read_bytes())", tail)                            # the loaded file equals the embedded text
 
     def test_config_exposes_the_new_settings(self):
-        for name in ("RUN_SUFFIX", "RAW_SUFFIX", "STOP_ON_COUNT_MISMATCH", "ALLOW_VOCAB_MISMATCH", "ONLY"):
+        for name in ("RUN_SUFFIX", "RAW_SUFFIX", "STOP_ON_COUNT_MISMATCH", "ALLOW_VOCAB_MISMATCH", "ONLY", "RUN_SANDBOX", "SHARD_RECORDS", "SHARD_KEYS", "MAX_UNSHARDED_MINUTES"):
             self.assertRegex(self.src["config"], rf"(?m)^{name} = ", name)
-        for kw in ("raw_suffix=RAW_SUFFIX", "allow_vocab_mismatch=ALLOW_VOCAB_MISMATCH", "suffix=RUN_SUFFIX"):
+        for kw in ("raw_suffix=RAW_SUFFIX", "allow_vocab_mismatch=ALLOW_VOCAB_MISMATCH", "suffix=RUN_SUFFIX", "run_sandbox=RUN_SANDBOX", "shard_records=SHARD_RECORDS",
+                   "shard_keys=tuple(SHARD_KEYS)", "max_unsharded_minutes=MAX_UNSHARDED_MINUTES"):
             self.assertIn(kw, self.src["modules"], kw)
+        # the messages of the pipeline name settings the owner can really reach from the notebook
+        pipe = (HERE / "pipeline.py").read_text(encoding="utf-8")
+        for name in ("SHARD_KEYS", "MAX_UNSHARDED_MINUTES"):
+            self.assertIn(name, pipe)
+            self.assertRegex(self.src["config"], rf"(?m)^{name} = ")
+        self.assertNotIn("Cfg.shard_keys", pipe)
+
+    def test_every_setting_passed_to_the_cfg_is_a_field_of_it(self):
+        sys.path.insert(0, str(HERE))
+        import pipeline as P
+        tree = ast.parse(self.src["modules"])
+        call = next(n for n in ast.walk(tree) if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "make_cfg")
+        fields = {f.name for f in P.dataclasses.fields(P.Cfg)}
+        self.assertTrue(call.keywords)
+        for kw in call.keywords:
+            self.assertIn(kw.arg, fields, kw.arg)
+        # and the names the keywords take are defined by the config cell (or are the hooks of the modules cell)
+        defined = {t.id for n in ast.parse(self.src["config"]).body if isinstance(n, ast.Assign) for t in n.targets if isinstance(t, ast.Name)}
+        defined |= {"_detach", "_attach", "_sync", "EXTRA", "DRIVE_ROOT"}
+        for kw in call.keywords:
+            for node in ast.walk(kw.value):
+                if isinstance(node, ast.Name) and node.id not in ("str", "tuple", "P"):
+                    self.assertIn(node.id, defined | {"UNMOUNT_DRIVE_DURING_CODE_RUNS", "FLUSH_DRIVE_AFTER_STEPS"}, f"{kw.arg}: {node.id}")
+
+    def test_cell_10_prints_the_whole_report_not_its_first_8000_characters(self):
+        # review round 3: sections 5-7 (limits of the checks, licence duties, output locations) were cut off
+        self.assertNotIn("[:8000]", self.src["finish"])
+        self.assertIn('print(rep.read_text(encoding="utf-8"))', self.src["finish"])
 
     def test_each_cell_prints_a_pass_or_fail_and_stops_on_fail(self):
         sys.path.insert(0, str(HERE))
@@ -209,11 +238,14 @@ class Notebook(unittest.TestCase):
 
     def test_the_run_order_matches_the_task(self):
         order = [c["id"] for c in self.nb["cells"] if c["cell_type"] == "code"]
-        self.assertEqual(order, ["pip", "config", "modules", "dryrun", "acquire", "mirror", "vocab", "raw", "sandbox", "smoke", "full", "filters", "reviews",
+        self.assertEqual(order, ["pip", "config", "modules", "probe", "sandbox", "dryrun", "acquire", "mirror", "vocab", "raw", "smoke", "full", "filters", "reviews",
                                  "final", "finish"])
-        # the sandbox proves itself before any dataset code runs; smoke (2,000 records) comes before the full conversion; the raw checks before all of it
-        self.assertLess(order.index("raw"), order.index("sandbox"))
-        self.assertLess(order.index("sandbox"), order.index("smoke"))
+        # review round 3: the Drive probe and the sandbox self-test come BEFORE the 30-80 minutes of download and raw checks (a Linux failure shows up at once);
+        # smoke (2,000 records) comes before the full conversion
+        self.assertLess(order.index("modules"), order.index("probe"))
+        self.assertLess(order.index("probe"), order.index("sandbox"))
+        self.assertLess(order.index("sandbox"), order.index("acquire"))
+        self.assertLess(order.index("raw"), order.index("smoke"))
         self.assertLess(order.index("smoke"), order.index("full"))
         self.assertLess(order.index("full"), order.index("filters"))
         self.assertLess(order.index("filters"), order.index("reviews"))                      # the optional reviews never come before the drop lists exist
@@ -223,7 +255,8 @@ class Notebook(unittest.TestCase):
     def test_intro_says_what_runs_and_what_is_written(self):
         intro = "".join(self.nb["cells"][0]["source"])
         for must in ("GPU は使いません", "新しいフォルダにだけ", "上書きも削除もしません", "PASS", "FAIL", "MISMATCH", "REPORT_JA.md", "423,348", "RUN_SUFFIX",
-                     "RAW_SUFFIX", "nobody", "アンマウント", "_HOLD_do_not_mix", "タブを開いたまま", "シャード", "保存出力", "弱い代わりの方法には切り替えません"):
+                     "RAW_SUFFIX", "nobody", "アンマウント", "_HOLD_do_not_mix", "タブを開いたまま", "シャード", "保存出力", "弱い代わりの方法には切り替えません",
+                     "あなたが押すもの", "このまま実行", "許可", "すべてのセルを実行", "セッションを再起動", "3c", "3d", "約20回", "再接続"):
             self.assertIn(must, intro)
 
 
@@ -232,11 +265,29 @@ class Readme(unittest.TestCase):
         p = HERE / "README_JA.md"
         self.assertTrue(p.is_file())
         t = p.read_text(encoding="utf-8")
+        self.assertLess(t.index(URL_ENCODED), t.index(URL))                                   # the encoded form is the one that most probably works: listed first
+        self.assertIn("<コミットのsha>", t)                                                    # the commit form needs the sha of the pushed commit: never a stale one
+        self.assertNotIn("b60f1e38e13f092506ec8d6bbc68582d18950b0f/research", t)
         for must in (URL, URL_ENCODED, "File > Upload", "REPORT_JA.md", "registry.json", "external_data_v49_rows", "ATTRIBUTION.md", "CC BY-SA", "Apache",
                      "ShareAlike", "RUN_SUFFIX", "RAW_SUFFIX", "GPU", "MISMATCH", "目視", "_HOLD_do_not_mix", "external_data_v49_stageA", "nobody", "LICENSE_NOTICE.txt"):
             self.assertIn(must, t, must)
         for wrong in ("分割は文章の単位（グループ）で、heldout 3%・dev 1%・train 96% です。",):                      # the old, misleading claim about every dataset
             self.assertNotIn(wrong, t, wrong)
+
+    def test_the_owner_clicks_list_is_there_and_names_every_click(self):
+        t = (HERE / "README_JA.md").read_text(encoding="utf-8")
+        self.assertIn("## あなたが押すもの", t)
+        section = t.split("## あなたが押すもの")[1].split("\n## ")[0]
+        for must in ("このまま実行", "ハードウェア アクセラレータ", "すべてのセルを実行", "アクセス許可", "3c", "セッションを再起動", "File > Upload", "RUN_SUFFIX",
+                     "タブを開いたまま", "FAIL", "再接続"):
+            self.assertIn(must, section, must)
+        # what it does NOT ask for: no password, key or token
+        self.assertIn("パスワード・API キー・トークンも要りません", t)
+
+    def test_the_readme_states_what_was_never_run_on_linux(self):
+        t = (HERE / "README_JA.md").read_text(encoding="utf-8")
+        for must in ("まだ実行していません", "3d", "match"):
+            self.assertIn(must, t, must)
 
 
 if __name__ == "__main__":

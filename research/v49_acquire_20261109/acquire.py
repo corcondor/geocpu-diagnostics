@@ -16,7 +16,8 @@ Layout written under ``<root>/external_data_v49/`` (root = /content/drive/MyDriv
     do_not_train_validation/<repo__>/<path>          HotpotQA validation (decontamination only, never a converter input)
     do_not_train_*/DO_NOT_TRAIN.txt                  marker
 
-Converters must get their input through train_files(root, repo): it can only return files whose role is "train".
+Converters must get their input through train_files(root, repo): it can only return files whose role is "train", and it refuses a dataset on
+adoption hold (ToolACE, WizardLM) unless include_held=True.
 
 Rules enforced (the owner's decisions, see the task text):
   * licence first: before ANY data file of ANY selected dataset is downloaded, every selected dataset card is fetched and its
@@ -31,6 +32,14 @@ Rules enforced (the owner's decisions, see the task text):
     provenance files are write-once (identical record: kept; different record: ProvenanceConflict);
   * the heavy transfer goes through a staging directory on the Colab local disk (default /content/_hf_stage_v49, refused if it
     is inside the Drive root), so a bad download never reaches Drive;
+  * durability (Drive/FUSE writes are asynchronous): an fsync error other than 'not supported' is raised, not swallowed; a
+    commit_pin.json (the commit sha) is written before the first file of a dataset, so a re-run fetches the same commit even when the
+    card was edited upstream in between; the after_files hook (the notebook: flush_and_unmount + mount) runs after the files of a
+    dataset are in place and BEFORE provenance.json is written; a SHORT final file left by a run that died before Drive had all its
+    bytes (no provenance.json yet, bytes exactly the start of the verified file) is moved aside as .stale-N (never deleted) and the
+    file is written again; every other mismatch stays a refusal;
+  * a data-like file in the live listing that is neither in the table nor declared `not_fetched` stops the run before any download
+    (a new train shard would otherwise be silently missed);
   * dry_run=True prints the plan and the byte total, touches no network and writes nothing.
 
 Colab cell:
@@ -51,6 +60,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import errno
 import hashlib
 import json
 import os
@@ -106,6 +116,10 @@ class ProvenanceConflict(AcquireError):
     pass
 
 
+class HeldDataset(AcquireError):
+    """train_files() was asked for a dataset whose adoption status is 'hold' without include_held=True."""
+
+
 class UnsafeLayout(AcquireError):
     pass
 
@@ -125,6 +139,7 @@ _PENDING = {"status": "pending_checks", "text": "adoption: decided after the che
 DATASETS = [
     dict(
         key="coding", repo="llm-jp/Synthetic-JP-EN-Coding-Dataset", planning_sha="f3b782fde6b6ebe7606b42bddea68cb75cfbb547",
+        not_fetched=[".gitattributes"],
         licenses=("apache-2.0",), license_name=_APACHE[0], license_url=_APACHE[1], share_alike=False, row_license="Apache-2.0",
         row_source="llm-jp/Synthetic-JP-EN-Coding-Dataset (LLM-jp; subset of Aratako/Synthetic-JP-EN-Coding-Dataset-801k) - Apache-2.0 - https://huggingface.co/datasets/llm-jp/Synthetic-JP-EN-Coding-Dataset",
         language="ja, en", rows_card="113,796 (train)",
@@ -147,6 +162,7 @@ DATASETS = [
         ]),
     dict(
         key="tengentoppa", repo="DeL-TaiseiOzaki/Tengentoppa-sft-qwen2.5-32b-reasoning-100k", planning_sha="fa2497452a9b765e8f1e2b7b08e60b276521c26f",
+        not_fetched=[".gitattributes"],
         licenses=("apache-2.0",), license_name=_APACHE[0], license_url=_APACHE[1], share_alike=False, row_license="Apache-2.0",
         row_source="DeL-TaiseiOzaki/Tengentoppa-sft-qwen2.5-32b-reasoning-100k (Qwen2.5-32B-Instruct generated) - Apache-2.0 - https://huggingface.co/datasets/DeL-TaiseiOzaki/Tengentoppa-sft-qwen2.5-32b-reasoning-100k",
         language="ja", rows_card="125,000 (stated on the card; not re-counted here)",
@@ -169,6 +185,7 @@ DATASETS = [
         ]),
     dict(
         key="jaquad", repo="SkelterLabsInc/JaQuAD", planning_sha="05600ff310a0970823e70f82f428893b85c71ffe",
+        not_fetched=[".gitattributes", "JaQuAD.py"],
         licenses=("cc-by-sa-3.0",), license_name=_BYSA3[0], license_url=_BYSA3[1], share_alike=True, row_license="CC-BY-SA-3.0",
         row_source="JaQuAD (So et al., Skelter Labs) - CC BY-SA 3.0 - https://huggingface.co/datasets/SkelterLabsInc/JaQuAD",
         language="ja", rows_card="train 31,748 questions (9,713 contexts, 691 articles); dev/validation 3,939 (never trained on); test 4,009 is not public; 39,696 in total",
@@ -225,6 +242,7 @@ DATASETS = [
         ]),
     dict(
         key="hotpotqa", repo="hotpotqa/hotpot_qa", planning_sha="1908d6afbbead072334abe2965f91bd2709910ab",
+        not_fetched=[".gitattributes", "fullwiki/"],                 # the 'fullwiki' config is not part of the plan
         licenses=("cc-by-sa-4.0",), license_name=_BYSA4[0], license_url=_BYSA4[1], share_alike=True, row_license="CC-BY-SA-4.0",
         row_source="HotpotQA (Yang et al., EMNLP 2018) - CC BY-SA 4.0 - https://huggingface.co/datasets/hotpotqa/hotpot_qa",
         language="en", rows_card="distractor: train 90,447; validation 7,405 (never trained on)",
@@ -249,6 +267,7 @@ DATASETS = [
         ]),
     dict(
         key="toolace", repo="Team-ACE/ToolACE", planning_sha="6bda777c88d21e5a204703c1ee45597a8fa4f734",
+        not_fetched=[".gitattributes"],
         licenses=("apache-2.0",), license_name=_APACHE[0], license_url=_APACHE[1], share_alike=False, row_license="Apache-2.0",
         row_source="Team-ACE/ToolACE (Liu et al., arXiv:2409.00920) - Apache-2.0 (per card; generator model unverified) - https://huggingface.co/datasets/Team-ACE/ToolACE",
         language="en, zh", rows_card="not stated on the card (size category 10K<n<100K)",
@@ -269,6 +288,7 @@ DATASETS = [
         ]),
     dict(
         key="wizardlm", repo="llm-jp/wizardlm8x22b-logical-math-coding-sft-ja", planning_sha="568b89c1f7e5b81e30096efe16b2506418fa2c4a",
+        not_fetched=[".gitattributes"],
         licenses=("apache-2.0",), license_name=_APACHE[0], license_url=_APACHE[1], share_alike=False, row_license="Apache-2.0",
         row_source="llm-jp/wizardlm8x22b-logical-math-coding-sft-ja (LLM-jp; subset of kanhatakeyama/wizardlm8x22b-logical-math-coding-sft-ja) - Apache-2.0 - https://huggingface.co/datasets/llm-jp/wizardlm8x22b-logical-math-coding-sft-ja",
         language="ja", rows_card="116,422 (train)",
@@ -513,6 +533,41 @@ def _quarantine(path: str) -> str:
     return dst
 
 
+_FSYNC_UNSUPPORTED = {getattr(errno, n) for n in ("EINVAL", "ENOTSUP", "EOPNOTSUPP", "ENOSYS") if hasattr(errno, n)}
+
+
+def _fsync(fd: int) -> None:
+    """os.fsync that ignores ONLY 'this file system cannot fsync' (EINVAL / ENOTSUP / EOPNOTSUPP / ENOSYS).  EIO, ENOSPC, EDQUOT ... are raised:
+    on a FUSE mount such as Google Drive the quota-full or I/O error of buffered writes shows up here, and swallowing it would record a
+    failed write as a successful one (the read-back after the copy is served from the local cache and cannot prove the upload)."""
+    try:
+        os.fsync(fd)
+    except OSError as e:
+        if e.errno not in _FSYNC_UNSUPPORTED:
+            raise
+
+
+def _fsync_path(path) -> None:
+    """Flush an existing file again (a complete .part of a run whose own flush failed or never happened).  Opens it r+b: nothing is written."""
+    with open(path, "rb+") as f:
+        _fsync(f.fileno())
+
+
+def _is_prefix_of(short, full) -> bool:
+    """True when the bytes of `short` are exactly the first bytes of `full` (compared byte for byte)."""
+    n = os.path.getsize(short)
+    if n > os.path.getsize(full):
+        return False
+    with open(short, "rb") as a, open(full, "rb") as b:
+        left = n
+        while left:
+            x, y = a.read(min(CHUNK, left)), b.read(min(CHUNK, left))
+            if not x or x != y:
+                return False
+            left -= len(x)
+    return True
+
+
 def _copy_hashing(src, dst):
     h = hashlib.sha256()
     n = 0
@@ -525,10 +580,7 @@ def _copy_hashing(src, dst):
             h.update(b)
             n += len(b)
         fo.flush()
-        try:
-            os.fsync(fo.fileno())
-        except OSError:
-            pass
+        _fsync(fo.fileno())
     return n, h.hexdigest()
 
 
@@ -569,15 +621,12 @@ def _copy_resume(src, dst):
             h.update(b)
             n += len(b)
         fo.flush()
-        try:
-            os.fsync(fo.fileno())
-        except OSError:
-            pass
+        _fsync(fo.fileno())
     return n, h.hexdigest(), resumed
 
 
 def _write_new_text(path: Path, text: str) -> None:
-    """Create a text file that did not exist; never overwrites."""
+    """Create a text file that did not exist; never overwrites.  Written to <path>.part, flushed (a failed flush is raised) and renamed."""
     if os.path.lexists(path):
         raise ExistingFileMismatch(f"refusing to overwrite {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -586,6 +635,10 @@ def _write_new_text(path: Path, text: str) -> None:
         _quarantine(part)
     with open(part, "x", encoding="utf-8", newline="\n") as fh:
         fh.write(text)
+        fh.flush()
+        _fsync(fh.fileno())
+    if os.path.lexists(path):
+        raise ExistingFileMismatch(f"{path} appeared while it was being written; NOT overwritten (the finished text stays at {part})")
     os.rename(part, path)
 
 
@@ -641,6 +694,7 @@ def _commit(ctx, staged: Path, dg: dict, final: Path, rel: str) -> None:
         if os.path.isfile(part) and os.path.getsize(part) == dg["size"] and file_digests(part)["sha256"] == dg["sha256"]:
             reuse = True
             ctx.log(f"  complete {os.path.basename(part)} from an earlier run is correct: finishing it")
+            _fsync_path(part)                                       # its own flush may have failed (or never happened) in the run that wrote it
     if not reuse:
         had = os.path.lexists(part)
         n, sha, resumed = _copy_resume(staged, part)               # continues a partial of an earlier run, or moves a bad one aside
@@ -666,9 +720,30 @@ def _ensure_file(ctx, st: dict, f: dict) -> dict:
     final = ctx.ext / rel
     t0 = time.time()
     if os.path.lexists(final):
-        dg = _verify_existing(final, exp, rel)
-        status = "skipped_existing"
-        ctx.log(f"  present and verified, skipped: {rel}")
+        try:
+            dg = _verify_existing(final, exp, rel)
+            status = "skipped_existing"
+            ctx.log(f"  present and verified, skipped: {rel}")
+        except ExistingFileMismatch as err:
+            # A runtime that died after the rename but before Drive had uploaded all the bytes leaves a SHORT final file.  While the dataset has no
+            # provenance.json (it is written last, after the hook that flushes Drive) such a file is a remnant of this pipeline's own interrupted
+            # copy, never a certified one: if its bytes are exactly the start of the verified file it is moved aside (renamed, never deleted) and
+            # the file is written again.  Anything else (other bytes, same size, longer, or a dataset that already has provenance) stays a refusal.
+            if not (os.path.isfile(final) and os.path.getsize(final) < exp["size"]
+                    and not _has_readable_provenance(ctx.ext, ds)):
+                raise
+            staged, dg = _stage(ctx, ds, f, st["sha"], exp)
+            if not _is_prefix_of(final, staged):
+                raise err
+            had = os.path.getsize(final)
+            moved = _quarantine(str(final))
+            ctx.log(f"  {rel}: a shorter copy ({had:,} of {dg['size']:,} bytes, exactly the start of the file) from a run that died before Drive had all "
+                    f"the bytes was moved aside as {os.path.basename(moved)} (not deleted); copying the file again")
+            _commit(ctx, staged, dg, final, rel)
+            status = "downloaded"
+            if not ctx.keep_stage and _is_within(staged, ctx.stage):
+                os.remove(staged)
+            ctx.log(f"  stored: {rel}")
     else:
         staged, dg = _stage(ctx, ds, f, st["sha"], exp)
         _commit(ctx, staged, dg, final, rel)
@@ -764,22 +839,102 @@ def render_markdown(prov: dict) -> str:
     return "\n".join(out) + "\n"
 
 
+def _read_provenance_json(p) -> dict:
+    """provenance.json as a dict, or AcquireError with the way out (Drive can lose the tail of a file that was written just before a runtime died)."""
+    try:
+        d = json.loads(Path(p).read_text(encoding="utf-8"))
+    except (ValueError, OSError) as e:
+        raise AcquireError(f"{p} cannot be read as JSON ({type(e).__name__}: {e}); Drive may have lost the end of the file.  Nothing was overwritten or "
+                           f"deleted.  Run step 5 (acquire) again: it moves the damaged file aside (provenance.json.stale-N, not deleted), checks every "
+                           f"data file again against the Hub values and writes a fresh provenance.json.") from e
+    if not isinstance(d, dict) or not isinstance(d.get("files"), list) or not isinstance(d.get("repo_id"), str):
+        raise AcquireError(f"{p} is not a provenance record (no repo_id / files).  Nothing was overwritten or deleted.  Run step 5 (acquire) again: it "
+                           f"moves the damaged file aside and writes a fresh one.")
+    return d
+
+
+def _has_readable_provenance(ext, ds) -> bool:
+    """True when the dataset has a provenance.json that reads as a provenance record.  A damaged one (Drive can lose the tail of a file written just
+    before a runtime died) counts as ABSENT where the recovery of a truncated final file asks for it: provenance.json is written last, so a dataset
+    whose record is unreadable never had a finished acquisition, and _write_provenance moves the damaged record aside (never deletes it) anyway."""
+    p = Path(ext) / folder_of(ds["repo"]) / "provenance.json"
+    if not os.path.lexists(p):
+        return False
+    try:
+        _read_provenance_json(p)
+    except AcquireError:
+        return False
+    return True
+
+
 def _write_provenance(ctx, st: dict, prov: dict) -> str:
     d = ctx.ext / folder_of(st["ds"]["repo"])
     jp, mp = d / "provenance.json", d / "PROVENANCE.md"
+    state, old = "written", None
     if os.path.lexists(jp):
-        old = json.loads(jp.read_text(encoding="utf-8"))
+        try:
+            old = _read_provenance_json(jp)
+        except AcquireError:
+            moved = _quarantine(str(jp))                                # damaged (truncated by Drive): keep the bytes, write a fresh record below
+            ctx.log(f"  {jp.name} of {st['ds']['repo']} was damaged: moved aside as {os.path.basename(moved)} (not deleted); writing a fresh one from the "
+                    f"files this run verified")
+    if old is not None:
         if _core(old) != _core(prov):
             raise ProvenanceConflict(f"{jp} records different files than this run verified; not overwritten. Compare both and use a fresh root if the data changed.")
         state = "kept"
-        if not os.path.lexists(mp):
-            _write_new_text(mp, render_markdown(old))
-            state = "kept (PROVENANCE.md re-created)"
-        return state
-    _write_new_text(jp, json.dumps(prov, ensure_ascii=False, indent=1) + "\n")
+    else:
+        _write_new_text(jp, json.dumps(prov, ensure_ascii=False, indent=1) + "\n")
+    if os.path.lexists(mp) and os.path.getsize(mp) == 0:             # an empty PROVENANCE.md is a lost write, not a record
+        ctx.log(f"  an empty PROVENANCE.md of {st['ds']['repo']} was moved aside as {os.path.basename(_quarantine(str(mp)))} (not deleted)")
     if not os.path.lexists(mp):
-        _write_new_text(mp, render_markdown(prov))
+        _write_new_text(mp, render_markdown(old if old is not None else prov))
+        if state == "kept":
+            state = "kept (PROVENANCE.md re-created)"
+    return state
+
+
+PIN_NAME = "commit_pin.json"
+
+
+def _write_pin(ctx, st: dict) -> str:
+    """Record the commit this dataset is fetched at BEFORE its first file is written (write-once).  provenance.json is written last, so a run that
+    dies half way through a dataset would otherwise leave nothing that pins the re-run to the same commit: an upstream README edit in between made
+    the re-run refuse for every dataset (and left only a 1.9 GB RAW_SUFFIX re-download)."""
+    ds = st["ds"]
+    p = ctx.ext / folder_of(ds["repo"]) / PIN_NAME
+    if os.path.lexists(p):
+        return "kept"
+    _write_new_text(p, json.dumps({"schema": "v49_commit_pin/1", "repo_id": ds["repo"], "commit_sha": st["sha"], "planning_snapshot_commit_sha": ds["planning_sha"],
+                                   "pinned_utc": ctx.now, "note": "written before the first file of this dataset: a re-run fetches this commit, not the head"},
+                                  ensure_ascii=False, indent=1) + "\n")
     return "written"
+
+
+_DATA_EXT = (".parquet", ".jsonl", ".ndjson", ".arrow", ".csv", ".tsv", ".feather", ".zst", ".gz", ".zip", ".tar", ".bz2", ".xz")
+
+
+def _data_like(path: str) -> bool:
+    low = path.lower()
+    return low.endswith(_DATA_EXT) or (low.endswith(".json") and any(w in low for w in ("train", "dev", "valid", "test", "data")))
+
+
+def _check_unlisted(ds: dict, live: dict, log) -> None:
+    """Every file of the live listing is either in the table, declared `not_fetched` (planning-snapshot siblings that are deliberately not fetched:
+    a path, or a prefix ending in '/'), or reported.  A data-like file that is none of these (a new train shard, a new dev file that decontamination
+    would need) stops the run before any download: the table would silently under-fetch."""
+    listed = {f["path"] for f in ds["files"]}
+    declared = tuple(ds.get("not_fetched", ()))
+    data, other = [], []
+    for name in sorted(live):
+        if name in listed or any(name == x or (x.endswith("/") and name.startswith(x)) for x in declared):
+            continue
+        (data if _data_like(name) else other).append(name)
+    if data:
+        raise UpstreamDrift(f"{ds['repo']}: the repo holds data file(s) that the plan does not list: {', '.join(data[:6])}"
+                            + (f" (+{len(data) - 6} more)" if len(data) > 6 else "")
+                            + "; stop and re-plan (add them to the table with their size and sha256, or declare them not_fetched); nothing was downloaded")
+    if other:
+        log(f"  note: {ds['repo']} also has file(s) that are not fetched and not data: {', '.join(other[:6])}")
 
 
 # ------------------------------------------------------------------------------------------------ dry run / main entry
@@ -822,7 +977,8 @@ def _in_colab() -> bool:
 
 
 def acquire(root, only=None, *, dry_run=False, now_utc=None, datasets=None, stage_dir=None, keep_stage=False,
-            verify_after_copy=True, allow_local=False, log=print, ext_dirname: str = EXTERNAL_DIRNAME, pin_existing: bool = True) -> dict:
+            verify_after_copy=True, allow_local=False, log=print, ext_dirname: str = EXTERNAL_DIRNAME, pin_existing: bool = True,
+            after_files=None) -> dict:
     """Fetch (or, with dry_run, only plan) the selected datasets into <root>/external_data_v49/.  Idempotent and resumable.
 
     root        the existing Drive folder (never created here); only NEW sub-folders of it are written.
@@ -832,8 +988,11 @@ def acquire(root, only=None, *, dry_run=False, now_utc=None, datasets=None, stag
     stage_dir   local-disk staging dir (default /content/_hf_stage_v49); must be outside root.
     allow_local real runs refuse to start off-Colab unless this is True (tests only: the owner's PC must not be loaded).
     ext_dirname the folder under root that receives the files (default external_data_v49; the notebook's RAW_SUFFIX makes it a fresh one).
-    pin_existing a dataset that already has a provenance.json is fetched at THAT commit, not at the current head of the repo: an upstream edit
-                of a README between two runs must not turn a re-run into a refusal.
+    pin_existing a dataset that already has a provenance.json (or the commit_pin.json that is written before its first file) is fetched at THAT
+                commit, not at the current head of the repo: an upstream edit of a README between two runs must not turn a re-run into a refusal.
+    after_files  callable(repo_id) run after all files of a dataset are in place and BEFORE its provenance.json is written (the notebook passes the
+                Drive flush: flush_and_unmount + mount), so provenance never exists for bytes Drive may not have stored yet.  It also runs on a re-run
+                for a dataset that still has no provenance.  An exception stops the run (the files stay; the re-run verifies them again).
     """
     table = list(DATASETS if datasets is None else datasets)
     validate_table(table)
@@ -890,14 +1049,26 @@ def acquire(root, only=None, *, dry_run=False, now_utc=None, datasets=None, stag
         if pinned and sha != pinned:
             raise VerificationError(f"{ds['repo']}: asked for the recorded commit {pinned} and the Hub answered {sha}")
         live = _live_listing(info)
+        _check_unlisted(ds, live, log)
         st = {"ds": ds, "sha": sha, "exp": {}, "drift": {}}
         for f in ds["files"]:
             st["exp"][f["path"]], st["drift"][f["path"]] = _expected_for(ds, f, live)
         card = next(f for f in ds["files"] if f["role"] == "card")
         card_final = ctx.ext / dest_rel(ds, card)
         if os.path.lexists(card_final):
-            _verify_existing(card_final, st["exp"][card["path"]], dest_rel(ds, card))
-            raw = card_final.read_bytes()
+            try:
+                _verify_existing(card_final, st["exp"][card["path"]], dest_rel(ds, card))
+                raw = card_final.read_bytes()
+            except ExistingFileMismatch:
+                # a card truncated by a run that died before Drive had all its bytes (the dataset has no provenance yet): the licence check reads the
+                # verified staged card; phase 2 moves the short file aside (see _ensure_file)
+                if not (os.path.isfile(card_final) and os.path.getsize(card_final) < st["exp"][card["path"]]["size"]
+                        and not _has_readable_provenance(ctx.ext, ds)):
+                    raise
+                staged, _ = _stage(ctx, ds, card, sha, st["exp"][card["path"]])
+                if not _is_prefix_of(card_final, staged):
+                    raise
+                raw = Path(staged).read_bytes()
         else:
             staged, _ = _stage(ctx, ds, card, sha, st["exp"][card["path"]])
             raw = Path(staged).read_bytes()
@@ -913,7 +1084,11 @@ def acquire(root, only=None, *, dry_run=False, now_utc=None, datasets=None, stag
     for i, st in enumerate(states, 1):
         ds = st["ds"]
         log(f"[{i}/{len(states)}] {ds['repo']}")
+        _write_pin(ctx, st)
         records = [_ensure_file(ctx, st, f) for f in ds["files"]]
+        if after_files is not None and (any(r["status"] == "downloaded" for r in records)
+                                        or not _has_readable_provenance(ctx.ext, ds)):
+            after_files(ds["repo"])
         prov = build_provenance(ctx, st, records)
         state = _write_provenance(ctx, st, prov)
         for role in NO_TRAIN_ROLES:
@@ -932,27 +1107,37 @@ def acquire(root, only=None, *, dry_run=False, now_utc=None, datasets=None, stag
 
 # ------------------------------------------------------------------------------------------------ for the converters
 def _pinned_commit(ext, ds) -> Optional[str]:
-    """The commit sha recorded by an earlier run of this dataset (None when there is no valid provenance.json)."""
-    p = Path(ext) / folder_of(ds["repo"]) / "provenance.json"
-    try:
-        sha = json.loads(p.read_text(encoding="utf-8")).get("commit_sha")
-    except (OSError, ValueError, AttributeError):
-        return None
-    return sha if isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{40}", sha) else None
+    """The commit sha recorded by an earlier run of this dataset: provenance.json, else the commit_pin.json that is written before the first file
+    (None when neither is valid)."""
+    for name in ("provenance.json", PIN_NAME):
+        p = Path(ext) / folder_of(ds["repo"]) / name
+        try:
+            sha = json.loads(p.read_text(encoding="utf-8")).get("commit_sha")
+        except (OSError, ValueError, AttributeError):
+            continue
+        if isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{40}", sha):
+            return sha
+    return None
 
 
 def _provenance_of(root, ds, ext_dirname: str = EXTERNAL_DIRNAME) -> dict:
     p = Path(root) / ext_dirname / folder_of(ds["repo"]) / "provenance.json"
     if not os.path.isfile(p):
         raise AcquireError(f"{ds['repo']} has not been acquired: {p} is missing")
-    return json.loads(p.read_text(encoding="utf-8"))
+    return _read_provenance_json(p)
 
 
-def train_files(root, which, datasets=None, ext_dirname: str = EXTERNAL_DIRNAME) -> list:
-    """Paths of the TRAIN-eligible data files of one dataset (key, repo id or folder name).  dev/validation can never come out of here."""
+def train_files(root, which, datasets=None, ext_dirname: str = EXTERNAL_DIRNAME, include_held: bool = False) -> list:
+    """Paths of the TRAIN-eligible data files of one dataset (key, repo id or folder name).  dev/validation can never come out of here.
+    A dataset whose adoption status in provenance.json is 'hold' (ToolACE, WizardLM: generator unverified / low priority) is REFUSED (HeldDataset)
+    unless include_held=True: a held dataset is only converted so that the checks can be read, never as ordinary training input."""
     table = list(DATASETS if datasets is None else datasets)
     ds = select(table, [which])[0]
     prov = _provenance_of(root, ds, ext_dirname)
+    status = (prov.get("adoption") or {}).get("status") if isinstance(prov.get("adoption"), dict) else None
+    if status == "hold" and not include_held:
+        raise HeldDataset(f"{ds['repo']} is on hold ({(prov.get('adoption') or {}).get('text', 'adoption: hold')}); its train files are not handed out "
+                          f"unless the caller says include_held=True (a held dataset is converted only so that the checks can be read)")
     out = []
     for f in prov["files"]:
         if f["role"] == "train" and f["may_train"]:
@@ -970,7 +1155,7 @@ def do_not_train_files(root, datasets=None, ext_dirname: str = EXTERNAL_DIRNAME)
         p = Path(root) / ext_dirname / folder_of(ds["repo"]) / "provenance.json"
         if not os.path.isfile(p):
             continue
-        prov = json.loads(p.read_text(encoding="utf-8"))
+        prov = _read_provenance_json(p)
         files = [Path(root) / ext_dirname / f["dest_rel"] for f in prov["files"] if f["role"] in NO_TRAIN_ROLES]
         if files:
             out[ds["repo"]] = files
@@ -984,7 +1169,7 @@ def load_manifest(root, datasets=None, ext_dirname: str = EXTERNAL_DIRNAME) -> d
     for ds in table:
         p = Path(root) / ext_dirname / folder_of(ds["repo"]) / "provenance.json"
         if os.path.isfile(p):
-            out[ds["repo"]] = json.loads(p.read_text(encoding="utf-8"))
+            out[ds["repo"]] = _read_provenance_json(p)
     return out
 
 

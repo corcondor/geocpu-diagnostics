@@ -35,12 +35,15 @@ from __future__ import annotations
 
 import argparse
 import ast
+import atexit
+import contextlib
 import hashlib
 import heapq
 import itertools
 import json
 import os
 import re
+import signal
 import sys
 import textwrap
 import unicodedata
@@ -68,7 +71,28 @@ SPLIT_UNIT = {"jaquad": "group = article title: every question of one article is
               "hotpot": "group = connected component of supporting-paragraph titles over ALL train records: questions that share a "
                         "supporting paragraph are in one split",
               "coding": _ROW_UNIT, "tengentoppa": _ROW_UNIT, "toolace": _ROW_UNIT, "wizard": _ROW_UNIT}
-PY_FENCE_RE = re.compile(r"(?im)^[ \t]*(?:`{3,}|~{3,})[ \t]*(?:python|py|python3|py3|ipython)\b")
+PY_FENCE_RE = re.compile(r"(?i)(?:`{3,}|~{3,})[ \t]*(?:python|py|python3|py3|ipython)\b")       # anywhere: also inline, after text on the same line
+_FENCE_MARK = re.compile(r"`{3,}|~{3,}")
+_TAG_LINE = re.compile(r"[ \t]*[A-Za-z0-9_+#.-]{0,15}[ \t]*")
+
+
+def has_python_block(text: str) -> bool:
+    """True when `text` holds a fenced block that is (or looks like) Python: a python-tagged fence anywhere (also inline, after text) or an
+    UNTAGGED fence whose content parses as Python and calls print().  A python block with a stated output cannot be re-run for free text
+    (tengentoppa, wizardlm): such rows are dropped, not kept as unverified claims about what code prints."""
+    if PY_FENCE_RE.search(text):
+        return True
+    for body in _FENCE_MARK.split(text)[1::2]:                   # the pieces between an opening and a closing fence marker
+        first, _, rest = body.partition("\n")
+        if first.strip() and _TAG_LINE.fullmatch(first):          # tagged with some other language: not looked at
+            continue
+        try:
+            tree = ast.parse(textwrap.dedent(rest if not first.strip() else body).strip())
+        except (SyntaxError, ValueError, RecursionError, MemoryError):
+            continue
+        if any(isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "print" for n in ast.walk(tree)):
+            return True
+    return False
 REQUIRED_FIELDS = ("id", "source", "license", "split", "training_category", "family", "structural_template", "difficulty",
                    "_v46_group", "prompt", "target", "full_text", "loss_mask_spans", "tool_steps",
                    "reference_final_answer", "answer_type", "attribution", "adoption", "adoption_note")
@@ -190,8 +214,20 @@ def _load_external_checks():
 
 
 class SandboxUnavailable(RuntimeError):
-    """python rows cannot be verified here: the executor-profile sandbox of checks.py is missing or failed its self-test.
-    There is no weaker fallback."""
+    """python rows cannot be verified here: the executor-profile sandbox of checks.py is missing or failed its self-test (at start-up), or it
+    BROKE in the middle of the run (it could not start a child, the child died without a result, the unprivileged user vanished).
+    There is no weaker fallback, and a broken sandbox is never turned into per-row rejects: the converter stops (exit code 4)."""
+
+
+# What code_sandbox_check reports as 'crash' / 'crash:spawn:...' is a failure of the SANDBOX (the child could not be started, or ended
+# without a result line), not a verdict about the code under test.  Everything else is the code's own outcome and stays a per-row reject:
+# static:* (refused by the rules), timeout:*, output_limit:*, exception:* (wrong code, MemoryError at the memory limit, ...).
+SANDBOX_INFRA_CATEGORIES = ("crash", "spawn")
+
+
+def sandbox_reason_is_infrastructure(reason: str) -> bool:
+    """True for a code_sandbox_check error string that says the sandbox itself failed ('crash:spawn:OSError: [Errno 28] ...', 'crash:returncode=...')."""
+    return str(reason).split(":", 1)[0] in SANDBOX_INFRA_CATEGORIES
 
 
 class Checks:
@@ -270,8 +306,13 @@ class Checks:
             return {"ok": False, "stdout": "", "reason": "sandbox_disabled"}
         try:
             ok, out, err = self._ext.code_sandbox_check(code, self.sandbox_timeout, profile="executor")
-        except Exception as e:                                   # noqa: BLE001
-            return {"ok": False, "stdout": "", "reason": "checks_error:" + type(e).__name__}
+        except Exception as e:                                   # noqa: BLE001  SandboxError (the unprivileged user vanished), OSError (no space in /tmp), ...
+            # The code under test cannot raise out of code_sandbox_check (its own exceptions are caught in the child), so this is the SANDBOX
+            # failing.  Turning it into one more per-row reject would let a long run finish 'balanced' with every verified python row gone.
+            raise SandboxUnavailable(f"the sandbox failed in the middle of the run ({type(e).__name__}: {str(e)[:300]}); "
+                                     f"no more code is run and the converter stops") from e
+        if not ok and sandbox_reason_is_infrastructure(err):
+            raise SandboxUnavailable(f"the sandbox failed in the middle of the run ({str(err)[:300]}); no more code is run and the converter stops")
         return {"ok": bool(ok), "stdout": str(out), "reason": str(err)}
 
 
@@ -380,6 +421,8 @@ def validate_row(row: dict, ck: Checks):
             return "masked_row_not_clean"
     if ck.oov_stats(f)["frac"] > OOV_MAX_FRAC:
         return "oov_frac"
+    if ck.oov_count(t):                                              # the loader DELETES every out-of-vocabulary character: in the prompt (context) up to
+        return "oov_in_target"                                       # 1 % is tolerated, in the target it would silently corrupt what the model learns to write
     for q in row.get("quotes", []) or []:
         if q not in p:
             return "quote_not_in_prompt"
@@ -402,6 +445,8 @@ def run_converter(records: Iterable, stats: Stats, fn: Callable, ck: Checks) -> 
         except Reject as r:
             stats.reject(r.reason, ident, rec)
             continue
+        except SandboxUnavailable:
+            raise                                                # the sandbox broke: that is not one odd record (see Checks.run_python)
         except Exception as e:                                   # noqa: BLE001  one odd record must not kill a 1 GB run
             stats.reject("exception:" + type(e).__name__, ident, rec)
             continue
@@ -755,11 +800,13 @@ def _numbers(s: str):
 
 
 def _stored_outputs(asst: str, blocks, py):
-    """Stored outputs of the answer that follow the python block: blocks tagged output/console/stdout/result, or untagged/text
-    blocks directly after a label such as 出力: / Output:."""
+    """Stored outputs of the answer that belong to the python block `py`: the blocks after it and BEFORE the next python block (a later block's
+    output must never validate this block), tagged output/console/stdout/result, or untagged/text blocks directly after a label such as
+    出力: / Output:."""
+    nxt = min((b["start"] for b in blocks if b["lang"] == "python" and b["start"] >= py["end"]), default=None)
     res = []
     for b in blocks:
-        if b["start"] < py["end"] or b is py:
+        if b["start"] < py["end"] or b is py or (nxt is not None and b["start"] >= nxt):
             continue
         if b["lang"] in OUTPUT_LANGS:
             res.append(b["code"])
@@ -1000,7 +1047,7 @@ def _tengentoppa_one(idx, rec, st: Stats, ck: Checks, spec: Spec):
     reasoning = clean_text(rec.get("reasoning") or "").strip()
     if not instr or not refined:
         raise Reject("empty_field")
-    if PY_FENCE_RE.search(refined):
+    if has_python_block(refined):
         raise Reject("python_block_not_executed")                 # a python block with a stated output cannot be re-run here: dropped
     if REFUSAL_RE.match(refined[:40]) or REFUSAL_ANY.search(refined[:120]):
         raise Reject("refusal_opening")
@@ -1019,7 +1066,7 @@ def _tengentoppa_one(idx, rec, st: Stats, ck: Checks, spec: Spec):
     if len(prompt) + len(target) > ck.max_chars:
         raise Reject("row_too_long")
     if (ck.tengentoppa_steps and reasoning and reads_as_steps(reasoning) and latin_ratio(reasoning) <= 0.30 and not looks_repetitive(reasoning)
-            and not PY_FENCE_RE.search(reasoning)):
+            and not has_python_block(reasoning)):
         t2 = f"\n手順: {reasoning}\n答え: {refined}"
         if len(prompt) + len(t2) <= ck.max_chars:
             target, family, tmpl = t2, "tengentoppa_steps", "acq_tengentoppa_steps"
@@ -1039,6 +1086,11 @@ HOTPOT_LEVEL_NOTE = {0: "supporting paragraphs up to the last supporting sentenc
                      1: "same, distractors cut to 1 sentence", 2: "supporting paragraphs only",
                      3: "supporting sentences + paragraph opening", 4: "supporting sentences only"}
 HOTPOT_HEAD = "次の英語の段落を読んで、質問に英語で短く答えてください。"
+
+
+def _answer_in_evidence(answer: str, evidence: str) -> bool:
+    """The (normalised) answer occurs in the evidence as whole word(s): 'Spa' is not found in 'Spain'."""
+    return bool(answer) and re.search(r"(?<!\w)" + re.escape(answer) + r"(?!\w)", evidence) is not None
 
 
 def _hotpot_one(idx, rec, st: Stats, ck: Checks, spec: Spec):
@@ -1100,7 +1152,7 @@ def _hotpot_one(idx, rec, st: Stats, ck: Checks, spec: Spec):
     lv, prompt, target, qbp, yn = chosen
     quotes = [s for _, _, ss in qbp for s in ss]
     norm = lambda s: re.sub(r"\s+", " ", s.lower()).strip()      # noqa: E731
-    if not yn and norm(ans).strip(" .,;:\"'") not in norm(" ".join(quotes)):
+    if not yn and not _answer_in_evidence(norm(ans).strip(" .,;:\"'"), norm(" ".join(quotes))):
         raise Reject("answer_not_in_evidence")
     if ck.oov_count(" ".join(quotes) + ans + " ".join(t for _, t, _ in qbp)):
         raise Reject("oov_in_quote_or_answer")
@@ -1322,7 +1374,7 @@ def _wizard_one(idx, rec, st: Stats, ck: Checks, spec: Spec):
     if not user or not asst:
         raise Reject("empty_message")
     stmts = check_arithmetic(asst)                               # statistics over ALL parseable rows, before the length filter
-    has_py = bool(PY_FENCE_RE.search(asst))
+    has_py = has_python_block(asst)
     prompt = f"問題: {user}\n{INSTR}"
     target = f"\n答え: {asst}"
     fits = len(prompt) + len(target) <= ck.max_chars
@@ -1521,10 +1573,20 @@ def _write_new(path: Path, text: str) -> str:
         if path.read_bytes() == data:
             return "identical_existing"
         alt = SplitWriter._free(path.with_name(path.name + ".new-" + hashlib.sha256(data).hexdigest()[:8]))
-        alt.write_bytes(data)
+        _atomic_write(alt, data)
         return "REFUSED_existing_file_differs:" + alt.name
-    path.write_bytes(data)
+    _atomic_write(path, data)
     return "written"
+
+
+def _atomic_write(path: Path, data: bytes) -> None:
+    """Write to <path>.part-<pid> and rename: the file never exists under its final name half written (a runtime killed in the middle leaves a
+    .part-<pid>, which nothing reads; the pipeline treats manifest.json as the 'finished' marker, so it is written last, see run_dataset)."""
+    part = path.with_name(path.name + f".part-{os.getpid()}")
+    with open(part, "wb") as f:
+        f.write(data)
+        f.flush()
+    os.replace(part, path)
 
 
 def format_dump(rows) -> str:
@@ -1622,12 +1684,13 @@ def run_dataset(key: str, raw_dir, out_dir, ck: Checks, limit=None, sample_dump:
                     stats_state=stats_state(stats))
     d = Path(out_dir) / key
     summary["files"] = info                                       # per-run statuses (written / identical_existing / REFUSED) stay out of the manifest
-    statuses = {"manifest.json": _write_new(d / "manifest.json", json.dumps(manifest, ensure_ascii=False, indent=1))}
+    statuses = {}
     if sample_dump:
         dump_rows = [r for _, _, r in sorted(heap, key=lambda t: (-t[0], t[1]))]
         statuses["sample_dump.txt"] = _write_new(d / "sample_dump.txt", format_dump(dump_rows))
     ex = [{"reason": k, **e} for k, v in stats.reject_examples.items() for e in v]
     statuses["rejects_sample.jsonl"] = _write_new(d / "rejects_sample.jsonl", "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in ex))
+    statuses["manifest.json"] = _write_new(d / "manifest.json", json.dumps(manifest, ensure_ascii=False, indent=1))      # LAST: the marker of 'finished'
     summary["write_status"] = statuses
     refused = any(v["status"].startswith("REFUSED") for v in info.values()) or any(s.startswith("REFUSED") for s in statuses.values())
     summary["refused_overwrite"] = refused
@@ -1699,14 +1762,47 @@ def merge_shards(key: str, shard_roots, out_dir, sample_dump: int = 100, seed: i
                     stats_state=stats_state(stats))
     d = Path(out_dir) / key
     summary["files"] = info
-    statuses = {"manifest.json": _write_new(d / "manifest.json", json.dumps(manifest, ensure_ascii=False, indent=1))}
+    statuses = {}
     if sample_dump:
         statuses["sample_dump.txt"] = _write_new(d / "sample_dump.txt", format_dump([r for _, _, r in sorted(heap, key=lambda t: (-t[0], t[1]))]))
     ex = [{"reason": k, **e} for k, v in stats.reject_examples.items() for e in v]
     statuses["rejects_sample.jsonl"] = _write_new(d / "rejects_sample.jsonl", "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in ex))
+    statuses["manifest.json"] = _write_new(d / "manifest.json", json.dumps(manifest, ensure_ascii=False, indent=1))      # LAST: the marker of 'finished'
     summary["write_status"] = statuses
     summary["refused_overwrite"] = any(v["status"].startswith("REFUSED") for v in info.values()) or any(x.startswith("REFUSED") for x in statuses.values())
     return summary
+
+
+@contextlib.contextmanager
+def forward_termination_to_sandbox(ext, posix: bool = os.name == "posix"):
+    """While a converter runs, SIGTERM / SIGINT (the pipeline's _terminate, Colab's 'Interrupt execution') and a normal exit also kill the
+    sandbox child that is running: each child is a session leader, so the signal sent to the converter's process group does not reach it.
+    POSIX only (nothing happens elsewhere); the previous handlers are restored on exit.  Returns True when the handlers are installed."""
+    if not posix or ext is None or not callable(getattr(ext, "kill_live_sandbox_children", None)):
+        yield False
+        return
+    old = {}
+
+    def handler(signum, _frame):
+        ext.kill_live_sandbox_children()
+        raise SystemExit(128 + int(signum))
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            old[sig] = signal.signal(sig, handler)
+        except (ValueError, OSError):                            # not the main thread / not allowed: the atexit net below still applies
+            pass
+    atexit.register(ext.kill_live_sandbox_children)
+    try:
+        yield True
+    finally:
+        atexit.unregister(ext.kill_live_sandbox_children)
+        ext.kill_live_sandbox_children()
+        for sig, h in old.items():
+            try:
+                signal.signal(sig, h)
+            except (ValueError, OSError):
+                pass
 
 
 def main(argv=None) -> int:
@@ -1746,11 +1842,15 @@ def main(argv=None) -> int:
     for k in keys:
         raw = subdir_for(a.raw_dir, k) if a.dataset == "all" else Path(a.raw_dir)
         try:
-            s = run_dataset(k, raw, a.out_dir, ck, limit=a.limit, sample_dump=a.sample_dump, start=a.start)
+            with forward_termination_to_sandbox(ck._ext if ck.run_code else None):
+                s = run_dataset(k, raw, a.out_dir, ck, limit=a.limit, sample_dump=a.sample_dump, start=a.start)
         except FileNotFoundError as e:
             print(f"[{k}] {e}", file=sys.stderr)
             code = max(code, 2)
             continue
+        except SandboxUnavailable as e:                          # the sandbox broke in the middle of the run: no manifest is written for this dataset
+            print(f"[{k}] SANDBOX FAILED DURING THE RUN: {e}", file=sys.stderr)
+            return 4
         allsum[k] = {x: s[x] for x in ("n_in", "n_out", "keep_rate", "reject_total", "balanced", "families", "splits", "refused_overwrite")}
         print(json.dumps({k: allsum[k]}, ensure_ascii=False))
         if s["refused_overwrite"]:

@@ -12,16 +12,18 @@ so a notebook cell that calls it stops the run; the cells additionally `assert R
 Writing rules (the owner's): only NEW folders on Drive; a file that exists with a different sha256 is never overwritten (the step FAILs
 and says to set RUN_SUFFIX so that a fresh output folder is used); nothing is ever deleted on Drive.  Everything heavy happens on the
 Colab local disk (cfg.work, default /content/v49_work), which is scratch.  Every write to Drive goes to `<name>.part` first and is renamed
-into place only when the target still does not exist; cfg.drive_sync (the notebook: flush_and_unmount + mount) runs after steps 5, 7b, 8
-and 9, and step 9 re-reads every file it lists from the fresh mount.
+into place only when the target still does not exist; cfg.drive_sync (the notebook: flush_and_unmount + mount) runs after every acquired
+dataset (before its provenance.json is written) and after steps 5, 7b, 8, 8b and 9, and steps 5 and 9 re-read what they list from the fresh mount.
 
 Flow (the numbers are the notebook's cells):
-  4 dry run -> 5 acquire -> 6a local mirror of the train files -> 6b vocabulary + eval index -> 6c raw checks (counts vs the cards,
-  OOV, length, 100-row reading dumps) -> 7-0 sandbox self-test (Drive still mounted: proves the OS barrier) -> 7a converters on the first
-  2,000 records -> 7b converters on everything (in waves; Drive is unmounted while untrusted code runs; coding and tengentoppa run in
-  shards that are published one by one, so a disconnect loses at most one shard) -> 8 filters (exact + MinHash near duplicates,
-  13-gram decontamination, old corpus, near siblings of train inside dev / heldout) -> 8b optional reviews with a time budget ->
-  9 final rows, registry.json, REPORT_JA.md.
+  3c Drive remount probe -> 3d sandbox self-test (only when 'coding' is converted; Drive still mounted: proves the OS barrier) -> 4 dry run ->
+  5 acquire -> 6a local mirror of the train files -> 6b vocabulary + eval index -> 6c raw checks (counts vs the cards, OOV, length, 100-row
+  reading dumps) -> 7a converters on the first 2,000 records -> 7b converters on everything (in waves; Drive is unmounted while untrusted code
+  runs; coding and tengentoppa run in shards that are published one by one, so a disconnect loses at most one shard) -> 8 filters (exact +
+  MinHash near duplicates, 13-gram decontamination, old corpus, near siblings of train inside dev / heldout) -> 8b optional reviews with a
+  time budget -> 9 final rows, registry.json, REPORT_JA.md.
+Re-running a cell after a disconnect never conflicts with what the first run saved: states that hold volatile numbers (7a) are returned as they
+are, files that are rendered (registry.json, REPORT_JA.md) are rendered from the JSON round trip so that they are byte-identical in a new process.
 """
 from __future__ import annotations
 
@@ -59,6 +61,8 @@ ROWS_NAME = "external_data_v49_rows"
 STAGE_A_NAME = "external_data_v49_stageA"            # unfiltered converted rows; NOT tied to RUN_SUFFIX (a filter-only re-run must not reconvert)
 HOLD_DIRNAME = "_HOLD_do_not_mix"                    # rows of datasets whose adoption is on hold live here, never next to the candidates
 HOLD_KEYS = ("toolace", "wizard")
+CODE_EXEC_KEYS = ("coding",)                        # the only dataset whose converter RUNS code (python rows); the others never need the sandbox
+LEN_BUCKET = 64                                      # registry.json length histogram: 64-character buckets (the training plan's bucket width)
 GROUP_INDEPENDENT = ("jaquad", "hotpot")             # datasets whose dev / heldout are split by a natural group
 USER_EVAL_EXTRA = "v49_eval_extra"
 SPLITS = ("train", "dev", "heldout")
@@ -87,6 +91,15 @@ BASE_NOT_COVERED = [
     "Upstream model terms (Nemotron-4, Phi-3, Mixtral, calm3, Qwen2.5, WizardLM-2) were NOT checked: only the dataset licences were.",
     "Near-duplicate removal is a MinHash estimate: it reliably removes pairs of Jaccard >= 0.85, usually those near 0.8, and misses looser "
     "paraphrases (see the cut and the detection table in the report).",
+    "Eval sentences shorter than 13 normalised characters (3 of the 589 T5 sentences) cannot form a 13-gram: a row that merely CONTAINS one of them "
+    "is not detected.  Eval texts of 40+ normalised characters are also matched as whole items (templated items that differ only in digits).",
+    "Eval texts of 13 to 39 normalised characters are matched only through their 13-grams: when ALL of such a text's 13-grams are template phrases "
+    "(shared by 20+ eval items) a verbatim copy of it is NOT flagged (an independent check measured this for the v33 prompt template, 50 items, and "
+    "one v42 question).  The thresholds (13 / 40 / 20) were left as they are because false positives cannot be measured without the real rows.  "
+    "The converse also holds: a template phrase that is itself an eval text of 40+ characters flags EVERY row that contains it, so read "
+    "rows_flagged_whole_item per dataset in the Colab report (section 2, and registry.json decontam.rows_flagged_whole_item_by_dataset) before trusting the drop counts.",
+    "Rows that import numpy / pandas / sympy are dropped by the sandbox (its allowed imports are the nine modules of the model's executor): a yield "
+    "loss, not a safety issue.",
 ]
 
 
@@ -206,8 +219,24 @@ class Cfg:
         return Path(self.root) / self.ext_dirname
 
     @property
+    def only_tag(self) -> str:
+        """'' for a full run, '_only_<keys>' for a trial run (ONLY): a trial run has its OWN output folder, so that it never collides with the full
+        run that follows it with the same RUN_SUFFIX.  The converted rows and the final rows are shared (they are per dataset)."""
+        return "" if len(self.keys) == len(KEYS) else "_only_" + "-".join(self.keys)
+
+    @property
+    def needs_sandbox(self) -> bool:
+        """True when this run converts a dataset that executes code ('coding') and RUN_SANDBOX is on: only then the sandbox self-test is needed."""
+        return self.run_sandbox and any(k in CODE_EXEC_KEYS for k in self.keys)
+
+    @property
     def out(self) -> Path:
-        return Path(self.root) / (OUT_NAME + self.suffix)
+        return Path(self.root) / (OUT_NAME + self.suffix + self.only_tag)
+
+    @property
+    def stage_a_root(self) -> Path:
+        """Folder of the unfiltered converted rows.  RAW_SUFFIX gives a fresh one (other raw bytes: the old converted rows are never looked up)."""
+        return Path(self.root) / (STAGE_A_NAME + self.raw_suffix)
 
     @property
     def rows(self) -> Path:
@@ -251,8 +280,17 @@ class Cfg:
                 vocab = hashlib.sha256("".join(sorted(json.loads(self.vocab_file.read_text(encoding="utf-8"))["vocab"])).encode("utf-8")).hexdigest()
             except (ValueError, KeyError, OSError):
                 vocab = "unreadable"
+        params = {"max_chars": self.max_chars, "python_allow_unverified": self.python_allow_unverified, "run_sandbox": self.run_sandbox,
+                  "python": "%d.%d" % sys.version_info[:2]}              # what changes a converted row without being in a file: the cap, the python policy
         return {"convert.py": hashlib.sha256(Path(convert.__file__).read_bytes().replace(b"\r\n", b"\n")).hexdigest(),
-                "checks.sandbox_and_normaliser": sb.hexdigest(), "vocabulary_chars": vocab}
+                "checks.sandbox_and_normaliser": sb.hexdigest(), "vocabulary_chars": vocab, "parameters": sha256_text(json.dumps(params, sort_keys=True))}
+
+    def raw_binding(self, key: str) -> dict:
+        """What the unfiltered rows of `key` are made from: the pinned commit and the sha256 of every train file (from provenance.json).  Stage A and
+        the shards record it and refuse to be reused for other raw data (the converter tag alone does not know the raw bytes)."""
+        prov = acquire._provenance_of(self.root, _ds(key), self.ext_dirname)
+        return {"commit_sha": prov["commit_sha"],
+                "train_sha256": sorted([f["dest_rel"], f["sha256"]] for f in prov["files"] if f["role"] == "train" and f.get("may_train"))}
 
     def converter_tag(self) -> str:
         h = self.converter_hashes()
@@ -269,10 +307,10 @@ class Cfg:
         return Path(self.work) / ("converted_" + self.converter_tag()) / "_shards" / f"{key}_{self.shard_name(a, b)}"
 
     def stage_a_drive(self, key: str) -> Path:
-        return Path(self.root) / STAGE_A_NAME / self.converter_tag() / key
+        return self.stage_a_root / self.converter_tag() / key
 
     def shard_drive(self, key: str, a: int, b: Optional[int]) -> Path:
-        return Path(self.root) / STAGE_A_NAME / self.converter_tag() / f"{key}__shards" / self.shard_name(a, b)
+        return self.stage_a_root / self.converter_tag() / f"{key}__shards" / self.shard_name(a, b)
 
     def mirror_dir(self, key: str) -> Path:
         return self.mirror / acquire.folder_of(_ds(key)["repo"])
@@ -340,17 +378,18 @@ def write_once(path, text: str) -> str:
         raise StepFailed(f"{e}.  Nothing was overwritten.  To produce new output, set RUN_SUFFIX (e.g. '_2') in the notebook and run again.") from e
 
 
-def publish_file(src, dst) -> str:
+def publish_file(src, dst, hint: Optional[str] = None) -> str:
     """Copy a local file to Drive: never over an existing file (re-checked right before the rename); verified by sha256; a partial copy of an
-    earlier run is continued when its bytes are exactly the start of the source (otherwise moved aside, never deleted)."""
+    earlier run is continued when its bytes are exactly the start of the source (otherwise moved aside, never deleted).  `hint` replaces the
+    default advice of a refusal (set RUN_SUFFIX), which is wrong for folders that do not depend on RUN_SUFFIX (stage A)."""
     src, dst = Path(src), Path(dst)
     dst.parent.mkdir(parents=True, exist_ok=True)
     want = checks.sha256_file(str(src))
     if os.path.lexists(dst):
         if checks.sha256_file(str(dst)) == want:
             return "identical"
-        raise StepFailed(f"refusing to overwrite {dst}: it exists with a different sha256.  To produce new output, set RUN_SUFFIX (e.g. '_2') "
-                         f"and run again.")
+        raise StepFailed(f"refusing to overwrite {dst}: it exists with a different sha256.  "
+                         + (hint or "To produce new output, set RUN_SUFFIX (e.g. '_2') and run again."))
     part = Path(str(dst) + ".part")
     n, sha, _resumed = acquire._copy_resume(str(src), str(part))
     require(sha == want and n == src.stat().st_size, f"copy of {src.name} to Drive does not match the source (kept as {part})")
@@ -384,8 +423,8 @@ def untrusted_code_window(cfg: Cfg):
 
 
 def save_state(cfg: Cfg, name: str, obj) -> None:
-    cfg.state[name] = obj
     write_once(cfg.out / "state" / f"{name}.json", jdump(obj))
+    cfg.state[name] = obj                                    # only after the write was accepted: a refused write must not leave the refused numbers in memory
 
 
 def load_state(cfg: Cfg, name: str):
@@ -413,11 +452,49 @@ def step_modules(cfg: Cfg):
     return "modules import; table valid; " + ", ".join(f"{k} {v[:8]}" for k, v in sorted(h.items())), {"code_sha256": h}
 
 
+# ====================================================================================================== 3c: Drive remount probe
+def expected_remounts(cfg: Cfg) -> int:
+    """How many times a full run unmounts Drive and mounts it again, estimated from the card counts: one flush per acquired dataset (before its
+    provenance.json) and one after step 5, one window around 7a, one window per wave of converters in 7b, the flushes after 7b / 8 / 8b / 9, and
+    the final unmount of cell 10.  If Google asks for authorisation at every mount, this is how often the owner has to click."""
+    jobs = 0
+    for k in cfg.keys:
+        total = EXPECTED_COUNTS[k]
+        jobs += len(shard_ranges(total, cfg.shard_records)) if (k in cfg.shard_keys and total > cfg.shard_records) else 1
+    waves = math.ceil(jobs / max(1, cfg.parallel))
+    syncs = (len(cfg.keys) + 5) if cfg.drive_sync is not None else 0
+    windows = (1 + waves) if cfg.drive_detach is not None else 0
+    return syncs + windows + 1
+
+
+@step("3c drive remount probe")
+def step_drive_probe(cfg: Cfg):
+    """Unmounts and mounts Drive a few times right at the start, with nothing running, so that the owner learns NOW whether Google asks for the
+    authorisation again at every mount (the run needs expected_remounts() of them, spread over hours).  Writes nothing."""
+    if cfg.drive_sync is None and cfg.drive_detach is None:
+        return "the Drive hooks are off (FLUSH_DRIVE_AFTER_STEPS and UNMOUNT_DRIVE_DURING_CODE_RUNS are False): nothing to probe", {"remounts_probed": 0}
+    n = expected_remounts(cfg)
+    cfg.log(f"  the full run unmounts Drive and mounts it again about {n} times (flush after every dataset, one window per wave of converters, flush after the "
+            f"writing steps).  Watch the screen during this probe: if a Google authorisation window appears at EVERY mount, it will appear about {n} times "
+            f"during the run, so stay near the screen during cells 5 and 7b (or set both switches in cell 3a to False and accept the trade-off written there).")
+    done = 0
+    if cfg.drive_sync is not None:
+        cfg.drive_sync()
+        cfg.drive_sync()
+        done += 2
+    if cfg.drive_detach is not None:
+        cfg.drive_detach()
+        cfg.drive_attach()
+        done += 1
+    cfg.log(f"  Drive was unmounted and mounted {done} times without a problem.  If you were asked to authorise more than once, expect that {n} times in this run.")
+    return f"Drive unmounted and mounted {done} times; the full run does it about {n} times", {"remounts_probed": done, "expected_remounts": n}
+
+
 # ====================================================================================================== 4: dry run
 def stale_files(cfg: Cfg) -> List[Path]:
     """Leftover *.stale-N copies of earlier dead runs (moved aside by the never-delete rule); the owner can remove them by hand."""
     out: List[Path] = []
-    for d in (cfg.ext, cfg.out, cfg.rows, Path(cfg.root) / STAGE_A_NAME):
+    for d in (cfg.ext, cfg.out, cfg.rows, cfg.stage_a_root):
         if d.is_dir():
             out += [p for p in d.rglob("*") if p.is_file() and ".stale-" in p.name]
     return sorted(out)
@@ -474,8 +551,10 @@ def verify_acquired(cfg: Cfg) -> dict:
         for f in prov["files"]:
             p = cfg.ext / f["dest_rel"]
             require(p.is_file() and p.stat().st_size == f["size"], f"{f['dest_rel']}: missing or wrong size on Drive")
+            if f["role"] != "train":                      # dev / validation (decontamination needs them intact) and the card: small, hashed after the remount; 6a hashes the train files
+                require(checks.sha256_file(str(p)) == f["sha256"], f"{f['dest_rel']}: sha256 differs from the verified file after the Drive remount (a lost or mangled write)")
             files.append({"dest_rel": f["dest_rel"], "role": f["role"], "size": f["size"], "sha256": f["sha256"]})
-        require(acquire.train_files(cfg.root, ds["key"], ext_dirname=cfg.ext_dirname), f"{ds['repo']}: no train files")
+        require(acquire.train_files(cfg.root, ds["key"], ext_dirname=cfg.ext_dirname, include_held=True), f"{ds['repo']}: no train files")   # held datasets are converted for the checks
         out[key] = {"repo": ds["repo"], "commit_sha": prov["commit_sha"], "retrieved_utc": prov["retrieved_utc"],
                     "license_name": prov["license"]["name"], "license_ids": prov["license"]["ids_from_card"],
                     "license_url": prov["license"]["url"], "share_alike": prov["license"]["share_alike"],
@@ -490,7 +569,9 @@ def verify_acquired(cfg: Cfg) -> dict:
 
 @step("5 acquire", flush_on_failure=True)
 def step_acquire(cfg: Cfg):
-    res = acquire.acquire(cfg.root, cfg.acq_only(), log=cfg.log, allow_local=cfg.allow_local, stage_dir=cfg.stage_dir, ext_dirname=cfg.ext_dirname)
+    hook = (lambda repo: drive_sync(cfg, f"step 5, the files of {repo} are in place; provenance.json comes next")) if cfg.drive_sync is not None else None
+    res = acquire.acquire(cfg.root, cfg.acq_only(), log=cfg.log, allow_local=cfg.allow_local, stage_dir=cfg.stage_dir, ext_dirname=cfg.ext_dirname,
+                          after_files=hook)
     drive_sync(cfg, "step 5")
     info = verify_acquired(cfg)
     save_state(cfg, "step5_acquire", info)
@@ -521,7 +602,7 @@ def step_mirror(cfg: Cfg):
         for small in ("provenance.json", "README.md"):
             if (cfg.ext / folder / small).is_file():
                 shutil.copyfile(cfg.ext / folder / small, cfg.mirror / folder / small)
-        for src in acquire.train_files(cfg.root, ds["key"], ext_dirname=cfg.ext_dirname):
+        for src in acquire.train_files(cfg.root, ds["key"], ext_dirname=cfg.ext_dirname, include_held=True):     # held datasets are mirrored too (converted for the checks)
             rel = src.relative_to(cfg.ext).as_posix()
             e = exp[rel]
             dst = cfg.mirror / rel
@@ -617,6 +698,15 @@ def tier_table(per_source: dict) -> List[dict]:
     return out
 
 
+def eval_source_problems(per_source: dict, required) -> Dict[str, List[str]]:
+    """Required eval sources that cannot decontaminate anything: no item at all, or no text long enough to hold one n-gram (a manifest of ids /
+    metadata only).  A source that repeats the content of another one is fine: 'shingles' counts what a source CONTAINS, not what was new."""
+    def get(label, field):
+        return (per_source.get(label) or {}).get(field, 0)
+    return {"no_items": sorted(l for l in required if get(l, "items") == 0),
+            "no_shingles": sorted(l for l in required if get(l, "indexable_texts") == 0 or get(l, "shingles") == 0)}
+
+
 @step("6b vocabulary and eval files")
 def step_vocab_eval(cfg: Cfg):
     notes: List[str] = []
@@ -658,11 +748,10 @@ def step_vocab_eval(cfg: Cfg):
     index = checks.build_eval_index(sources, ngram=cfg.ngram, progress=lambda label, n: cfg.log(f"  {label}: {n:,} shingles so far"))
     st = index.stats()
     required = {s.label for s in ef.sources if s.required}
-    empty = [lab for lab in required if st["per_source"].get(lab, {}).get("items", 0) == 0]
-    require(not empty, f"eval sources without any item: {empty}")
-    no_shingles = [lab for lab in sorted(required) if st["per_source"].get(lab, {}).get("shingles", 0) == 0]
-    require(not no_shingles, f"eval sources that contributed no {cfg.ngram}-gram at all (a manifest of ids / metadata only would index nothing and "
-                             f"decontaminate nothing): {no_shingles}")
+    prob = eval_source_problems(st["per_source"], required)
+    require(not prob["no_items"], f"eval sources without any item: {prob['no_items']}")
+    require(not prob["no_shingles"], f"eval sources that contributed no {cfg.ngram}-gram at all (a manifest of ids / metadata only would index nothing and "
+                                     f"decontaminate nothing): {prob['no_shingles']}")
     require(st["distinct_shingles"] > 0, "the eval index is empty")
     for key in cfg.keys:
         want = {"jaquad": "jaquad_dev", "hotpot": "hotpot_validation"}.get(key)
@@ -679,7 +768,8 @@ def step_vocab_eval(cfg: Cfg):
                      "missing_optional": ef.missing_optional, "notes": ef.notes, "tiers": tiers,
                      "index": {"ngram": st["ngram"], "distinct_shingles": st["distinct_shingles"], "per_source": st["per_source"],
                                "shingles_in_several_eval_items": st["shingles_in_several_eval_items"],
-                               "max_eval_items_per_shingle": st["max_eval_items_per_shingle"]}},
+                               "max_eval_items_per_shingle": st["max_eval_items_per_shingle"],
+                               "whole_item_texts": st["whole_item_texts"], "whole_item_min_chars": st["whole_item_min_chars"]}},
             "notes": notes}
     save_state(cfg, "step6b_vocab_eval", info)
     return (f"vocabulary {len(V.chars)} chars from {V.source}; {len(ef.sources)} eval sources + {len(sources) - len(ef.sources)} dev/validation/extra sources, "
@@ -718,6 +808,16 @@ def mismatch_banner(cfg: Cfg, key: str, n: int, exp: int) -> None:
 def step_raw_checks(cfg: Cfg):
     V = _CACHE.get("vocab")
     require(V is not None, "run step 6b first (vocabulary)")
+    # a re-run after a disconnect does not read 1.9 GB again when the saved result was made from the same raw files, vocabulary and expectations
+    binding = {"raw": {k: cfg.raw_binding(k) for k in cfg.keys}, "vocab_sha256_chars": V.sha256_chars, "expected_counts": cfg.expected_counts}
+    done = load_state(cfg, "step6c_raw_checks")
+    if done is not None and done.get("binding") == binding:
+        for m in done["mismatches"]:
+            mismatch_banner(cfg, m["dataset"], m["counted"], m["expected"])
+        if done["mismatches"] and cfg.stop_on_count_mismatch:
+            raise StepFailed("record counts differ from the cards for: " + ", ".join(m["dataset"] for m in done["mismatches"]) + " (STOP_ON_COUNT_MISMATCH is on)")
+        return (f"already done (state found for the same raw files, vocabulary and expectations; {len(done['mismatches'])} count mismatch(es))"), \
+            {"datasets": done["datasets"], "mismatches": done["mismatches"]}
     out, mism = {}, []
     for key in cfg.keys:
         tf = RAW_TEXT[key]
@@ -760,7 +860,7 @@ def step_raw_checks(cfg: Cfg):
                 f"rows over 2,048 chars {ln['share_over_2048']:.2%}  ({time.time() - t0:.0f} s)")
     if mism and cfg.stop_on_count_mismatch:
         raise StepFailed("record counts differ from the cards for: " + ", ".join(m["dataset"] for m in mism) + " (STOP_ON_COUNT_MISMATCH is on)")
-    save_state(cfg, "step6c_raw_checks", {"datasets": out, "mismatches": mism})
+    save_state(cfg, "step6c_raw_checks", {"datasets": out, "mismatches": mism, "binding": binding})
     tail = "all counts match the cards" if not mism else f"MISMATCH in {len(mism)}: " + ", ".join(f"{m['dataset']} {m['counted']:,} vs {m['expected']:,}" for m in mism)
     return f"{len(out)} datasets read end to end (bad lines are counted, not fatal); {tail}", {"datasets": out, "mismatches": mism}
 
@@ -773,26 +873,32 @@ def n_records(raw: Optional[dict], key: str) -> Optional[int]:
     return d["n_raw"] + d.get("bad_lines", 0)
 
 
-# ====================================================================================================== 7-0: the sandbox must prove itself on THIS machine
-@step("7-0 sandbox self-test")
+# ====================================================================================================== 3d: the sandbox must prove itself on THIS machine
+@step("3d sandbox self-test")
 def step_sandbox_selftest(cfg: Cfg):
-    """Runs before any dataset code does, with Drive still mounted: the child must run as an unprivileged user, must not be able to list or
-    write the mounted Drive, must refuse the escape payloads of the review, import every allowed module under the memory limit (RLIMIT_AS, -S),
-    stop an endless loop and cap its output.  No weaker fallback exists: if this fails, nothing is converted."""
+    """Runs before any dataset code does (cell 3d, right after the modules are loaded: a Linux failure shows up before 30-80 minutes of
+    downloads), with Drive still mounted: the child must run as an unprivileged user, must not be able to list or write the mounted Drive, must
+    refuse the escape payloads of the review, import every allowed module under the memory limit (RLIMIT_AS, -S), stop an endless loop and cap
+    its output.  No weaker fallback exists: if this fails, no code is run.  Only 'coding' executes code: a run without it skips the test."""
+    if not cfg.needs_sandbox:
+        return ("not needed: " + ("RUN_SANDBOX is off" if not cfg.run_sandbox else "none of the selected datasets executes code (only 'coding' does)")), {"selftest": None}
     r = checks.sandbox_selftest(require_os_containment=cfg.containment_required, drive_unmounted=cfg.drive_detach is not None)
     failed = [c for c in r["checks"] if not c["ok"]]
+    n_info = sum(1 for c in r["checks"] if c.get("info"))
+    n_passed = sum(1 for c in r["checks"] if c["ok"] and not c.get("info"))
     for c in r["checks"]:
-        cfg.log(f"  {'ok  ' if c['ok'] else 'FAIL'} {c['name']}" + ("" if c["ok"] else f": {c['detail']}"))
-    require(r["ok"], f"the sandbox self-test failed ({len(failed)} of {len(r['checks'])} checks): " + "; ".join(f"{c['name']}: {c['detail']}" for c in failed))
+        cfg.log(f"  {'info' if c.get('info') else ('ok  ' if c['ok'] else 'FAIL')} {c['name']}" + ("" if c["ok"] and not c.get("info") else f": {c['detail']}"))
+    require(r["ok"], f"the sandbox self-test failed ({len(failed)} of {n_passed + len(failed)} checks): " + "; ".join(f"{c['name']}: {c['detail']}" for c in failed))
     require(r["backend"] == checks.SANDBOX_BACKEND, "unexpected sandbox backend")
     if cfg.containment_required:
         require(r["run_as"] not in (None, "root"), "the sandbox child does not run as an unprivileged user")
-    rec = {"backend": r["backend"], "run_as": r["run_as"], "n_checks": len(r["checks"]), "containment_required": cfg.containment_required,
-           "drive_unmounted_during_code_runs": cfg.drive_detach is not None, "checks": [{"name": c["name"], "ok": c["ok"]} for c in r["checks"]]}
+    rec = {"backend": r["backend"], "run_as": r["run_as"], "n_checks": n_passed, "n_info": n_info, "containment_required": cfg.containment_required,
+           "drive_unmounted_during_code_runs": cfg.drive_detach is not None,
+           "checks": [{"name": c["name"], "ok": c["ok"], **({"info": True} if c.get("info") else {})} for c in r["checks"]]}
     _CACHE["sandbox"] = rec                                    # valid for THIS process only: a new runtime proves itself again
     text = jdump(rec)
     write_once(cfg.out / "state" / f"sandbox_selftest_{sha256_text(text)[:8]}.json", text)          # a record, named by its content: never a conflict
-    return (f"{len(r['checks'])} checks passed; backend {r['backend']}; child runs as {r['run_as'] or 'the notebook user (no OS barrier: local test only)'}"), \
+    return (f"{n_passed} checks passed" + (f" (+ {n_info} information line(s) that prove nothing)" if n_info else "") + f"; backend {r['backend']}; child runs as {r['run_as'] or 'the notebook user (no OS barrier: local test only)'}"), \
         {"selftest": r}
 
 
@@ -803,9 +909,9 @@ def ensure_sandbox_ok(cfg: Cfg) -> dict:
     if st is None or (cfg.containment_required and st.get("run_as") in (None, "root")):
         step_sandbox_selftest(cfg)
         st = _CACHE["sandbox"]
-    require(st["backend"] == checks.SANDBOX_BACKEND, "the sandbox self-test belongs to another backend: run step 7-0 again")
+    require(st["backend"] == checks.SANDBOX_BACKEND, "the sandbox self-test belongs to another backend: run step 3d again")
     if cfg.containment_required:
-        require(st.get("run_as") not in (None, "root"), "the sandbox self-test shows no OS barrier: run step 7-0 again on the Colab runtime")
+        require(st.get("run_as") not in (None, "root"), "the sandbox self-test shows no OS barrier: run step 3d again on the Colab runtime")
     return st
 
 
@@ -846,7 +952,10 @@ def _pid_alive(pid: int) -> bool:
 
 
 def _terminate(job: dict, grace_s: float = 10.0) -> None:
-    """Stop a converter and the sandbox children it started (they live in the converter's session / their own sessions)."""
+    """Stop a converter and the sandbox children it started.  SIGTERM goes to the converter's process group; the sandbox children are session leaders
+    (checks._spawn, start_new_session) and are NOT in that group, so the converter forwards the signal itself (convert.forward_termination_to_sandbox ->
+    checks.kill_live_sandbox_children).  After the grace period the converter is SIGKILLed, which cannot forward anything: a child that is still
+    running then ends at its own RLIMIT_CPU (timeout + 1 s of CPU) - bounded, but not instant (POSIX code: not run on the Windows PC)."""
     p = job["proc"]
     pid = getattr(p, "pid", None)
     try:
@@ -879,7 +988,7 @@ def _converter_cmd(cfg: Cfg, job: dict, limit: Optional[int]) -> List[str]:
     stop = job["stop"] if job["stop"] is not None else limit
     if stop:
         cmd += ["--limit", str(stop)]
-    if not cfg.run_sandbox:
+    if not cfg.run_sandbox or key not in CODE_EXEC_KEYS:                 # only 'coding' runs code: the other converters never start the sandbox
         cmd += ["--no-sandbox"]
     elif cfg.containment_required:
         cmd += ["--require-os-containment"]
@@ -1050,8 +1159,23 @@ def _convert_ck(cfg: Cfg):
     return convert.Checks(vocab_path=str(cfg.vocab_file), max_chars=cfg.max_chars, run_code=False, use_external=False)
 
 
+SANDBOX_INFRA_REJECT_PREFIXES = ("sandbox_failed:crash", "sandbox_failed:spawn", "sandbox_failed:checks_error")
+
+
+def sandbox_infrastructure_rejects(man: dict) -> Dict[str, int]:
+    """Reject reasons of a manifest that say the SANDBOX failed (it could not start a child, the child ended without a result, the checks module
+    raised) as opposed to the code under test being wrong / slow / refused.  A balanced manifest hides them: every such row is counted as a reject."""
+    return {k: v for k, v in (man.get("rejects") or {}).items() if str(k).startswith(SANDBOX_INFRA_REJECT_PREFIXES)}
+
+
 def check_sandbox_backend(key: str, man: dict, cfg: Cfg) -> None:
-    """A dataset that executes code must have been converted with the executor-profile sandbox, as an unprivileged user on Colab."""
+    """A dataset that executes code must have been converted with the executor-profile sandbox, as an unprivileged user on Colab, and no row may have
+    been rejected because the sandbox itself failed (second net behind convert.SandboxUnavailable, which stops the converter at the first failure)."""
+    infra = sandbox_infrastructure_rejects(man)
+    require(not infra, f"{key}: {sum(infra.values()):,} row(s) were rejected because the SANDBOX failed, not because of their code (" +
+            "; ".join(f"{k} x {v:,}" for k, v in sorted(infra.items(), key=lambda kv: -kv[1])[:5]) + f"): the python rows that should have been verified are missing "
+            f"from the counts although the bookkeeping is balanced.  Fix the machine (free space in /tmp, the 'nobody' user, memory) and convert this dataset again "
+            f"(move {cfg.conv_dir(key)} and its Drive copy aside first, nothing is overwritten)")
     if key != "coding" or not cfg.run_sandbox:
         return
     b = man.get("backends") or {}
@@ -1067,9 +1191,18 @@ def _dir_bytes(d: Path) -> int:
 @step("7a convert smoke")
 def step_convert_smoke(cfg: Cfg):
     require(cfg.vocab_file.is_file(), "run step 6b first (vocabulary file)")
-    if cfg.run_sandbox:
-        ensure_sandbox_ok(cfg)
+    done = load_state(cfg, "step7a_smoke")
+    if done is not None:
+        # A re-run (new runtime, 'Run all' again) must not measure again: the saved numbers are wall-clock estimates, a second measurement differs
+        # slightly, and the write-once rule would refuse it.  The converters themselves are re-checked by 7b.
+        return (f"already done (state found; the estimates of that run are used: about {(done.get('est_drive_bytes') or 0) / 2**30:.1f} GiB of Drive "
+                f"space for the rows)"), {"datasets": {}, "estimate_minutes": done.get("estimate_minutes"), "est_converted_bytes": done.get("est_converted_bytes"),
+                                         "est_drive_bytes": done.get("est_drive_bytes"), "resumed": True}
     raw = load_state(cfg, "step6c_raw_checks")
+    require(raw is not None, "run step 6c first (the record counts): without them 7a cannot check how many records each converter read, and the time and "
+                             "space estimates that 7b relies on would be silently wrong")
+    if cfg.needs_sandbox:
+        ensure_sandbox_ok(cfg)
     t0 = time.time()
     jobs = [new_job(k, stop=cfg.smoke_limit, out_root=cfg.conv_dir(k, smoke=True).parent) for k in CONVERT_ORDER if k in cfg.keys]
     rcs = _run_converters(cfg, jobs, smoke=True, limit=cfg.smoke_limit)
@@ -1117,7 +1250,10 @@ def restore_stage_a(cfg: Cfg, key: str) -> bool:
         return False
     meta = json.loads(meta_p.read_text(encoding="utf-8"))
     require(meta.get("converter") == cfg.converter_hashes(),
-            f"{src} was made by different converter code or another vocabulary than this notebook has.  Nothing was overwritten or deleted.")
+            f"{src} was made by different converter code, parameters or another vocabulary than this notebook has.  Nothing was overwritten or deleted.")
+    require(meta.get("raw") == cfg.raw_binding(key),
+            f"{src} was made from other raw data (another commit or other train files than the provenance of {cfg.ext_dirname}/ records).  Nothing was "
+            f"overwritten or deleted.  If the raw data really changed, set RAW_SUFFIX (a fresh raw folder also gets a fresh stage-A folder).")
     man = json.loads((src / "manifest.json").read_text(encoding="utf-8"))
     dst = cfg.conv_dir(key)
     dst.mkdir(parents=True, exist_ok=True)
@@ -1134,12 +1270,17 @@ def restore_stage_a(cfg: Cfg, key: str) -> bool:
     return True
 
 
+def _stage_a_hint(dst: Path) -> str:
+    return (f"Stage A is shared by all output suffixes, so a new suffix does not help: rename the folder {dst} by hand (for example add '_old' to its name; "
+            f"nothing is deleted) and run cell 7b again.  If the raw data changed, set RAW_SUFFIX instead.")
+
+
 def publish_stage_a(cfg: Cfg, key: str, V) -> None:
     src, dst = cfg.conv_dir(key), cfg.stage_a_drive(key)
     for name in STAGE_A_FILES:
-        publish_file(src / name, dst / name)
-    meta = {"schema": "v49_stage_a_meta/2", "converter": cfg.converter_hashes(),                    # the filter code is not part of what stage A depends on
-            "dataset_commit_sha": (read_manifest(src).get("provenance") or {}).get("commit_sha"),
+        publish_file(src / name, dst / name, hint=_stage_a_hint(dst))
+    meta = {"schema": "v49_stage_a_meta/3", "converter": cfg.converter_hashes(),                    # the filter code is not part of what stage A depends on
+            "raw": cfg.raw_binding(key), "dataset_commit_sha": (read_manifest(src).get("provenance") or {}).get("commit_sha"),
             "vocab_sha256_chars": V.sha256_chars, "limit": None}
     write_once(dst / "stageA_meta.json", jdump(meta))
 
@@ -1167,6 +1308,9 @@ def restore_shard(cfg: Cfg, key: str, a: int, b: Optional[int]) -> bool:
     meta = json.loads((src / "shard_meta.json").read_text(encoding="utf-8"))
     require(meta.get("converter") == cfg.converter_hashes() and meta.get("range") == [a, b],
             f"{src} was made by different converter code or for another range.  Nothing was overwritten or deleted.")
+    require(meta.get("raw") == cfg.raw_binding(key),
+            f"{src} was made from other raw data (another commit or other train files than the provenance of {cfg.ext_dirname}/ records).  Nothing was "
+            f"overwritten or deleted.  If the raw data really changed, set RAW_SUFFIX.")
     man = json.loads((src / "manifest.json").read_text(encoding="utf-8"))
     dst = cfg.shard_root(key, a, b) / key
     dst.mkdir(parents=True, exist_ok=True)
@@ -1189,9 +1333,9 @@ def publish_shard(cfg: Cfg, key: str, a: int, b: Optional[int]) -> None:
     require(man.get("balanced") is True, f"{key} shard {a}-{b}: converter bookkeeping is not balanced")
     require((man.get("range") or {}).get("start") == a and (man.get("range") or {}).get("stop") == b, f"{key} shard {a}-{b}: manifest range differs")
     for name in SHARD_FILES:
-        publish_file(src / name, dst / name)
-    write_once(dst / "shard_meta.json", jdump({"schema": "v49_shard_meta/1", "key": key, "range": [a, b], "converter": cfg.converter_hashes(),
-                                               "n_in": man["n_in"], "n_out": man["n_out"]}))
+        publish_file(src / name, dst / name, hint=_stage_a_hint(dst))
+    write_once(dst / "shard_meta.json", jdump({"schema": "v49_shard_meta/2", "key": key, "range": [a, b], "converter": cfg.converter_hashes(),
+                                               "raw": cfg.raw_binding(key), "n_in": man["n_in"], "n_out": man["n_out"]}))
 
 
 def _order_jobs(jobs: List[dict]) -> List[dict]:
@@ -1223,9 +1367,11 @@ def preflight_drive(cfg: Cfg, smoke: Optional[dict]) -> None:
 def step_convert_full(cfg: Cfg):
     V = _CACHE.get("vocab")
     require(V is not None and cfg.vocab_file.is_file(), "run step 6b first (vocabulary)")
-    if cfg.run_sandbox:
-        ensure_sandbox_ok(cfg)
     raw = load_state(cfg, "step6c_raw_checks")
+    require(raw is not None, "run step 6c first (the record counts): without them 7b cannot check that every converter read every record, cannot decide "
+                             "which datasets have to be converted in shards, and would not guard the time of an unsharded conversion")
+    if cfg.needs_sandbox:
+        ensure_sandbox_ok(cfg)
     smoke = load_state(cfg, "step7a_smoke")
     preflight_drive(cfg, smoke)
     jobs, resumed, plans = [], [], {}
@@ -1233,6 +1379,8 @@ def step_convert_full(cfg: Cfg):
         if (cfg.conv_dir(key) / "manifest.json").is_file() or restore_stage_a(cfg, key):          # local rows or the Drive copy of an earlier run
             resumed.append(key)
             continue
+        require(smoke is not None, f"{key} has to be converted, but the state of cell 7a is missing: run cell 7a first (its numbers decide whether Drive has "
+                                   f"room for the rows and whether an unsharded dataset would take too long; without them both guards would be silently off)")
         total = n_records(raw, key)
         if key in cfg.shard_keys and total is not None and total > cfg.shard_records:
             plans[key] = shard_ranges(total, cfg.shard_records)
@@ -1242,9 +1390,9 @@ def step_convert_full(cfg: Cfg):
                 jobs.append(new_job(key, a, b, cfg.shard_root(key, a, b), shard=True))
         else:
             est = ((smoke or {}).get("estimate_minutes") or {}).get(key)
-            require(est is None or est <= cfg.max_unsharded_minutes,
-                    f"{key}: the smoke run estimates ~{est:g} min for an unsharded conversion (limit {cfg.max_unsharded_minutes:g}); a disconnect would lose all of it.  "
-                    f"Put '{key}' into the shard list (Cfg.shard_keys) or raise max_unsharded_minutes.")
+            if est is not None and est > cfg.max_unsharded_minutes:             # (a require() with an f-string would format `est` even when it is None)
+                raise StepFailed(f"{key}: the smoke run estimates ~{est:g} min for an unsharded conversion (limit {cfg.max_unsharded_minutes:g}); a disconnect "
+                                 f"would lose all of it.  Add '{key}' to SHARD_KEYS or raise MAX_UNSHARDED_MINUTES in cell 3a.")
             jobs.append(new_job(key, out_root=cfg.conv_dir(key).parent))
     if resumed:
         cfg.log("  resumed from earlier converted rows: " + ", ".join(resumed))
@@ -1256,7 +1404,8 @@ def step_convert_full(cfg: Cfg):
     def finish(ok_jobs, _res):
         for j in ok_jobs:
             if j["shard"]:
-                _check_manifest(cfg, j["key"], j["out_root"] / j["key"], j["stop"], n_records(raw, j["key"]), start=j["start"], allow_empty=True)
+                sman = _check_manifest(cfg, j["key"], j["out_root"] / j["key"], j["stop"], n_records(raw, j["key"]), start=j["start"], allow_empty=True)
+                check_sandbox_backend(j["key"], sman, cfg)
                 publish_shard(cfg, j["key"], j["start"], j["stop"])
                 cfg.log(f"  shard {j['id']} published to Drive")
             else:
@@ -1427,16 +1576,20 @@ def step_filters(cfg: Cfg):
     comb = Combined(cfg, keys, alive)
     dc = checks.decontaminate(comb.rows(), index, text_fn=full_text, boilerplate_eval_df=cfg.boilerplate_eval_df, min_shared=cfg.min_shared,
                               max_examples=10, progress=cfg.progress)
+    whole_by = dict(collections.Counter(comb.locate(g)[0] for g in dc["whole_item_positions"]))         # before _drop: positions refer to this stream
     per = _drop(alive, reason, comb, dc["flagged_positions"], R_EVAL)
     for k in keys:
         stats[k]["counts"]["after_eval_decontam"] = sum(alive[k])
         stats[k]["examples"]["eval_overlap"] = []
     glob: Dict[str, Any] = {"decontam": {"n_rows": dc["n_rows"], "rows_flagged": dc["rows_flagged"], "rows_boilerplate_only": dc["rows_boilerplate_only"],
+                                         "rows_flagged_whole_item": dc["rows_flagged_whole_item"], "whole_item_min_chars": dc["whole_item_min_chars"],
+                                         "rows_flagged_whole_item_by_dataset": whole_by,
                                          "rows_with_any_shared_shingle": dc["rows_with_any_shared_shingle"], "shared_count_hist": dc["shared_count_hist"],
                                          "boilerplate": dc["boilerplate"], "real_shingles_top": dc["real_shingles_top"], "examples": dc["examples"],
                                          "flagged_by_dataset": per, "ngram": cfg.ngram, "boilerplate_eval_df": cfg.boilerplate_eval_df,
                                          "min_shared": cfg.min_shared, "limits": dc["limits"]}}
-    cfg.log(f"  decontamination: {dc['rows_flagged']:,} of {dc['n_rows']:,} rows share a {cfg.ngram}-gram with an eval text and are dropped "
+    cfg.log(f"  decontamination: {dc['rows_flagged']:,} of {dc['n_rows']:,} rows share a {cfg.ngram}-gram with an eval text (or contain a whole eval item of "
+            f"{dc['whole_item_min_chars']}+ characters: {dc['rows_flagged_whole_item']:,}, by dataset {whole_by}) and are dropped "
             f"({dc['rows_boilerplate_only']:,} rows shared only phrases that {cfg.boilerplate_eval_df}+ eval items share and are kept); by dataset {per}")
     # ---- 4. the old corpus (exact, then MinHash): two streaming passes over the old rows, one index of all new rows
     oc = cfg.old_corpus_path
@@ -1611,14 +1764,30 @@ def adoption_verdict(cfg: Cfg, key: str, final_rows: int, conv: dict, final_veri
 
 
 def _final_stats(rows_iter) -> dict:
+    """One pass over the final rows (all splits): counts, characters and, for the TRAIN rows, the length information the training plan needs:
+    mean of len(prompt + target) + 1 (one EOS), mean masked characters and a 64-character-bucket histogram (key = bucket midpoint)."""
     n, target_chars, masked, fam, ver = 0, 0, 0, collections.Counter(), collections.Counter()
     tool_rows = 0
     en_rows = en_chars = 0
+    by_split = {sp: {"rows": 0, "target_chars": 0, "masked_chars": 0} for sp in SPLITS}
+    tr_rows = tr_len = tr_masked = 0
+    hist: collections.Counter = collections.Counter()
     for r in rows_iter:
         n += 1
         target_chars += len(r["target"])
         m = sum(b - a for a, b in r.get("loss_mask_spans") or [])
         masked += m
+        sp = r.get("split")
+        if sp in by_split:
+            by_split[sp]["rows"] += 1
+            by_split[sp]["target_chars"] += len(r["target"])
+            by_split[sp]["masked_chars"] += m
+            if sp == "train":
+                length = len(r["full_text"]) + 1
+                tr_rows += 1
+                tr_len += length
+                tr_masked += m
+                hist[str(LEN_BUCKET * (length // LEN_BUCKET) + LEN_BUCKET // 2)] += 1
         fam[r["family"]] += 1
         if r.get("verification"):
             ver[r["verification"]] += 1
@@ -1627,7 +1796,15 @@ def _final_stats(rows_iter) -> dict:
             en_rows += 1
             en_chars += len(r["target"]) - m
     return {"rows": n, "target_chars": target_chars, "masked_chars": masked, "supervised_chars": target_chars - masked, "families": dict(fam),
-            "verification": dict(ver), "rows_with_tool_steps": tool_rows, "english_rows": en_rows, "english_supervised_chars": en_chars}
+            "verification": dict(ver), "rows_with_tool_steps": tool_rows, "english_rows": en_rows, "english_supervised_chars": en_chars,
+            "by_split": {sp: dict(v, supervised_chars=v["target_chars"] - v["masked_chars"]) for sp, v in by_split.items()},
+            "train_length": {"rows": tr_rows, "mean_len": (tr_len / tr_rows) if tr_rows else None, "mean_masked": (tr_masked / tr_rows) if tr_rows else None,
+                             "length_hist": dict(sorted(hist.items(), key=lambda kv: int(kv[0])))}}
+
+
+LENGTH_NOTE = ("mean_len = mean of len(prompt + target) + 1 (one EOS) over the final TRAIN rows; mean_masked = mean characters of the tool outputs that are not "
+               "supervised; length_hist = number of train rows per 64-character bucket of len(prompt + target) + 1, key = the bucket midpoint "
+               "(lower edge + 32); supervised_chars_by_split = target characters minus masked characters, per split")
 
 
 _SA_URL = {"CC-BY-SA-3.0": "https://creativecommons.org/licenses/by-sa/3.0/", "CC-BY-SA-4.0": "https://creativecommons.org/licenses/by-sa/4.0/"}
@@ -1746,7 +1923,10 @@ def step_finalize(cfg: Cfg):
         def final_rows(sps=SPLITS):
             for sp in sps:
                 yield from checks.iter_rows(str(d / f"{sp}.jsonl"))
-        s_all, s_train = _final_stats(final_rows()), _final_stats(final_rows(("train",)))
+        s_all = _final_stats(final_rows())
+        tl = s_all["train_length"]
+        sup_by_split = {sp: s_all["by_split"][sp]["supervised_chars"] for sp in SPLITS}
+        s_train = {"supervised_chars": sup_by_split["train"]}
         require(s_all["rows"] == want, f"{k}: re-read {s_all['rows']} rows, expected {want}")
         # every final row is still a valid row
         bad = collections.Counter()
@@ -1758,6 +1938,10 @@ def step_finalize(cfg: Cfg):
         verdict = adoption_verdict(cfg, k, want, man, s_all["verification"])
         hold = k in HOLD_KEYS
         rd = cfg.rows / HOLD_DIRNAME / k if hold else cfg.rows / k
+        if hold:                                      # the marker comes FIRST: a run that dies after the rows must not leave held rows without it
+            write_once(rd / "DO_NOT_TRAIN_UNTIL_APPROVED.txt",
+                       f"{k}: adoption is ON HOLD ({verdict['ja']}).  These rows were written so that the checks can be read; do not concatenate this folder into a "
+                       f"training set before the owner has approved it.  Every row also says adoption = hold.\n")
         for name in files:
             publish_file(d / name, rd / name)
         reading = cfg.out / "reading" / f"final_{k}_100.txt"
@@ -1767,14 +1951,12 @@ def step_finalize(cfg: Cfg):
         write_once(rd / "LICENSE_NOTICE.txt", license_notice(a5, k, apache is not None))
         if apache is not None and any(i.lower().startswith("apache") for i in a5["license_ids"]):
             write_once(rd / "LICENSE-Apache-2.0.txt", apache)
-        if hold:
-            write_once(rd / "DO_NOT_TRAIN_UNTIL_APPROVED.txt",
-                       f"{k}: adoption is ON HOLD ({verdict['ja']}).  These rows were written so that the checks can be read; do not concatenate this folder into a "
-                       f"training set before the owner has approved it.  Every row also says adoption = hold.\n")
         c = st8["datasets"][k]["counts"]
         manifest = {"schema": "v49_rows_manifest/2", "dataset": k, "repo": a5["repo"], "commit_sha": a5["commit_sha"], "license": a5["license_name"],
                     "row_license": a5["row_defaults"]["license"], "row_source": a5["row_defaults"]["source"], "counts": c, "files": files,
                     "supervised_chars": {"train": s_train["supervised_chars"], "all": s_all["supervised_chars"]}, "families": s_all["families"],
+                    "supervised_chars_by_split": sup_by_split, "mean_len": tl["mean_len"], "mean_masked": tl["mean_masked"], "length_hist": tl["length_hist"],
+                    "length_hist_bucket": LEN_BUCKET, "length_note": LENGTH_NOTE,
                     "english": {"rows": s_all["english_rows"], "supervised_chars": s_all["english_supervised_chars"]},
                     "verification": s_all["verification"], "held": hold,
                     "split_unit": man.get("split_unit"), "group_independent_dev_heldout": man.get("group_independent_dev_heldout"),
@@ -1795,6 +1977,8 @@ def step_finalize(cfg: Cfg):
                                                                                       "arith_error_rate", "language", "fit", "verification", "python", "question_types",
                                                                                       "supervised_chars", "english", "split_unit", "group_independent_dev_heldout")},
                      "filters": st8["datasets"][k], "supervised_chars": {"train": s_train["supervised_chars"], "all": s_all["supervised_chars"]},
+                     "supervised_chars_by_split": sup_by_split, "mean_len": tl["mean_len"], "mean_masked": tl["mean_masked"], "length_hist": tl["length_hist"],
+                     "length_hist_bucket": LEN_BUCKET, "length_note": LENGTH_NOTE,
                      "english": {"rows": s_all["english_rows"], "supervised_chars": s_all["english_supervised_chars"]},
                      "final": {"by_split": dict(n_by), "families": s_all["families"], "verification": s_all["verification"], "rows_with_tool_steps": s_all["rows_with_tool_steps"],
                                "files": files}, "adoption": {"at_acquire": a5["adoption_at_acquire"], "verdict": verdict},
@@ -1805,7 +1989,8 @@ def step_finalize(cfg: Cfg):
     missing_optional = info6b["eval"].get("missing_optional") or []
     reg = {"schema": "v49_acquire_registry/2", "pipeline_version": PIPELINE_VERSION, "owner_decision": acquire.OWNER_DECISION, "code_sha256": cfg.code_hashes(),
            "converter_sha256": cfg.converter_hashes(),
-           "paths": {"out": str(cfg.out), "rows": str(cfg.rows), "hold_rows": str(cfg.rows / HOLD_DIRNAME), "external_data": str(cfg.ext), "stage_a": str(Path(cfg.root) / STAGE_A_NAME / cfg.converter_tag())},
+           "paths": {"out": str(cfg.out), "rows": str(cfg.rows), "hold_rows": str(cfg.rows / HOLD_DIRNAME), "external_data": str(cfg.ext), "stage_a": str(cfg.stage_a_root / cfg.converter_tag())},
+           "only": None if not cfg.only_tag else list(cfg.keys), "complete_run": not cfg.only_tag,
            "trainable": [k for k in cfg.keys if k not in HOLD_KEYS], "held": [k for k in cfg.keys if k in HOLD_KEYS],
            "params": {"max_chars": cfg.max_chars, "oov_max_frac": convert.OOV_MAX_FRAC, "near_target_jaccard": cfg.near_threshold, "near_estimate_cut": cfg.near_cut,
                       "minhash_k": checks.MinHasher().k, "minhash_bands": checks.MinHashIndex().bands, "ngram": cfg.ngram,
@@ -1816,8 +2001,10 @@ def step_finalize(cfg: Cfg):
            "sandbox": smoke7, "vocab": info6b["vocab"], "eval": info6b["eval"], "old_corpus": st8["global"]["old_corpus"], "decontam": st8["global"]["decontam"],
            "split_hygiene": st8["global"].get("split_hygiene"), "semantic_review": reviews.get("semantic"), "cross_dataset_duplicates": reviews.get("cross_dataset"),
            "count_mismatches": mism, "not_covered": not_covered(missing_optional), "datasets": reg_ds}
-    write_once(cfg.out / "registry.json", jdump(reg))
-    write_once(cfg.out / "REPORT_JA.md", render_report(reg, cfg))
+    reg_text = jdump(reg)
+    reg = json.loads(reg_text)                        # the report is rendered from the JSON round trip: in a restarted process the saved states come back with
+    write_once(cfg.out / "registry.json", reg_text)   # sorted keys, in this process with insertion order - rendering from the original dict made the same
+    write_once(cfg.out / "REPORT_JA.md", render_report(reg, cfg))        # run produce a different REPORT_JA.md after a restart (and cell 9 was refused)
     now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")
     try:
         import numpy as _np
@@ -1854,7 +2041,10 @@ def render_report(reg: dict, cfg: Cfg) -> str:
     pr = reg["params"]
     L = ["# v49 外部データ 取得・検査レポート（自動生成）", "",
          "このファイルは colab_acquire_check.ipynb が作りました。数字はすべて今回の実行の実測値で、事前に決めた件数はありません。",
-         "採用判定は検査結果からの暫定の提案です。各データセット100行の目視確認が済むまで確定しません。", "",
+         "採用判定は検査結果からの暫定の提案です。各データセット100行の目視確認が済むまで確定しません。", ""]
+    if reg.get("only"):
+        L += [f"**これは試運転（ONLY）の報告です。{', '.join(reg['only'])} だけを処理しており、6つすべての完全な実行ではありません。**", ""]
+    L += [
          "## 1. 結果の一覧", "",
          "| データセット | ライセンス | 元の件数 | 変換後 | 完全重複除去後 | 近似重複除去後 | 評価データ除外後 | 旧コーパス重複除去後 | dev/heldoutの近い兄弟除去後（採用候補の行数） | 採用判定 | 教師あり文字数（train） | 備考 |",
          "|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---|"]
@@ -1884,7 +2074,10 @@ def render_report(reg: dict, cfg: Cfg) -> str:
           + ("" if reg["vocab"].get("sha_matches_owner_pc_copy") else "（注意: PC上の語彙とハッシュが一致しません。ALLOW_VOCAB_MISMATCH で許可された実行です）"),
           f"- 評価データ: {len(reg['eval']['sources'])} 件の評価ファイルに加え、{', '.join(reg['eval']['extra_sources']) or 'なし'} を照合に使用。"
           f"13文字の断片（数字と空白を除いたもの）の種類数 {_n(reg['eval']['index']['distinct_shingles'])}。",
-          f"- 評価データとの一致で除外した行: {_n(dc['rows_flagged'])} 行（評価問題 {dc['boilerplate_eval_df']} 件以上が共有する定型句だけが一致した {_n(dc['rows_boilerplate_only'])} 行は残しました）。"
+          f"- 評価データとの一致で除外した行: {_n(dc['rows_flagged'])} 行（うち、{dc.get('whole_item_min_chars', 40)}文字以上の評価文が丸ごと入っていた行 {_n(dc.get('rows_flagged_whole_item'))} 行: "
+          f"数字だけが違う型どおりの問題は断片がすべて定型句になるので、丸ごとの一致を別に見ています。データセット別の丸ごと一致: {dc.get('rows_flagged_whole_item_by_dataset', '記録なし')}）。"
+          f"定型句そのものが{dc.get('whole_item_min_chars', 40)}文字以上の評価文でもあるときは、それを含む行がすべて除外されるので、この行数を読んでから除外数を信じてください。"
+          f"評価問題 {dc['boilerplate_eval_df']} 件以上が共有する定型句だけが一致した {_n(dc['rows_boilerplate_only'])} 行は残しました。"
           f"データセット別: {dc['flagged_by_dataset']}。一致した断片の数の分布: {dc['shared_count_hist']}（1個だけの一致は、よくある言い回しの偶然の一致のことがあります。例は registry.json の decontam.examples）。"
           f"定型句かどうかは「評価問題側で何件が共有しているか」で決めています（学習行側の数ではありません）。1件の評価問題にしかない文は、何行がそれを写していても除外されます。",
           f"- 旧コーパスとの重複で除外した行: 完全一致 {oc['exact_dropped_by_dataset']}、近い重複（推定Jaccard {oc['estimate_cut']} 以上）{oc['near_dropped_by_dataset']}。"]
@@ -1925,15 +2118,19 @@ def render_report(reg: dict, cfg: Cfg) -> str:
               f"- 変換での主な除外理由: " + (", ".join(f"{r}={v:,}" for r, v in list((cv.get('rejects') or {}).items())[:6]) or "なし"),
               f"- 元データの語彙外文字の割合: {_pct(rw['oov']['oov_frac'])}（1%超の行 {_pct(rw['oov']['share_rows_over_threshold'])}）。2,048文字超の行: {_pct(rw['length']['share_over_2048'])}。",
               f"- 最終行数 {_n(c['final_rows'])}（分割 {d['final']['by_split']}）。ファミリー別: {d['final']['families']}。教師あり文字数 train {_n(d['supervised_chars']['train'])} / 全体 {_n(d['supervised_chars']['all'])}。",
-              f"- 英語の行: 最終 {_n(d['english']['rows'])} 行（教師あり {_n(d['english']['supervised_chars'])} 文字）。長い英語の行は使わず、{convert.EN_ROW_MAX} 文字までの短いものだけを残しています（HotpotQA は英語の段落を日本語の枠に入れた形）。"
+              f"- 英語の行: 最終 {_n(d['english']['rows'])} 行（教師あり {_n(d['english']['supervised_chars'])} 文字）。英語の行の長さの上限（{convert.EN_ROW_MAX} 文字）が掛かるのは coding の英語の行だけです。"
+              f"HotpotQA は英語の段落を読む行（英語であることが前提）、ToolACE は英語・中国語の関数呼び出しなので、この上限は掛けず、全体の上限（1,900文字）だけです。"
               f"変換直後のファミリー別: 英語 {cv.get('english')}、教師あり文字数 {cv.get('supervised_chars')}。",
+              f"- 長さ（最終のtrain行）: len(prompt+target)+1 の平均 {'-' if d.get('mean_len') is None else format(d['mean_len'], '.1f')}、損失から外す文字の平均 "
+              f"{'-' if d.get('mean_masked') is None else format(d['mean_masked'], '.1f')}、教師あり文字数 train {_n(d['supervised_chars_by_split']['train'])} / dev {_n(d['supervised_chars_by_split']['dev'])} / "
+              f"heldout {_n(d['supervised_chars_by_split']['heldout'])}（registry.json の mean_len・length_hist・supervised_chars_by_split。ヒストグラムは64文字刻み）。",
               f"- 分割の単位: {cv.get('split_unit')}。dev / heldout が学習行から独立しているか: " + ("はい（グループ単位）" if cv.get("group_independent_dev_heldout") else "**いいえ**（行単位。dev / heldout をグループ独立の評価として使わないでください）") + "。",
               f"- 絞り込みで落ちた行の内訳: {d['filters'].get('dropped_by_reason')}。"]
         near = d["filters"].get("near")
         if near:
             L.append(f"- 近似重複: MinHash {near['k']}置換、推定Jaccard {near['estimate_cut']} 以上を同じ群として最初の1行だけ残す（目標は真のJaccard {near['target_jaccard']}）。"
                      f"群が2行以上のもの {_n(near['clusters'])} 群、最大 {_n(near['largest_cluster'])} 行、群の大きさの分布 {near['cluster_size_hist']}。"
-                     "鎖状につながった群では、残す行と直接は似ていない行も落ちることがあります。")
+                     "落とすのは、すでに残した行に似ている行だけです（鎖状につながっても、残す行と似ていない行は落としません）。")
         if d["final"]["verification"]:
             L.append(f"- 検証の内訳（最終行）: {d['final']['verification']}。")
         py = cv.get("python")
@@ -1953,7 +2150,9 @@ def render_report(reg: dict, cfg: Cfg) -> str:
     L += ["- 重複の判定: 同一データセット内は完全一致→MinHash（{k}置換・5文字断片。推定Jaccard {cut} 以上を重複とみなす。目標の真のJaccard {t} に対し、見つかる確率は計算上 ".format(
         k=pr["minhash_k"], cut=pr["near_estimate_cut"], t=pr["near_target_jaccard"]) + "、".join(f"真のJaccard {j} の組で約{p:.0%}" for j, p in probs.items())
           + "）。JaQuAD と HotpotQA は1つの文章に複数の質問が付くため、質問＋根拠＋答えの部分で比べています。旧コーパスとは行全体で比べています。",
-          "- 評価データとの照合は数字と空白を除いた13文字の完全一致です。言い換えや翻訳は検出できません。",
+          "- 評価データとの照合は数字と空白を除いた13文字の完全一致です。言い換えや翻訳は検出できません。13文字に満たない評価文は断片が作れず、その文だけを含む行は見つかりません。"
+          "13〜39文字の評価文は13文字の断片でしか照合しないので、その断片がすべて定型句（評価問題20件以上が共有）のときは、そのまま写した行も見つかりません"
+          "（別の確認で測った例: v33 のプロンプトの型 50 件と v42 の質問 1 件）。しきい値（13・40・20）は、誤って除外する割合をここでは測れないので変えていません。",
           "- 件数は実行ごとに決まります。同じコードと同じデータなら同じ結果になります（乱数は固定）。", ""]
     L += ["## 6. ライセンスと表示の義務", ""]
     for k in KEYS:
